@@ -76,13 +76,13 @@ export default function StepDocumentSelection({
       return;
     }
     setError(null);
-    router.push(`/r/${slug}/delivery`);
+    router.push(`/r/${slug}/addons`);
   };
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12 md:py-16">
       <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-        Select documents
+        Select Documents
       </h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Choose the documents needed for this transaction.
@@ -126,24 +126,49 @@ export default function StepDocumentSelection({
               ].join(" ")}
             >
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-base font-semibold text-foreground">
-                    {doc.name}
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {doc.description}
-                  </p>
-                  <div className="mt-2 flex items-center gap-2">
-                    {doc.required ? (
-                      <span className="rounded-full border border-border bg-havn-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
-                        Required
-                      </span>
-                    ) : null}
+                <div className="flex items-start gap-3">
+                  <div className="pt-0.5">
                     {isHomeownerMutex ? (
-                      <span className="rounded-full border border-border bg-havn-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Pick one
+                      <span
+                        className={[
+                          "mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full border",
+                          selected ? "border-havn-success" : "border-muted-foreground/40",
+                        ].join(" ")}
+                      >
+                        {selected ? (
+                          <span className="h-2 w-2 rounded-full bg-havn-success" />
+                        ) : null}
                       </span>
-                    ) : null}
+                    ) : (
+                      <span
+                        className={[
+                          "mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded-sm border",
+                          selected ? "border-havn-success bg-havn-success/10" : "border-muted-foreground/40",
+                        ].join(" ")}
+                      >
+                        {selected ? <span className="h-2 w-2 rounded-sm bg-havn-success" /> : null}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-base font-semibold text-foreground">
+                      {doc.name}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {doc.description}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      {doc.required ? (
+                        <span className="rounded-full border border-border bg-havn-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
+                          Required
+                        </span>
+                      ) : null}
+                      {isHomeownerMutex ? (
+                        <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          Pick one
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
                 <p className="shrink-0 text-sm font-semibold text-foreground">
@@ -166,17 +191,18 @@ export default function StepDocumentSelection({
         </div>
       </div>
 
-      <div className="mt-8 flex items-center gap-3">
+      <div className="mt-8 flex gap-3">
         <Button
           type="button"
           variant="outline"
+          className="flex-1"
           onClick={() => router.push(`/r/${slug}/property`)}
         >
           Back
         </Button>
         <Button
           type="button"
-          className="bg-havn-navy text-white hover:bg-havn-navy-light"
+          className="flex-1 bg-havn-navy text-white hover:bg-havn-navy-light"
           onClick={handleContinue}
         >
           Continue

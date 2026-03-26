@@ -6,8 +6,10 @@
 export type RequesterLinearStepId =
   | "landing"
   | "role"
+  | "info"
   | "property"
   | "documents"
+  | "addons"
   | "delivery"
   | "review"
   | "confirmation";
@@ -29,8 +31,10 @@ export type RequesterFlowStep = {
 export const REQUESTER_FLOW_STEP_ORDER: readonly RequesterLinearStepId[] = [
   "landing",
   "role",
+  "info",
   "property",
   "documents",
+  "addons",
   "delivery",
   "review",
   "confirmation",
@@ -40,8 +44,10 @@ export const REQUESTER_FLOW_STEP_ORDER: readonly RequesterLinearStepId[] = [
 export const REQUESTER_FLOW_STEPS: readonly RequesterFlowStep[] = [
   { id: "landing", screenName: "Portal landing", segment: "" },
   { id: "role", screenName: "Role selection", segment: "role" },
+  { id: "info", screenName: "Your information", segment: "info" },
   { id: "property", screenName: "Property address", segment: "property" },
   { id: "documents", screenName: "Document selection", segment: "documents" },
+  { id: "addons", screenName: "Add-ons", segment: "addons" },
   { id: "delivery", screenName: "Delivery speed", segment: "delivery" },
   { id: "review", screenName: "Review & payment", segment: "review" },
   { id: "confirmation", screenName: "Order confirmed", segment: "confirmation" },

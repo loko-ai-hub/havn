@@ -6,9 +6,11 @@ import PortalSidebar from "@/components/requester/PortalSidebar";
 
 function getCurrentStep(pathname: string): number {
   if (pathname.includes("/role")) return 1;
-  if (pathname.includes("/property")) return 2;
-  if (pathname.includes("/documents")) return 3;
-  if (pathname.includes("/delivery")) return 4;
+  if (pathname.includes("/info")) return 2;
+  if (pathname.includes("/property")) return 3;
+  if (pathname.includes("/documents")) return 4;
+  if (pathname.includes("/delivery")) return 5;
+  if (pathname.includes("/addons")) return 6;
   if (pathname.includes("/review")) return 7;
   if (pathname.includes("/confirmation")) return 8;
   return 1;
@@ -26,6 +28,7 @@ export default function RequesterPortalLayout({
   return (
     <div className="flex min-h-screen bg-havn-surface text-foreground">
       <PortalSidebar
+        slug={slug}
         companyName="Acme Corp"
         logoUrl={null}
         primaryColor="#1B2B4B"

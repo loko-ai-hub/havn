@@ -1,21 +1,40 @@
-import RequesterStepPlaceholder from "@/components/requester/RequesterStepPlaceholder";
-import { getContinueHref, REQUESTER_FLOW_STEPS } from "@/lib/requester-flow";
+"use client";
 
-const step = REQUESTER_FLOW_STEPS.find((s) => s.id === "confirmation")!;
+import { useMemo } from "react";
+import { useParams } from "next/navigation";
 
-export default async function RequesterConfirmationPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
+import StepConfirmation from "@/components/requester/StepConfirmation";
+import type { PortalOrder } from "@/lib/portal-data";
 
+export default function RequesterConfirmationPage() {
+  const params = useParams<{ slug: string }>();
+  const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
+  const mockOrder = useMemo<PortalOrder>(
+    () => ({
+      requesterType: "homeowner",
+      requesterName: "",
+      requesterEmail: "",
+      requesterPhone: "",
+      brokerageName: "",
+      licenseNumber: "",
+      mlsId: "",
+      companyName: "",
+      nmlsNumber: "",
+      propertyAddress: "",
+      unitNumber: "",
+      city: "",
+      state: "",
+      zip: "",
+      documentsSelected: [],
+      addOns: [],
+      deliveryType: "standard",
+      closingDate: "",
+      additionalEmails: [],
+      lenderFormChoice: "",
+    }),
+    []
+  );
   return (
-    <RequesterStepPlaceholder
-      slug={slug}
-      screenName={step.screenName}
-      continueHref={getContinueHref(slug, "confirmation")}
-      meta="Next steps — placeholder."
-    />
+    <StepConfirmation slug={slug} order={mockOrder} orderNumber="ORD-00001" />
   );
 }

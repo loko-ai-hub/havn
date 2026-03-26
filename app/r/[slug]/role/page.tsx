@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Briefcase, Building2, User } from "lucide-react";
+import { ArrowRight, Briefcase, Building2, User } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { REQUESTER_TYPES, type RequesterType } from "@/lib/portal-data";
@@ -14,6 +14,7 @@ const ICONS: Record<RequesterType, typeof User> = {
 };
 
 export default function RequesterRolePage() {
+  const primaryColor = "#1B2B4B";
   const router = useRouter();
   const params = useParams<{ slug: string }>();
   const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
@@ -29,7 +30,7 @@ export default function RequesterRolePage() {
       return;
     }
     setError(null);
-    router.push(`/r/${slug}/property`);
+    router.push(`/r/${slug}/info`);
   };
 
   return (
@@ -55,9 +56,10 @@ export default function RequesterRolePage() {
                 "w-full rounded-xl border-2 p-5 text-left transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 isSelected
-                  ? "border-havn-navy bg-havn-surface/80"
+                  ? "border-havn-navy"
                   : "border-border bg-card hover:border-havn-navy/50 hover:bg-havn-surface/35",
               ].join(" ")}
+              style={isSelected ? { backgroundColor: `${primaryColor}25` } : undefined}
             >
               <div className="flex items-start gap-4">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-havn-surface text-foreground">
@@ -78,6 +80,7 @@ export default function RequesterRolePage() {
       <div className="mt-8">
         <Button type="button" onClick={handleContinue} className="h-11 min-w-32 bg-havn-navy text-white hover:bg-havn-navy-light">
           Continue
+          <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       </div>
     </div>

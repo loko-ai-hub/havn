@@ -1,8 +1,5 @@
 import Link from "next/link";
 
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-
 export default function RequesterStepPlaceholder({
   slug,
   screenName,
@@ -39,10 +36,7 @@ export default function RequesterStepPlaceholder({
       </div>
       <Link
         href={continueHref}
-        className={cn(
-          buttonVariants({ size: "lg" }),
-          "inline-flex w-full justify-center sm:w-auto"
-        )}
+        className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-havn-navy px-4 text-sm font-medium text-white transition-colors hover:bg-havn-navy-light sm:w-auto"
       >
         {continueLabel}
       </Link>

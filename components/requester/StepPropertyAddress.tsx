@@ -176,7 +176,7 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12 md:py-16">
-      <h1 className="text-3xl font-semibold tracking-tight text-foreground">Property address</h1>
+      <h1 className="text-3xl font-semibold tracking-tight text-foreground">Property Address</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Enter the property address for this document request.
       </p>
@@ -192,7 +192,7 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
                 value={form.street}
                 onChange={(e) => setForm((prev) => ({ ...prev, street: e.target.value }))}
                 placeholder="123 Main Street"
-                className="pl-10"
+                className="bg-white pl-10"
               />
             </div>
           </div>
@@ -204,6 +204,7 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
               value={form.unit}
               onChange={(e) => setForm((prev) => ({ ...prev, unit: e.target.value }))}
               placeholder="Unit 4B"
+              className="bg-white"
             />
           </div>
 
@@ -215,6 +216,7 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
                 value={form.city}
                 onChange={(e) => setForm((prev) => ({ ...prev, city: e.target.value }))}
                 placeholder="Seattle"
+                className="bg-white"
               />
             </div>
             <div className="space-y-2">
@@ -223,7 +225,7 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
                 id="state"
                 value={form.state}
                 onChange={(e) => setForm((prev) => ({ ...prev, state: e.target.value }))}
-                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-9 w-full rounded-lg border border-border bg-white px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="">Select</option>
                 {US_STATES.map((state) => (
@@ -240,6 +242,7 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
                 value={form.zip}
                 onChange={(e) => setForm((prev) => ({ ...prev, zip: e.target.value }))}
                 placeholder="98101"
+                className="bg-white"
               />
             </div>
           </div>
@@ -279,11 +282,11 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
 
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
-      <div className="mt-8 flex items-center gap-3">
-        <Button type="button" variant="outline" onClick={() => router.push(`/r/${slug}/role`)}>
+      <div className="mt-8 flex gap-3">
+        <Button type="button" variant="outline" className="flex-1" onClick={() => router.push(`/r/${slug}/info`)}>
           Back
         </Button>
-        <Button type="button" onClick={handleContinue} className="bg-havn-navy text-white hover:bg-havn-navy-light">
+        <Button type="button" className="flex-1 bg-havn-navy text-white hover:bg-havn-navy-light" onClick={handleContinue}>
           Continue
         </Button>
       </div>

@@ -1,21 +1,15 @@
-import RequesterStepPlaceholder from "@/components/requester/RequesterStepPlaceholder";
-import { getContinueHref, REQUESTER_FLOW_STEPS } from "@/lib/requester-flow";
+"use client";
 
-const step = REQUESTER_FLOW_STEPS.find((s) => s.id === "delivery")!;
+import { useState } from "react";
+import { useParams } from "next/navigation";
 
-export default async function RequesterDeliveryPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
+import StepDeliveryOptions from "@/components/requester/StepDeliveryOptions";
+import type { RequesterType } from "@/lib/portal-data";
 
-  return (
-    <RequesterStepPlaceholder
-      slug={slug}
-      screenName={step.screenName}
-      continueHref={getContinueHref(slug, "delivery")}
-      meta="Standard vs rush tiers — placeholder."
-    />
-  );
+export default function RequesterDeliveryPage() {
+  const params = useParams<{ slug: string }>();
+  const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
+  const [requesterType] = useState<RequesterType>("homeowner");
+
+  return <StepDeliveryOptions slug={slug} requesterType={requesterType} />;
 }

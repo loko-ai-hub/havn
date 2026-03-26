@@ -100,3 +100,127 @@ export function getDocumentFee(selectedIds: string[]): number {
     return total + doc.fee;
   }, 0);
 }
+
+export type PortalOrder = {
+  requesterType: RequesterType;
+  requesterName: string;
+  requesterEmail: string;
+  requesterPhone: string;
+  brokerageName: string;
+  licenseNumber: string;
+  mlsId: string;
+  companyName: string;
+  nmlsNumber: string;
+  propertyAddress: string;
+  unitNumber: string;
+  city: string;
+  state: string;
+  zip: string;
+  documentsSelected: string[];
+  addOns: string[];
+  deliveryType: string;
+  closingDate: string;
+  additionalEmails: string[];
+  lenderFormChoice: string;
+};
+
+export type PortalAddon = {
+  id: string;
+  name: string;
+  description: string;
+  fee: number;
+};
+
+export const PORTAL_ADDONS: PortalAddon[] = [
+  {
+    id: "rush_review",
+    name: "Priority Review",
+    description: "Your order is reviewed first",
+    fee: 25,
+  },
+  {
+    id: "digital_notary",
+    name: "Digital Notary",
+    description: "Notarized digital copy included",
+    fee: 45,
+  },
+];
+
+export const LENDER_ADDONS: PortalAddon[] = [
+  {
+    id: "flood_cert",
+    name: "Flood Certificate",
+    description: "FEMA flood zone determination",
+    fee: 15,
+  },
+  {
+    id: "tax_cert",
+    name: "Tax Certificate",
+    description: "Current property tax status",
+    fee: 20,
+  },
+];
+
+export const CUSTOM_FORM_FEE = 50;
+
+export const STATE_LENDER_TEMPLATES: Record<string, { formName: string }> = {
+  WA: { formName: "Washington Condo Questionnaire" },
+  CA: { formName: "California HOA Questionnaire" },
+  FL: { formName: "Florida Condo Questionnaire" },
+};
+
+export const KNOWN_LENDER_DOMAINS: Record<string, { formName: string }> = {
+  "wellsfargo.com": { formName: "Wells Fargo Condo Questionnaire" },
+  "chase.com": { formName: "Chase HOA Questionnaire" },
+};
+
+export const DELIVERY_OPTIONS = [
+  { id: "standard", label: "Standard (5 business days)", fee: 0 },
+  { id: "rush", label: "Rush (2 business days)", fee: 75 },
+  { id: "rush_nextday", label: "Rush Next Day", fee: 125 },
+  { id: "rush_sameday", label: "Rush Same Day", fee: 175 },
+] as const;
+
+export const HOMEOWNER_DELIVERY_OPTIONS = [
+  { id: "standard", label: "Standard (5 business days)", fee: 0 },
+  { id: "rush", label: "Rush (2 business days)", fee: 65 },
+  { id: "rush_nextday", label: "Rush Next Day", fee: 100 },
+] as const;
+
+function addBusinessDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  let remaining = days;
+  while (remaining > 0) {
+    result.setDate(result.getDate() + 1);
+    const day = result.getDay();
+    if (day !== 0 && day !== 6) {
+      remaining -= 1;
+    }
+  }
+  return result;
+}
+
+export function getDeliveryDate(deliveryType: string): Date {
+  const today = new Date();
+  if (deliveryType === "rush_sameday") return today;
+  if (deliveryType === "rush_nextday") return addBusinessDays(today, 1);
+  if (deliveryType === "rush") return addBusinessDays(today, 2);
+  return addBusinessDays(today, 5);
+}
+
+export function getTotalFee(order: PortalOrder): number {
+  const docsTotal = getDocumentFee(order.documentsSelected);
+  const addonMap = new Map(
+    [...PORTAL_ADDONS, ...LENDER_ADDONS].map((addon) => [addon.id, addon.fee])
+  );
+  const addonsTotal = order.addOns.reduce(
+    (sum, id) => sum + (addonMap.get(id) ?? 0),
+    0
+  );
+  const deliveryFee =
+    [...DELIVERY_OPTIONS, ...HOMEOWNER_DELIVERY_OPTIONS].find(
+      (option) => option.id === order.deliveryType
+    )?.fee ?? 0;
+  const lenderFormFee = order.lenderFormChoice === "custom" ? CUSTOM_FORM_FEE : 0;
+  return docsTotal + addonsTotal + deliveryFee + lenderFormFee;
+}

@@ -3,10 +3,10 @@
 import { useMemo } from "react";
 import { useParams } from "next/navigation";
 
-import StepReview from "@/components/requester/StepReview";
+import StepYourInfo from "@/components/requester/StepYourInfo";
 import type { PortalOrder } from "@/lib/portal-data";
 
-export default function RequesterReviewPage() {
+export default function RequesterInfoPage() {
   const params = useParams<{ slug: string }>();
   const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
   const mockOrder = useMemo<PortalOrder>(
@@ -34,7 +34,6 @@ export default function RequesterReviewPage() {
     }),
     []
   );
-  return (
-    <StepReview slug={slug} order={mockOrder} />
-  );
+
+  return <StepYourInfo slug={slug} order={mockOrder} />;
 }

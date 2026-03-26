@@ -1,9 +1,12 @@
 import Image from "next/image";
+import Link from "next/link";
 import { Check } from "lucide-react";
 
 import type { RequesterType } from "@/lib/portal-data";
+import { requesterPortalPath } from "@/lib/requester-flow";
 
 type PortalSidebarProps = {
+  slug: string;
   companyName: string;
   logoUrl: string | null;
   primaryColor: string;
@@ -14,6 +17,7 @@ type PortalSidebarProps = {
 type SidebarStep = {
   number: number;
   label: string;
+  segment: string;
 };
 
 function normalizeHex(input: string): string {
@@ -37,32 +41,25 @@ function getTextColor(hex: string): string {
   return luminance > 0.6 ? "#0f172a" : "#ffffff";
 }
 
-function getStepFiveLabel(requesterType?: RequesterType): string {
-  switch (requesterType) {
-    case "lender_title":
-      return "Lender Document";
-    case "buyer_agent":
-      return "Buyer Information";
-    case "homeowner":
-    default:
-      return "Your Information";
-  }
-}
-
 function getSteps(requesterType?: RequesterType): SidebarStep[] {
   return [
-    { number: 1, label: "Requester Type" },
-    { number: 2, label: "Property Address" },
-    { number: 3, label: "Document Selection" },
-    { number: 4, label: "Delivery Options" },
-    { number: 5, label: getStepFiveLabel(requesterType) },
-    { number: 6, label: "Add-ons" },
-    { number: 7, label: "Review & Payment" },
-    { number: 8, label: "Confirmation" },
+    { number: 1, label: "Your Role", segment: "role" },
+    { number: 2, label: "Your Information", segment: "info" },
+    { number: 3, label: "Property Address", segment: "property" },
+    { number: 4, label: "Documents", segment: "documents" },
+    {
+      number: 5,
+      label: requesterType === "lender_title" ? "Delivery & Timing" : "Delivery Speed",
+      segment: "delivery",
+    },
+    { number: 6, label: "Add-Ons", segment: "addons" },
+    { number: 7, label: "Review & Pay", segment: "review" },
+    { number: 8, label: "Confirmation", segment: "confirmation" },
   ];
 }
 
 export default function PortalSidebar({
+  slug,
   companyName,
   logoUrl,
   primaryColor,
@@ -101,8 +98,8 @@ export default function PortalSidebar({
           const isActive = step.number === currentStep;
           const isFuture = step.number > currentStep;
 
-          return (
-            <div key={step.number} className="flex items-center gap-3">
+          const itemContent = (
+            <>
               <div
                 className={[
                   "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
@@ -114,6 +111,24 @@ export default function PortalSidebar({
                 {isCompleted ? <Check className="h-3.5 w-3.5" /> : step.number}
               </div>
               <span className={isFuture ? `text-sm ${mutedText}` : "text-sm font-medium"}>{step.label}</span>
+            </>
+          );
+
+          if (isCompleted) {
+            return (
+              <Link
+                key={step.number}
+                href={requesterPortalPath(slug, step.segment)}
+                className="flex items-center gap-3 rounded-md transition-opacity hover:opacity-90"
+              >
+                {itemContent}
+              </Link>
+            );
+          }
+
+          return (
+            <div key={step.number} className="flex items-center gap-3">
+              {itemContent}
             </div>
           );
         })}

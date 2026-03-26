@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Building2, CheckCircle2, Shield } from "lucide-react";
+import { ArrowRight, LogIn } from "lucide-react";
 
 function portalDisplayName(slug: string): string {
   const parts = slug.split(/[-_]+/).filter(Boolean);
@@ -9,13 +9,15 @@ function portalDisplayName(slug: string): string {
     .join(" ");
 }
 
-const ORDER_TYPES = [
-  "Resale certificates & disclosure packages",
-  "Lender questionnaires",
-  "Certificate updates",
-  "Demand / payoff letters",
-  "Estoppel letters",
-  "Governing documents",
+const REQUIRED_ITEMS = [
+  "Property address",
+  "Estimated closing date",
+  "Payment method",
+] as const;
+
+const AFTER_SUBMIT_ITEMS = [
+  "Documents are delivered by email",
+  "A Havn account is created to track your order",
 ] as const;
 
 export function RequesterPortalLanding({
@@ -34,78 +36,67 @@ export function RequesterPortalLanding({
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(217,179,106,0.18),transparent)]"
       />
       <div className="relative mx-auto max-w-2xl px-6 py-14 md:py-20">
-        <div className="flex flex-col items-center text-center">
-          {/* Community logo placeholder (Supabase logo_url later) */}
-          <div
-            className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl border-2 border-dashed border-havn-gold/35 bg-card shadow-sm"
-          >
-            <Building2
-              className="h-11 w-11 text-havn-navy-muted"
-              strokeWidth={1.25}
-              aria-hidden
-            />
-            <span className="sr-only">Community logo</span>
-          </div>
-
-          <p className="mt-8 text-xs font-semibold uppercase tracking-[0.2em] text-havn-navy-muted">
-            Document requests
+        <div className="flex flex-col text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-havn-navy-muted">
+            {communityName}
           </p>
           <h1 className="mt-3 text-balance text-3xl font-semibold tracking-tight text-havn-navy md:text-4xl">
-            {communityName}
+            Order Association Documents
           </h1>
           <p className="mt-3 max-w-md text-pretty text-sm leading-relaxed text-muted-foreground md:text-base">
             Request HOA and association documents for your closing or refinance.
-            Pay securely and track status in one place.
           </p>
         </div>
 
         <div className="mt-10 rounded-2xl border border-border bg-card p-6 shadow-sm md:p-8">
-          <p className="text-sm font-medium text-foreground">
-            What you can order here
-          </p>
-          <ul className="mt-4 space-y-3 text-left">
-            {ORDER_TYPES.map((line) => (
-              <li key={line} className="flex gap-3 text-sm text-muted-foreground">
-                <CheckCircle2
-                  className="mt-0.5 h-4 w-4 shrink-0 text-havn-gold"
-                  aria-hidden
-                />
-                <span className="leading-snug text-foreground">{line}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="rounded-xl border border-border bg-havn-surface/40 p-4 text-left">
+            <p className="text-sm font-medium text-foreground">
+              This process takes about 5 minutes. You&apos;ll need:
+            </p>
+            <ul className="mt-3 space-y-2">
+              {REQUIRED_ITEMS.map((item) => (
+                <li key={item} className="flex items-center gap-2 text-sm text-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-havn-navy" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
 
-          <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
-            Pricing and turnaround follow your community manager&apos;s schedule
-            and applicable state limits. Rush options may be available at
-            checkout.
-          </p>
+          <div className="mt-4 rounded-xl border border-border bg-havn-surface/40 p-4 text-left">
+            <p className="text-sm font-medium text-foreground">
+              After you submit your request:
+            </p>
+            <ul className="mt-3 space-y-2">
+              {AFTER_SUBMIT_ITEMS.map((item) => (
+                <li key={item} className="flex items-center gap-2 text-sm text-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-havn-navy" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-6 space-y-3">
             <Link
               href={startOrderHref}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-havn-navy px-4 text-sm font-medium text-white transition-colors hover:bg-havn-navy-light hover:text-white"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-havn-navy px-4 text-sm font-medium text-white transition-colors hover:bg-havn-navy-light hover:text-white"
             >
-              Continue
+              Get Started
               <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
-            <p className="text-center text-[11px] text-muted-foreground sm:text-left">
-              Next: confirm who is requesting (homeowner, agent, title, or
-              lender).
-            </p>
+            <div className="relative py-1 text-center">
+              <div className="absolute left-0 right-0 top-1/2 h-px bg-border" />
+              <span className="relative bg-card px-2 text-xs text-muted-foreground">or</span>
+            </div>
+            <Link
+              href="/login"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              <LogIn className="h-4 w-4" />
+              Already have a Havn account? Log in
+            </Link>
           </div>
-        </div>
-
-        {/* Havn partnership row */}
-        <div className="mt-10 flex flex-col items-center gap-3 border-t border-border pt-8 md:flex-row md:justify-center md:gap-6">
-          <div className="flex items-center gap-2 text-havn-navy">
-            <Shield className="h-4 w-4 text-havn-gold" aria-hidden />
-            <span className="text-sm font-semibold tracking-tight">Havn</span>
-          </div>
-          <p className="max-w-sm text-center text-xs leading-relaxed text-muted-foreground md:text-left">
-            Payments and compliance tooling powered by Havn. Your community team
-            fulfills requests directly.
-          </p>
         </div>
       </div>
     </div>
