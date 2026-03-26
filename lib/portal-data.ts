@@ -72,7 +72,7 @@ export const PORTAL_DOCUMENTS: PortalDocument[] = [
     description: "CC&Rs, bylaws, rules and regulations",
     fee: 50,
     required: false,
-    availableTo: ["homeowner", "buyer_agent", "lender_title"],
+    availableTo: ["lender_title"],
   },
   {
     id: "demand_letter",
@@ -129,6 +129,7 @@ export type PortalAddon = {
   name: string;
   description: string;
   fee: number;
+  popular?: boolean;
 };
 
 export const PORTAL_ADDONS: PortalAddon[] = [
@@ -137,6 +138,7 @@ export const PORTAL_ADDONS: PortalAddon[] = [
     name: "Priority Review",
     description: "Your order is reviewed first",
     fee: 25,
+    popular: true,
   },
   {
     id: "digital_notary",

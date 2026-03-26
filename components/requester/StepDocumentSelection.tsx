@@ -1,213 +1,137 @@
-"use client";
+import { PORTAL_DOCUMENTS, formatCurrency, getDocumentFee, type RequesterType } from "@/lib/portal-data";
+import { Check, FileText } from "lucide-react";
 
-import { Info } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-
-import { Button } from "@/components/ui/button";
-import {
-  PORTAL_DOCUMENTS,
-  formatCurrency,
-  getDocumentFee,
-  type RequesterType,
-} from "@/lib/portal-data";
-
-type StepDocumentSelectionProps = {
-  slug: string;
+interface StepDocumentSelectionProps {
   requesterType: RequesterType;
-  selectedDocumentIds: string[];
-  onChangeSelectedDocumentIds: (ids: string[]) => void;
-};
+  selected: string[];
+  primaryColor: string;
+  onToggle: (docId: string) => void;
+  onContinue: () => void;
+  onBack: () => void;
+}
 
-const HOMEOWNER_MUTEX_IDS = ["resale_cert", "resale_cert_update"] as const;
+const RESALE_IDS = ["resale_cert", "resale_cert_update"];
 
-export default function StepDocumentSelection({
-  slug,
-  requesterType,
-  selectedDocumentIds,
-  onChangeSelectedDocumentIds,
-}: StepDocumentSelectionProps) {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+const StepDocumentSelection = ({ requesterType, selected, primaryColor, onToggle, onContinue, onBack }: StepDocumentSelectionProps) => {
+  const isHomeowner = requesterType === "homeowner";
 
-  const visibleDocuments = useMemo(
-    () =>
-      PORTAL_DOCUMENTS.filter((doc) => doc.availableTo.includes(requesterType)),
-    [requesterType]
-  );
+  const availableDocs = PORTAL_DOCUMENTS.filter((d) => {
+    if (!d.availableTo.includes(requesterType)) return false;
+    if (!isHomeowner && d.id === "resale_cert_update") return false;
+    return true;
+  });
 
-  const selectedSet = useMemo(
-    () => new Set(selectedDocumentIds),
-    [selectedDocumentIds]
-  );
-
-  const total = useMemo(
-    () => getDocumentFee(selectedDocumentIds),
-    [selectedDocumentIds]
-  );
-
-  const toggleDocument = (id: string) => {
-    const current = new Set(selectedSet);
-    const doc = PORTAL_DOCUMENTS.find((item) => item.id === id);
-    if (!doc) return;
-
-    if (doc.required) return;
-
-    if (requesterType === "homeowner" && HOMEOWNER_MUTEX_IDS.includes(id as (typeof HOMEOWNER_MUTEX_IDS)[number])) {
-      HOMEOWNER_MUTEX_IDS.forEach((mutexId) => current.delete(mutexId));
-      current.add(id);
-      onChangeSelectedDocumentIds(Array.from(current));
-      if (error) setError(null);
+  const handleToggle = (docId: string) => {
+    if (isHomeowner && RESALE_IDS.includes(docId)) {
+      const otherId = docId === "resale_cert" ? "resale_cert_update" : "resale_cert";
+      if (!selected.includes(docId)) {
+        if (selected.includes(otherId)) onToggle(otherId);
+        onToggle(docId);
+      }
       return;
     }
-
-    if (current.has(id)) {
-      current.delete(id);
-    } else {
-      current.add(id);
-    }
-    onChangeSelectedDocumentIds(Array.from(current));
-    if (error) setError(null);
+    onToggle(docId);
   };
 
-  const handleContinue = () => {
-    if (selectedDocumentIds.length === 0) {
-      setError("Please select at least one document to continue.");
-      return;
-    }
-    setError(null);
-    router.push(`/r/${slug}/addons`);
-  };
+  const total = getDocumentFee(selected);
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-12 md:py-16">
-      <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-        Select Documents
-      </h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Choose the documents needed for this transaction.
-      </p>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-foreground">Select Documents</h2>
+        <p className="text-sm text-muted-foreground mt-1">Choose the documents you need for this transaction.</p>
+      </div>
 
-      {requesterType === "homeowner" ? (
-        <div className="mt-6 rounded-xl border border-havn-amber bg-havn-amber/10 p-4">
-          <div className="flex items-start gap-2">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
-            <div>
-              <p className="text-sm font-semibold text-foreground">
-                What&apos;s included in a Resale Certificate?
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Typical packages include association financials, governing
-                documents, insurance details, current assessment data, and known
-                compliance items for the property.
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mt-6 space-y-3">
-        {visibleDocuments.map((doc) => {
-          const selected = selectedSet.has(doc.id);
-          const isHomeownerMutex =
-            requesterType === "homeowner" &&
-            HOMEOWNER_MUTEX_IDS.includes(doc.id as (typeof HOMEOWNER_MUTEX_IDS)[number]);
-
+      <div className="space-y-2">
+        {availableDocs.map((doc) => {
+          const isSelected = selected.includes(doc.id);
+          const isResale = isHomeowner && RESALE_IDS.includes(doc.id);
+          const isRequired = doc.required && !isResale;
           return (
             <button
               key={doc.id}
-              type="button"
-              onClick={() => toggleDocument(doc.id)}
-              className={[
-                "w-full rounded-xl border-2 p-4 text-left transition-colors",
-                selected
-                  ? "border-havn-success bg-havn-success/10"
-                  : "border-border bg-card hover:border-havn-navy/40",
-              ].join(" ")}
+              onClick={() => !isRequired && handleToggle(doc.id)}
+              className={`w-full flex items-center gap-4 rounded-xl border-2 border-border bg-white p-5 text-left transition-all hover:border-muted-foreground/40 ${
+                isRequired ? "cursor-default" : "cursor-pointer"
+              }`}
+              style={isSelected ? { borderColor: primaryColor, backgroundColor: `${primaryColor}08` } : undefined}
             >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="pt-0.5">
-                    {isHomeownerMutex ? (
-                      <span
-                        className={[
-                          "mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full border",
-                          selected ? "border-havn-success" : "border-muted-foreground/40",
-                        ].join(" ")}
-                      >
-                        {selected ? (
-                          <span className="h-2 w-2 rounded-full bg-havn-success" />
-                        ) : null}
-                      </span>
-                    ) : (
-                      <span
-                        className={[
-                          "mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded-sm border",
-                          selected ? "border-havn-success bg-havn-success/10" : "border-muted-foreground/40",
-                        ].join(" ")}
-                      >
-                        {selected ? <span className="h-2 w-2 rounded-sm bg-havn-success" /> : null}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-base font-semibold text-foreground">
-                      {doc.name}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {doc.description}
-                    </p>
-                    <div className="mt-2 flex items-center gap-2">
-                      {doc.required ? (
-                        <span className="rounded-full border border-border bg-havn-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
-                          Required
-                        </span>
-                      ) : null}
-                      {isHomeownerMutex ? (
-                        <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          Pick one
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
+              {isResale ? (
+                <div
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                    isSelected ? "" : "border-muted-foreground/30"
+                  }`}
+                  style={isSelected ? { borderColor: primaryColor } : undefined}
+                >
+                  {isSelected && (
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />
+                  )}
                 </div>
-                <p className="shrink-0 text-sm font-semibold text-foreground">
-                  {formatCurrency(doc.fee)}
-                </p>
+              ) : (
+                <div
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                    isSelected ? "" : "border-muted-foreground/30"
+                  }`}
+                  style={isSelected ? { borderColor: primaryColor, backgroundColor: primaryColor } : undefined}
+                >
+                  {isSelected && <Check className="h-3 w-3 text-white" />}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium text-foreground">{doc.name}</p>
+                  {isRequired && (
+                    <span className="text-[10px] font-medium text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">Required</span>
+                  )}
+                </div>
+                {doc.description && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{doc.description}</p>
+                )}
               </div>
+              <p className="text-sm font-semibold text-foreground tabular-nums">{formatCurrency(doc.fee)}</p>
             </button>
           );
         })}
       </div>
 
-      {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
-
-      <div className="mt-8 rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-foreground">Document total</p>
-          <p className="text-lg font-semibold text-foreground">
-            {formatCurrency(total)}
-          </p>
+      {isHomeowner && (
+        <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-semibold text-foreground">What&apos;s included in a Resale Certificate?</p>
+          </div>
+          <ul className="text-xs text-muted-foreground space-y-1.5 ml-6 list-disc">
+            <li>Current account balance and assessment amounts</li>
+            <li>Outstanding fees, fines, or special assessments on the unit</li>
+            <li>Association financial health and reserve fund status</li>
+            <li>Pending or anticipated special assessments</li>
+            <li>Any violations or compliance issues on record</li>
+            <li>Pending litigation involving the association</li>
+            <li>Insurance coverage summary</li>
+            <li>Move-in/move-out fees and procedures</li>
+          </ul>
         </div>
+      )}
+
+      <div className="flex items-center justify-between rounded-lg bg-secondary/50 px-4 py-3">
+        <p className="text-sm font-medium text-muted-foreground">Document total</p>
+        <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrency(total)}</p>
       </div>
 
-      <div className="mt-8 flex gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          className="flex-1"
-          onClick={() => router.push(`/r/${slug}/property`)}
-        >
+      <div className="flex gap-3">
+        <button onClick={onBack} className="flex-1 rounded-lg border border-border px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary">
           Back
-        </Button>
-        <Button
-          type="button"
-          className="flex-1 bg-havn-navy text-white hover:bg-havn-navy-light"
-          onClick={handleContinue}
+        </button>
+        <button
+          onClick={onContinue}
+          className="flex-1 rounded-lg px-6 py-3 text-sm font-semibold text-white transition-colors hover:opacity-90"
+          style={{ backgroundColor: primaryColor }}
         >
           Continue
-        </Button>
+        </button>
       </div>
     </div>
   );
-}
+};
+
+export default StepDocumentSelection;

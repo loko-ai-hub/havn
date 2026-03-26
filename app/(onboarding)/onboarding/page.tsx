@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -15,6 +15,9 @@ import StepInviteAdmins from "@/components/onboarding/StepInviteAdmins";
 import ValuePropsList from "@/components/onboarding/ValuePropsList";
 import { createClient } from "@/lib/supabase/client";
 
+// TODO: remove dev bypass before launch.
+const DEV_ONBOARDING_BYPASS = process.env.NODE_ENV === "development";
+
 const OnboardingPage = () => {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -25,6 +28,13 @@ const OnboardingPage = () => {
   const [additionalStates, setAdditionalStates] = useState<string[]>([]);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isStepVisible, setIsStepVisible] = useState(false);
+
+  useEffect(() => {
+    setIsStepVisible(false);
+    const frame = requestAnimationFrame(() => setIsStepVisible(true));
+    return () => cancelAnimationFrame(frame);
+  }, [currentStep]);
 
   const handleAccountTypeSelect = (type: AccountType) => {
     setAccountType(type);
@@ -34,6 +44,15 @@ const OnboardingPage = () => {
   const handleCompanyDetailsContinue = async (data: CompanyDetailsData) => {
     try {
       setIsSubmitting(true);
+      if (DEV_ONBOARDING_BYPASS) {
+        setOrganizationId("dev-bypass-org");
+        setCompanyState(data.state);
+        setIsMultiState(data.isMultiState);
+        setAdditionalStates(data.additionalStates);
+        setCurrentStep(3);
+        return;
+      }
+
       const {
         data: { user },
         error: userError,
@@ -84,13 +103,18 @@ const OnboardingPage = () => {
   };
 
   const handleFeesContinue = async (data: FeesData) => {
-    if (!organizationId) {
+    if (!organizationId && !DEV_ONBOARDING_BYPASS) {
       toast.error("Organization ID missing. Please complete company details first.");
       return;
     }
 
     try {
       setIsSubmitting(true);
+      if (DEV_ONBOARDING_BYPASS) {
+        setCurrentStep(4);
+        return;
+      }
+
       const standardTurnaroundDays = Number.parseInt(data.turnaround, 10);
       const feesRows = [
         { document_type: "resale_certificate", base_fee: Number(data.resaleCertificate) || 0 },
@@ -124,13 +148,17 @@ const OnboardingPage = () => {
   };
 
   const handlePortalSetupContinue = async (data: PortalSetupData) => {
-    if (!organizationId) {
+    if (!organizationId && !DEV_ONBOARDING_BYPASS) {
       toast.error("Organization ID missing. Please complete company details first.");
       return;
     }
 
     try {
       setIsSubmitting(true);
+      if (DEV_ONBOARDING_BYPASS) {
+        setCurrentStep(5);
+        return;
+      }
 
       let logoUrl: string | null = null;
       if (data.logoDataUrl) {
@@ -175,13 +203,18 @@ const OnboardingPage = () => {
   };
 
   const handleInvitesFinish = async (emails: string[]) => {
-    if (!organizationId) {
+    if (!organizationId && !DEV_ONBOARDING_BYPASS) {
       toast.error("Organization ID missing. Please complete company details first.");
       return;
     }
 
     try {
       setIsSubmitting(true);
+      if (DEV_ONBOARDING_BYPASS) {
+        router.push("/onboarding/complete");
+        return;
+      }
+
       const {
         data: { user },
         error: userError,
@@ -234,38 +267,45 @@ const OnboardingPage = () => {
             Back
           </button>
         )}
-        {currentStep === 1 && <StepAccountType onSelect={handleAccountTypeSelect} />}
-        {currentStep === 2 && (
-          <StepCompanyDetails
-            accountType={accountType}
-            onContinue={handleCompanyDetailsContinue}
-            isSubmitting={isSubmitting}
-          />
-        )}
-        {currentStep === 3 && (
-          <StepFees
-            primaryState={companyState}
-            isMultiState={isMultiState}
-            additionalStates={additionalStates}
-            onContinue={handleFeesContinue}
-            isSubmitting={isSubmitting}
-          />
-        )}
-        {currentStep === 4 && (
-          <StepPortalSetup
-            onContinue={handlePortalSetupContinue}
-            onSkip={() => setCurrentStep(5)}
-            isSubmitting={isSubmitting}
-          />
-        )}
-        {currentStep === 5 && (
-          <StepInviteAdmins
-            accountType={accountType}
-            onFinish={handleInvitesFinish}
-            onSkip={() => handleOnboardingComplete()}
-            isSubmitting={isSubmitting}
-          />
-        )}
+        <div
+          key={currentStep}
+          className={`transition-all duration-200 ease-out ${
+            isStepVisible ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
+          }`}
+        >
+          {currentStep === 1 && <StepAccountType onSelect={handleAccountTypeSelect} />}
+          {currentStep === 2 && (
+            <StepCompanyDetails
+              accountType={accountType}
+              onContinue={handleCompanyDetailsContinue}
+              isSubmitting={isSubmitting}
+            />
+          )}
+          {currentStep === 3 && (
+            <StepFees
+              primaryState={companyState}
+              isMultiState={isMultiState}
+              additionalStates={additionalStates}
+              onContinue={handleFeesContinue}
+              isSubmitting={isSubmitting}
+            />
+          )}
+          {currentStep === 4 && (
+            <StepPortalSetup
+              onContinue={handlePortalSetupContinue}
+              onSkip={() => setCurrentStep(5)}
+              isSubmitting={isSubmitting}
+            />
+          )}
+          {currentStep === 5 && (
+            <StepInviteAdmins
+              accountType={accountType}
+              onFinish={handleInvitesFinish}
+              onSkip={() => handleOnboardingComplete()}
+              isSubmitting={isSubmitting}
+            />
+          )}
+        </div>
 
         <div className="bg-havn-navy px-8 py-8 md:hidden">
           <ValuePropsList

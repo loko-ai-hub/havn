@@ -5,7 +5,6 @@ import { ArrowRight, X, CheckCircle2, XCircle, Loader2, Lightbulb } from "lucide
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
 
 import type { AccountType } from "./StepAccountType";
 import { US_STATES } from "@/lib/us-states";
@@ -91,6 +90,8 @@ const MANAGEMENT_SOFTWARE_OPTIONS = [
   { value: "other", label: "Other" },
 ];
 
+const TAKEN_SLUGS = ["amlo", "demo", "sunset-property-group", "test"];
+
 const SectionHeader = ({ children }: { children: React.ReactNode }) => (
   <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{children}</h2>
 );
@@ -115,7 +116,6 @@ const StepCompanyDetails = ({
   onContinue,
   isSubmitting = false,
 }: StepCompanyDetailsProps) => {
-  const supabase = useMemo(() => createClient(), []);
   const [companyName, setCompanyName] = useState("");
   const [portalSlug, setPortalSlug] = useState("");
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
@@ -138,29 +138,15 @@ const StepCompanyDetails = ({
     }
 
     setSlugStatus("checking");
-    let active = true;
-    const timer = setTimeout(async () => {
-      const { data, error } = await supabase
-        .from("organizations")
-        .select("id")
-        .eq("portal_slug", portalSlug)
-        .limit(1);
-
-      if (!active) return;
-
-      if (error) {
-        setSlugStatus("idle");
-        return;
-      }
-
-      setSlugStatus(data && data.length > 0 ? "taken" : "available");
+    const timer = setTimeout(() => {
+      const isTaken = TAKEN_SLUGS.includes(portalSlug);
+      setSlugStatus(isTaken ? "taken" : "available");
     }, 600);
 
     return () => {
-      active = false;
       clearTimeout(timer);
     };
-  }, [portalSlug, supabase]);
+  }, [portalSlug]);
 
   const handleCompanyNameChange = useCallback(
     (value: string) => {

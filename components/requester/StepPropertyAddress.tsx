@@ -116,6 +116,7 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
     zip: "",
   });
   const [error, setError] = useState<string | null>(null);
+  const [streetError, setStreetError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [choice, setChoice] = useState<ConfirmChoice>(null);
   const [suggestedAddress, setSuggestedAddress] = useState<AddressForm | null>(null);
@@ -135,9 +136,6 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
   const validate = (): string | null => {
     if (!enteredAddress.street || !enteredAddress.city || !enteredAddress.state || !enteredAddress.zip) {
       return "Please complete all required address fields.";
-    }
-    if (PO_BOX_REGEX.test(enteredAddress.street)) {
-      return "PO Boxes are not supported. Please enter a physical property address.";
     }
     if (!ZIP_REGEX.test(enteredAddress.zip)) {
       return "ZIP Code must be in 12345 or 12345-6789 format.";
@@ -159,6 +157,10 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
     const validationError = validate();
     if (validationError) {
       setError(validationError);
+      return;
+    }
+    if (streetError) {
+      setError(streetError);
       return;
     }
 
@@ -190,11 +192,23 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
               <Input
                 id="street"
                 value={form.street}
-                onChange={(e) => setForm((prev) => ({ ...prev, street: e.target.value }))}
+                onChange={(e) => {
+                  const nextStreet = e.target.value;
+                  setForm((prev) => ({ ...prev, street: nextStreet }));
+                  if (PO_BOX_REGEX.test(nextStreet)) {
+                    setStreetError("PO Boxes are not supported. Please enter a physical property address.");
+                  } else {
+                    setStreetError(null);
+                    if (error === "PO Boxes are not supported. Please enter a physical property address.") {
+                      setError(null);
+                    }
+                  }
+                }}
                 placeholder="123 Main Street"
                 className="bg-white pl-10"
               />
             </div>
+            {streetError ? <p className="text-xs text-destructive">{streetError}</p> : null}
           </div>
 
           <div className="space-y-2">

@@ -9,7 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Info, ExternalLink, CheckCircle2, X } from "lucide-react";
+import { ArrowRight, Info, ExternalLink, CheckCircle2, X } from "lucide-react";
 import { US_STATES } from "@/lib/us-states";
 import {
   RESALE_DEFS,
@@ -401,7 +401,8 @@ const StepFees = ({
             disabled={isSubmitting}
             className="h-12 w-full bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90"
           >
-            {isSubmitting ? "Saving..." : "Finish setup"}
+            {isSubmitting ? "Saving..." : "Continue"}
+            {!isSubmitting && <ArrowRight className="ml-2 h-4 w-4" />}
           </Button>
         </form>
       </div>

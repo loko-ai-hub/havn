@@ -1,19 +1,30 @@
-import RequesterStepPlaceholder from "@/components/requester/RequesterStepPlaceholder";
-import { getContinueHref } from "@/lib/requester-flow";
+"use client";
 
-export default async function RequesterAddonsPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
+import { useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 
+import StepAddons from "@/components/requester/StepAddons";
+import { PORTAL_ADDONS } from "@/lib/portal-data";
+
+export default function RequesterAddonsPage() {
+  const router = useRouter();
+  const params = useParams<{ slug: string }>();
+  const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
+  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+
+  const handleToggle = (id: string) => {
+    setSelectedAddons((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
   return (
-    <RequesterStepPlaceholder
-      slug={slug}
-      screenName="Add-ons"
-      continueHref={getContinueHref(slug, "addons")}
-      meta="Optional order add-ons — placeholder."
+    <StepAddons
+      selected={selectedAddons}
+      primaryColor="#1B2B4B"
+      onToggle={handleToggle}
+      addOnsList={PORTAL_ADDONS}
+      onBack={() => router.push(`/r/${slug}/documents`)}
+      onContinue={() => router.push(`/r/${slug}/delivery`)}
     />
   );
 }

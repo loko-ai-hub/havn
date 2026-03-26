@@ -23,11 +23,48 @@ const AFTER_SUBMIT_ITEMS = [
 export function RequesterPortalLanding({
   slug,
   startOrderHref,
+  loading = false,
 }: {
   slug: string;
   startOrderHref: string;
+  loading?: boolean;
 }) {
   const communityName = portalDisplayName(slug);
+
+  if (loading) {
+    return (
+      <div className="relative overflow-hidden">
+        <div className="relative mx-auto max-w-2xl px-6 py-14 md:py-20">
+          <div className="flex flex-col text-center">
+            <div className="mx-auto h-3 w-36 animate-pulse rounded bg-muted" />
+            <div className="mx-auto mt-3 h-10 w-80 animate-pulse rounded bg-muted" />
+            <div className="mx-auto mt-3 h-4 w-96 max-w-full animate-pulse rounded bg-muted" />
+          </div>
+
+          <div className="mt-10 rounded-2xl border border-border bg-card p-6 shadow-sm md:p-8">
+            <div className="rounded-xl border border-border bg-havn-surface/40 p-4">
+              <div className="h-4 w-64 animate-pulse rounded bg-muted" />
+              <div className="mt-3 space-y-2">
+                <div className="h-3 w-56 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-52 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-48 animate-pulse rounded bg-muted" />
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-border bg-havn-surface/40 p-4">
+              <div className="h-4 w-52 animate-pulse rounded bg-muted" />
+              <div className="mt-3 space-y-2">
+                <div className="h-3 w-44 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-60 animate-pulse rounded bg-muted" />
+              </div>
+            </div>
+
+            <div className="mt-6 h-11 w-full animate-pulse rounded-lg bg-muted" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative overflow-hidden">

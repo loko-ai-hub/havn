@@ -28,6 +28,8 @@ export default function StepDeliveryOptions({
   const [deliveryType, setDeliveryType] = useState<string>("standard");
   const [closingDate, setClosingDate] = useState<Date | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [isDateSelecting, setIsDateSelecting] = useState(false);
 
   const options =
     requesterType === "homeowner" ? HOMEOWNER_DELIVERY_OPTIONS : DELIVERY_OPTIONS;
@@ -39,6 +41,12 @@ export default function StepDeliveryOptions({
     }
     setError(null);
     router.push(`/r/${slug}/review`);
+  };
+
+  const handleDateSelect = (date: Date | undefined) => {
+    setIsDateSelecting(true);
+    setClosingDate(date);
+    window.setTimeout(() => setIsDateSelecting(false), 180);
   };
 
   return (
@@ -96,13 +104,19 @@ export default function StepDeliveryOptions({
 
       <div className="mt-6 rounded-xl border border-border bg-card p-4">
         <p className="text-sm font-medium text-foreground">Estimated closing date (optional)</p>
-        <Popover>
+        <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
           <PopoverTrigger className="mt-3 inline-flex h-10 w-full items-center justify-start rounded-lg border border-border bg-white px-3 text-sm text-foreground transition-colors hover:bg-muted">
             <CalendarIcon className="mr-2 h-4 w-4" />
             {closingDate ? format(closingDate, "PPP") : "Pick a date"}
+            {calendarOpen && isDateSelecting ? (
+              <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground" />
+                Selecting...
+              </span>
+            ) : null}
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
-            <Calendar mode="single" selected={closingDate} onSelect={setClosingDate} initialFocus />
+            <Calendar mode="single" selected={closingDate} onSelect={handleDateSelect} initialFocus />
           </PopoverContent>
         </Popover>
       </div>
