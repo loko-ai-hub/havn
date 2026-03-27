@@ -23,6 +23,7 @@ export default function RequesterAddonsPage() {
       primaryColor="#1B2B4B"
       onToggle={handleToggle}
       addOnsList={PORTAL_ADDONS}
+      documentTotal={250}
       onBack={() => router.push(`/r/${slug}/documents`)}
       onContinue={() => router.push(`/r/${slug}/delivery`)}
     />

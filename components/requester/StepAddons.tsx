@@ -10,6 +10,7 @@ type StepAddonsProps = {
   primaryColor: string;
   onToggle: (id: string) => void;
   addOnsList: PortalAddon[];
+  documentTotal?: number;
   onContinue: () => void;
   onBack: () => void;
 };
@@ -19,10 +20,15 @@ export default function StepAddons({
   primaryColor,
   onToggle,
   addOnsList,
+  documentTotal = 0,
   onContinue,
   onBack,
 }: StepAddonsProps) {
   const hasSelection = selected.length > 0;
+  const addOnsTotal = addOnsList
+    .filter((addon) => selected.includes(addon.id))
+    .reduce((sum, addon) => sum + addon.fee, 0);
+  const orderTotal = documentTotal + addOnsTotal;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12 md:py-16">
@@ -61,7 +67,7 @@ export default function StepAddons({
                     <p className="text-base font-semibold text-foreground">{addon.name}</p>
                     {addon.popular ? (
                       <span
-                        className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                        className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
                         style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}
                       >
                         Popular
@@ -79,12 +85,21 @@ export default function StepAddons({
         })}
       </div>
 
-      <div className="mt-8 rounded-xl border border-border bg-card p-4">
-        <p className="text-sm text-muted-foreground">
-          {hasSelection
-            ? `${selected.length} add-on${selected.length > 1 ? "s" : ""} selected`
-            : "No add-ons selected"}
-        </p>
+      <div className="mt-8 rounded-lg bg-secondary/50 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">Documents</p>
+          <p className="text-sm font-semibold text-foreground tabular-nums">{formatCurrency(documentTotal)}</p>
+        </div>
+        <div className="my-2 h-px bg-border" />
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">Add-ons</p>
+          <p className="text-sm font-semibold text-foreground tabular-nums">{formatCurrency(addOnsTotal)}</p>
+        </div>
+        <div className="my-2 h-px bg-border" />
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-bold text-foreground">Order total</p>
+          <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrency(orderTotal)}</p>
+        </div>
       </div>
 
       <div className="mt-8 flex gap-3">
