@@ -1,5 +1,11 @@
-import { PORTAL_DOCUMENTS, formatCurrency, getDocumentFee, type RequesterType } from "@/lib/portal-data";
-import { Check, FileText } from "lucide-react";
+import { useState } from "react";
+import {
+  PORTAL_DOCUMENTS,
+  formatCurrency,
+  getDocumentFee,
+  type RequesterType,
+} from "@/lib/portal-data";
+import { ArrowRight, Check, FileText, Upload } from "lucide-react";
 
 interface StepDocumentSelectionProps {
   requesterType: RequesterType;
@@ -11,85 +17,150 @@ interface StepDocumentSelectionProps {
 }
 
 const RESALE_IDS = ["resale_cert", "resale_cert_update"];
+const LENDER_DOC_IDS = ["lender_questionnaire", "custom_company_form"] as const;
 
 const StepDocumentSelection = ({ requesterType, selected, primaryColor, onToggle, onContinue, onBack }: StepDocumentSelectionProps) => {
   const isHomeowner = requesterType === "homeowner";
+  const isLender = requesterType === "lender_title";
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const availableDocs = PORTAL_DOCUMENTS.filter((d) => {
-    if (!d.availableTo.includes(requesterType)) return false;
-    if (!isHomeowner && d.id === "resale_cert_update") return false;
-    return true;
-  });
+  const availableDocs = isLender
+    ? [
+        {
+          id: "lender_questionnaire",
+          name: "Havn Lender Questionnaire",
+          description:
+            "Use Havn's standard lender questionnaire form, accepted by most lenders and agencies.",
+          fee: 150,
+          required: false,
+          availableTo: ["lender_title"] as RequesterType[],
+        },
+        {
+          id: "custom_company_form",
+          name: "Upload Your Own Form",
+          description:
+            "Use your company's specific questionnaire. Upload a PDF or DOCX file.",
+          fee: 200,
+          required: false,
+          availableTo: ["lender_title"] as RequesterType[],
+        },
+      ]
+    : PORTAL_DOCUMENTS.filter((d) => {
+        if (!d.availableTo.includes(requesterType)) return false;
+        if (!isHomeowner && d.id === "resale_cert_update") return false;
+        return true;
+      });
 
-  const handleToggle = (docId: string) => {
-    if (isHomeowner && RESALE_IDS.includes(docId)) {
-      const otherId = docId === "resale_cert" ? "resale_cert_update" : "resale_cert";
-      if (!selected.includes(docId)) {
-        if (selected.includes(otherId)) onToggle(otherId);
-        onToggle(docId);
-      }
-      return;
-    }
-    onToggle(docId);
-  };
+  const handleToggle = (docId: string) => onToggle(docId);
 
-  const total = getDocumentFee(selected);
+  const total = isLender
+    ? availableDocs.reduce(
+        (sum, doc) => (selected.includes(doc.id) ? sum + doc.fee : sum),
+        0
+      )
+    : getDocumentFee(selected.filter((id) => id !== "custom_company_form"));
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-foreground">Select Documents</h2>
-        <p className="text-sm text-muted-foreground mt-1">Choose the documents you need for this transaction.</p>
+        <h2 className="text-xl font-semibold text-foreground">
+          {isLender ? "Lender Questionnaire" : "Select Documents"}
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          {isLender
+            ? "Choose which questionnaire format you'd like us to complete for this transaction."
+            : "Choose the documents you need for this transaction."}
+        </p>
       </div>
 
       <div className="space-y-2">
         {availableDocs.map((doc) => {
           const isSelected = selected.includes(doc.id);
           const isResale = isHomeowner && RESALE_IDS.includes(doc.id);
+          const isLenderSingleSelect = isLender && LENDER_DOC_IDS.includes(doc.id as (typeof LENDER_DOC_IDS)[number]);
           const isRequired = doc.required && !isResale;
+          const isCustomCompanyForm = doc.id === "custom_company_form";
           return (
-            <button
-              key={doc.id}
-              onClick={() => !isRequired && handleToggle(doc.id)}
-              className={`w-full flex items-center gap-4 rounded-xl border-2 border-border bg-white p-5 text-left transition-all hover:border-muted-foreground/40 ${
-                isRequired ? "cursor-default" : "cursor-pointer"
-              }`}
-              style={isSelected ? { borderColor: primaryColor, backgroundColor: `${primaryColor}08` } : undefined}
-            >
-              {isResale ? (
-                <div
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-                    isSelected ? "" : "border-muted-foreground/30"
-                  }`}
-                  style={isSelected ? { borderColor: primaryColor } : undefined}
-                >
-                  {isSelected && (
-                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />
-                  )}
-                </div>
-              ) : (
-                <div
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
-                    isSelected ? "" : "border-muted-foreground/30"
-                  }`}
-                  style={isSelected ? { borderColor: primaryColor, backgroundColor: primaryColor } : undefined}
-                >
-                  {isSelected && <Check className="h-3 w-3 text-white" />}
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-foreground">{doc.name}</p>
-                  {isRequired && (
-                    <span className="text-[10px] font-medium text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">Required</span>
-                  )}
-                </div>
-                {doc.description && (
-                  <p className="text-xs text-muted-foreground mt-0.5">{doc.description}</p>
+            <div key={doc.id} className="space-y-3">
+              <button
+                onClick={() => !isRequired && handleToggle(doc.id)}
+                className={`w-full flex items-center gap-4 rounded-xl border-2 border-border bg-white p-5 text-left transition-all hover:border-muted-foreground/40 ${
+                  isRequired ? "cursor-default" : "cursor-pointer"
+                }`}
+                style={isSelected ? { borderColor: primaryColor, backgroundColor: `${primaryColor}08` } : undefined}
+              >
+                {isResale || isLenderSingleSelect ? (
+                  <div
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                      isSelected ? "" : "border-muted-foreground/30"
+                    }`}
+                    style={isSelected ? { borderColor: primaryColor } : undefined}
+                  >
+                    {isSelected && (
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />
+                    )}
+                  </div>
+                ) : (
+                  <div
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                      isSelected ? "" : "border-muted-foreground/30"
+                    }`}
+                    style={isSelected ? { borderColor: primaryColor, backgroundColor: primaryColor } : undefined}
+                  >
+                    {isSelected && <Check className="h-3 w-3 text-white" />}
+                  </div>
                 )}
-              </div>
-              <p className="text-sm font-semibold text-foreground tabular-nums">{formatCurrency(doc.fee)}</p>
-            </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">{doc.name}</p>
+                    {isLender && doc.id === "lender_questionnaire" ? (
+                      <a
+                        href="/sample-lender-questionnaire.pdf"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-havn-navy underline underline-offset-2"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        Preview
+                      </a>
+                    ) : null}
+                    {isRequired && (
+                      <span className="text-[10px] font-medium text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">Required</span>
+                    )}
+                  </div>
+                  {doc.description && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{doc.description}</p>
+                  )}
+                </div>
+                <p className="text-sm font-semibold text-foreground tabular-nums">{formatCurrency(doc.fee)}</p>
+              </button>
+              {isCustomCompanyForm && isSelected ? (
+                <div className="rounded-lg border-2 border-dashed border-border bg-card p-4">
+                  <div className="flex items-center gap-2 text-sm text-foreground">
+                    <Upload className="h-4 w-4 text-muted-foreground" />
+                    <p>Click to upload PDF or DOCX</p>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Additional fee applies for custom form processing: +$50 over
+                    the Havn Lender Questionnaire.
+                  </p>
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="mt-2 block w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+                    onChange={(event) => {
+                      setUploadedFileName(event.target.files?.[0]?.name ?? null);
+                      if (uploadError) setUploadError(null);
+                    }}
+                  />
+                  {uploadedFileName ? (
+                    <p className="mt-2 text-xs text-muted-foreground">Selected: {uploadedFileName}</p>
+                  ) : null}
+                  {uploadError ? <p className="mt-2 text-xs text-destructive">{uploadError}</p> : null}
+                </div>
+              ) : null}
+            </div>
           );
         })}
       </div>
@@ -118,16 +189,24 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, onToggle
         <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrency(total)}</p>
       </div>
 
-      <div className="flex gap-3">
-        <button onClick={onBack} className="flex-1 rounded-lg border border-border px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="h-12 flex-1 rounded-lg border border-border px-6 text-base font-medium text-foreground transition-colors hover:bg-secondary">
           Back
         </button>
         <button
-          onClick={onContinue}
-          className="flex-1 rounded-lg px-6 py-3 text-sm font-semibold text-white transition-colors hover:opacity-90"
+          onClick={() => {
+            if (isLender && selected.includes("custom_company_form") && !uploadedFileName) {
+              setUploadError("Please upload your questionnaire to continue.");
+              return;
+            }
+            setUploadError(null);
+            onContinue();
+          }}
+          className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg px-8 text-base font-semibold text-white transition-colors hover:opacity-90"
           style={{ backgroundColor: primaryColor }}
         >
           Continue
+          <ArrowRight className="h-4 w-4" />
         </button>
       </div>
     </div>

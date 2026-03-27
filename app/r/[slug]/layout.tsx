@@ -17,7 +17,7 @@ export default async function RequesterPortalLayout({
   const { data } = await supabase
     .from("organizations")
     .select(
-      "id, name, portal_slug, brand_color, logo_url, portal_tagline, portal_display_name, is_active"
+      "id, name, portal_slug, brand_color, logo_url, portal_tagline, portal_display_name, support_email, is_active"
     )
     .eq("portal_slug", slug)
     .single();

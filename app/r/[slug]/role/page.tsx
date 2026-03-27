@@ -6,7 +6,10 @@ import { ArrowRight, Briefcase, Building2, User } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { REQUESTER_TYPES, type RequesterType } from "@/lib/portal-data";
-import { usePortalOrg } from "@/components/requester/RequesterPortalOrgContext";
+import {
+  usePortalOrg,
+  usePortalOrder,
+} from "@/components/requester/RequesterPortalOrgContext";
 
 const ICONS: Record<RequesterType, typeof User> = {
   homeowner: User,
@@ -16,12 +19,15 @@ const ICONS: Record<RequesterType, typeof User> = {
 
 export default function RequesterRolePage() {
   const portalOrg = usePortalOrg();
+  const { order, updateOrder } = usePortalOrder();
   const primaryColor = portalOrg?.brandColor ?? "#1B2B4B";
   const router = useRouter();
   const params = useParams<{ slug: string }>();
   const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
 
-  const [selected, setSelected] = useState<RequesterType | null>(null);
+  const [selected, setSelected] = useState<RequesterType | null>(
+    order.requesterType
+  );
   const [error, setError] = useState<string | null>(null);
 
   const roleCards = useMemo(() => REQUESTER_TYPES, []);
@@ -52,6 +58,7 @@ export default function RequesterRolePage() {
               type="button"
               onClick={() => {
                 setSelected(role.value);
+                updateOrder({ requesterType: role.value });
                 if (error) setError(null);
               }}
               className={[
@@ -79,11 +86,11 @@ export default function RequesterRolePage() {
 
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
-      <div className="mt-8">
+      <div className="mt-8 flex justify-end">
         <Button
           type="button"
           onClick={handleContinue}
-          className="h-11 min-w-32 text-white hover:opacity-90"
+          className="h-14 min-w-32 px-6 py-4 text-base font-semibold text-white hover:opacity-90"
           style={{ backgroundColor: primaryColor }}
         >
           Continue

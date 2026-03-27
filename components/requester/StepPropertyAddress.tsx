@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MapPin } from "lucide-react";
+import { ArrowRight, MapPin } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { US_STATES } from "@/lib/us-states";
+import { usePortalOrder } from "@/components/requester/RequesterPortalOrgContext";
 
 type AddressForm = {
   street: string;
@@ -108,15 +109,21 @@ function AddressCard({
 
 export default function StepPropertyAddress({ slug }: { slug: string }) {
   const router = useRouter();
+  const { order, updateOrder } = usePortalOrder();
   const [form, setForm] = useState<AddressForm>({
-    street: "",
-    unit: "",
-    city: "",
-    state: "",
-    zip: "",
+    street: order.propertyAddress,
+    unit: order.unitNumber,
+    city: order.city,
+    state: order.state,
+    zip: order.zip,
   });
   const [error, setError] = useState<string | null>(null);
-  const [streetError, setStreetError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{
+    street?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  }>({});
   const [confirming, setConfirming] = useState(false);
   const [choice, setChoice] = useState<ConfirmChoice>(null);
   const [suggestedAddress, setSuggestedAddress] = useState<AddressForm | null>(null);
@@ -133,14 +140,24 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
     [form]
   );
 
-  const validate = (): string | null => {
-    if (!enteredAddress.street || !enteredAddress.city || !enteredAddress.state || !enteredAddress.zip) {
-      return "Please complete all required address fields.";
+  const validate = () => {
+    const nextErrors: {
+      street?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+    } = {};
+    if (!enteredAddress.street) nextErrors.street = "Street Address is required.";
+    if (!enteredAddress.city) nextErrors.city = "City is required.";
+    if (!enteredAddress.state) nextErrors.state = "State is required.";
+    if (!enteredAddress.zip) nextErrors.zip = "ZIP Code is required.";
+    else if (!ZIP_REGEX.test(enteredAddress.zip)) {
+      nextErrors.zip = "ZIP Code must be in 12345 or 12345-6789 format.";
     }
-    if (!ZIP_REGEX.test(enteredAddress.zip)) {
-      return "ZIP Code must be in 12345 or 12345-6789 format.";
+    if (PO_BOX_REGEX.test(enteredAddress.street)) {
+      nextErrors.street = "PO Boxes are not supported. Please enter a physical property address.";
     }
-    return null;
+    return nextErrors;
   };
 
   const handleContinue = () => {
@@ -150,29 +167,41 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
         return;
       }
       setError(null);
+      const chosenAddress = choice === "suggested" && suggestedAddress ? suggestedAddress : enteredAddress;
+      updateOrder({
+        propertyAddress: chosenAddress.street,
+        unitNumber: chosenAddress.unit,
+        city: chosenAddress.city,
+        state: chosenAddress.state,
+        zip: chosenAddress.zip,
+      });
       router.push(`/r/${slug}/documents`);
       return;
     }
 
-    const validationError = validate();
-    if (validationError) {
-      setError(validationError);
+    const validationErrors = validate();
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors);
       return;
     }
-    if (streetError) {
-      setError(streetError);
-      return;
-    }
+    setFieldErrors({});
 
     const suggestion = buildSuggestedAddress(enteredAddress);
     if (addressesDiffer(enteredAddress, suggestion)) {
       setSuggestedAddress(suggestion);
       setConfirming(true);
-      setChoice(null);
+      setChoice("suggested");
       setError(null);
       return;
     }
 
+    updateOrder({
+      propertyAddress: enteredAddress.street,
+      unitNumber: enteredAddress.unit,
+      city: enteredAddress.city,
+      state: enteredAddress.state,
+      zip: enteredAddress.zip,
+    });
     router.push(`/r/${slug}/documents`);
   };
 
@@ -195,28 +224,29 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
                 onChange={(e) => {
                   const nextStreet = e.target.value;
                   setForm((prev) => ({ ...prev, street: nextStreet }));
-                  if (PO_BOX_REGEX.test(nextStreet)) {
-                    setStreetError("PO Boxes are not supported. Please enter a physical property address.");
-                  } else {
-                    setStreetError(null);
-                    if (error === "PO Boxes are not supported. Please enter a physical property address.") {
-                      setError(null);
-                    }
+                  if (error) setError(null);
+                  if (fieldErrors.street) {
+                    setFieldErrors((prev) => ({ ...prev, street: undefined }));
                   }
                 }}
                 placeholder="123 Main Street"
                 className="bg-white pl-10"
               />
             </div>
-            {streetError ? <p className="text-xs text-destructive">{streetError}</p> : null}
+            {fieldErrors.street ? <p className="text-xs text-destructive">{fieldErrors.street}</p> : null}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="unit">Unit/Lot Number (optional)</Label>
+            <Label htmlFor="unit">
+              Unit/Lot Number <span className="text-muted-foreground">(optional)</span>
+            </Label>
             <Input
               id="unit"
               value={form.unit}
-              onChange={(e) => setForm((prev) => ({ ...prev, unit: e.target.value }))}
+              onChange={(e) => {
+                setForm((prev) => ({ ...prev, unit: e.target.value }));
+                if (error) setError(null);
+              }}
               placeholder="Unit 4B"
               className="bg-white"
             />
@@ -228,17 +258,30 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
               <Input
                 id="city"
                 value={form.city}
-                onChange={(e) => setForm((prev) => ({ ...prev, city: e.target.value }))}
+                onChange={(e) => {
+                  setForm((prev) => ({ ...prev, city: e.target.value }));
+                  if (error) setError(null);
+                  if (fieldErrors.city) {
+                    setFieldErrors((prev) => ({ ...prev, city: undefined }));
+                  }
+                }}
                 placeholder="Seattle"
                 className="bg-white"
               />
+              {fieldErrors.city ? <p className="text-xs text-destructive">{fieldErrors.city}</p> : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="state">State</Label>
               <select
                 id="state"
                 value={form.state}
-                onChange={(e) => setForm((prev) => ({ ...prev, state: e.target.value }))}
+                onChange={(e) => {
+                  setForm((prev) => ({ ...prev, state: e.target.value }));
+                  if (error) setError(null);
+                  if (fieldErrors.state) {
+                    setFieldErrors((prev) => ({ ...prev, state: undefined }));
+                  }
+                }}
                 className="h-9 w-full rounded-lg border border-border bg-white px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="">Select</option>
@@ -248,16 +291,24 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
                   </option>
                 ))}
               </select>
+              {fieldErrors.state ? <p className="text-xs text-destructive">{fieldErrors.state}</p> : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="zip">ZIP Code</Label>
               <Input
                 id="zip"
                 value={form.zip}
-                onChange={(e) => setForm((prev) => ({ ...prev, zip: e.target.value }))}
+                onChange={(e) => {
+                  setForm((prev) => ({ ...prev, zip: e.target.value }));
+                  if (error) setError(null);
+                  if (fieldErrors.zip) {
+                    setFieldErrors((prev) => ({ ...prev, zip: undefined }));
+                  }
+                }}
                 placeholder="98101"
                 className="bg-white"
               />
+              {fieldErrors.zip ? <p className="text-xs text-destructive">{fieldErrors.zip}</p> : null}
             </div>
           </div>
         </div>
@@ -282,7 +333,7 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
               />
             ) : null}
             <AddressCard
-              title="As entered"
+              title="As Entered"
               address={enteredAddress}
               selected={choice === "entered"}
               onSelect={() => {
@@ -296,12 +347,13 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
 
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
-      <div className="mt-8 flex gap-3">
-        <Button type="button" variant="outline" className="flex-1" onClick={() => router.push(`/r/${slug}/info`)}>
+      <div className="mt-8 flex items-center gap-3">
+        <Button type="button" variant="outline" className="h-12 flex-1 text-base" onClick={() => router.push(`/r/${slug}/info`)}>
           Back
         </Button>
-        <Button type="button" className="flex-1 bg-havn-navy text-white hover:bg-havn-navy-light" onClick={handleContinue}>
+        <Button type="button" className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light" onClick={handleContinue}>
           Continue
+          <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       </div>
     </div>

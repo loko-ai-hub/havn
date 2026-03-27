@@ -10,17 +10,17 @@ export const REQUESTER_TYPES: RequesterTypeOption[] = [
   {
     value: "homeowner",
     title: "Homeowner",
-    description: "I own or am selling a unit in this community",
+    description: "I own the property being sold.",
   },
   {
     value: "buyer_agent",
-    title: "Buyer's Agent",
-    description: "I represent a buyer or am handling a real estate transaction",
+    title: "Buyer or Seller's Agent",
+    description: "I represent the buyer or seller in this transaction.",
   },
   {
     value: "lender_title",
     title: "Lender or Title Company",
-    description: "I need documents for a loan or closing",
+    description: "I need documents for a loan or closing.",
   },
 ];
 
@@ -64,7 +64,7 @@ export const PORTAL_DOCUMENTS: PortalDocument[] = [
     description: "Confirms current account balance and any amounts owed at closing",
     fee: 175,
     required: false,
-    availableTo: ["lender_title", "buyer_agent"],
+    availableTo: ["buyer_agent"],
   },
   {
     id: "governing_docs",
@@ -150,16 +150,34 @@ export const PORTAL_ADDONS: PortalAddon[] = [
 
 export const LENDER_ADDONS: PortalAddon[] = [
   {
-    id: "flood_cert",
-    name: "Flood Certificate",
-    description: "FEMA flood zone determination",
-    fee: 15,
+    id: "rush_processing",
+    name: "Rush Processing",
+    description: "Expedite your order to 3 business days",
+    fee: 150,
   },
   {
-    id: "tax_cert",
-    name: "Tax Certificate",
-    description: "Current property tax status",
-    fee: 20,
+    id: "hoa_violation_search",
+    name: "HOA Violation Search",
+    description: "Check for any open violations on the property",
+    fee: 75,
+  },
+  {
+    id: "lien_search",
+    name: "Lien Search",
+    description: "Search for any outstanding liens against the property",
+    fee: 100,
+  },
+  {
+    id: "financial_statements",
+    name: "Financial Statements",
+    description: "Detailed financial records for the association",
+    fee: 125,
+  },
+  {
+    id: "insurance_verification",
+    name: "Insurance Verification",
+    description: "Verify current insurance coverage and certificates",
+    fee: 50,
   },
 ];
 

@@ -10,14 +10,14 @@ function portalDisplayName(slug: string): string {
 }
 
 const REQUIRED_ITEMS = [
-  "Property address",
+  "The property address being sold",
   "Estimated closing date",
-  "Payment method",
+  "A payment method for processing fees",
 ] as const;
 
 const AFTER_SUBMIT_ITEMS = [
-  "Documents are delivered by email",
-  "A Havn account is created to track your order",
+  "Your completed report will be sent directly to your email",
+  "You'll be able to create an account to track your request status in real time",
 ] as const;
 
 export function RequesterPortalLanding({
@@ -86,7 +86,7 @@ export function RequesterPortalLanding({
           <h1 className="mt-3 text-balance text-3xl font-semibold tracking-tight text-havn-navy md:text-4xl">
             Order Association Documents
           </h1>
-          <p className="mt-3 max-w-md text-pretty text-sm leading-relaxed text-muted-foreground md:text-base">
+          <p className="mx-auto mt-3 max-w-md text-pretty text-sm leading-relaxed text-muted-foreground md:text-base">
             {welcomeMessage}
           </p>
         </div>

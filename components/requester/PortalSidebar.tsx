@@ -41,18 +41,14 @@ function getTextColor(hex: string): string {
   return luminance > 0.6 ? "#0f172a" : "#ffffff";
 }
 
-function getSteps(requesterType?: RequesterType): SidebarStep[] {
+function getSteps(): SidebarStep[] {
   return [
     { number: 1, label: "Your Role", segment: "role" },
     { number: 2, label: "Your Information", segment: "info" },
     { number: 3, label: "Property Address", segment: "property" },
     { number: 4, label: "Documents", segment: "documents" },
-    {
-      number: 5,
-      label: requesterType === "lender_title" ? "Delivery & Timing" : "Delivery Speed",
-      segment: "delivery",
-    },
-    { number: 6, label: "Add-Ons", segment: "addons" },
+    { number: 5, label: "Add-Ons", segment: "addons" },
+    { number: 6, label: "Delivery & Timing", segment: "delivery" },
     { number: 7, label: "Review & Pay", segment: "review" },
     { number: 8, label: "Confirmation", segment: "confirmation" },
   ];
@@ -64,10 +60,9 @@ export default function PortalSidebar({
   logoUrl,
   primaryColor,
   currentStep,
-  requesterType,
 }: PortalSidebarProps) {
   const textColor = getTextColor(primaryColor);
-  const steps = getSteps(requesterType);
+  const steps = getSteps();
   const completedBg = textColor === "#ffffff" ? "bg-white/20" : "bg-black/15";
   const activeBg = textColor === "#ffffff" ? "bg-white text-slate-900" : "bg-slate-900 text-white";
   const mutedText = textColor === "#ffffff" ? "text-white/65" : "text-black/60";

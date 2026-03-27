@@ -1,13 +1,19 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { formatCurrency, type PortalAddon } from "@/lib/portal-data";
+import {
+  LENDER_ADDONS,
+  formatCurrency,
+  type PortalAddon,
+  type RequesterType,
+} from "@/lib/portal-data";
 
 type StepAddonsProps = {
   selected: string[];
   primaryColor: string;
+  requesterType: RequesterType;
   onToggle: (id: string) => void;
   addOnsList: PortalAddon[];
   documentTotal?: number;
@@ -18,16 +24,21 @@ type StepAddonsProps = {
 export default function StepAddons({
   selected,
   primaryColor,
+  requesterType,
   onToggle,
   addOnsList,
   documentTotal = 0,
   onContinue,
   onBack,
 }: StepAddonsProps) {
+  const displayedAddOns = requesterType === "lender_title" ? LENDER_ADDONS : addOnsList;
   const hasSelection = selected.length > 0;
-  const addOnsTotal = addOnsList
+  const addOnsTotal = displayedAddOns
     .filter((addon) => selected.includes(addon.id))
     .reduce((sum, addon) => sum + addon.fee, 0);
+  const selectedAddOnRows = displayedAddOns.filter((addon) =>
+    selected.includes(addon.id)
+  );
   const orderTotal = documentTotal + addOnsTotal;
 
   return (
@@ -38,7 +49,7 @@ export default function StepAddons({
       </p>
 
       <div className="mt-6 space-y-3">
-        {addOnsList.map((addon) => {
+        {displayedAddOns.map((addon) => {
           const isSelected = selected.includes(addon.id);
           return (
             <button
@@ -96,22 +107,32 @@ export default function StepAddons({
           <p className="text-sm font-semibold text-foreground tabular-nums">{formatCurrency(addOnsTotal)}</p>
         </div>
         <div className="my-2 h-px bg-border" />
+        {selectedAddOnRows.map((addon) => (
+          <div key={addon.id} className="flex items-center justify-between py-1">
+            <p className="text-sm text-muted-foreground">{addon.name}</p>
+            <p className="text-sm font-semibold text-foreground tabular-nums">
+              {formatCurrency(addon.fee)}
+            </p>
+          </div>
+        ))}
+        {selectedAddOnRows.length > 0 ? <div className="my-2 h-px bg-border" /> : null}
         <div className="flex items-center justify-between">
           <p className="text-sm font-bold text-foreground">Order total</p>
           <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrency(orderTotal)}</p>
         </div>
       </div>
 
-      <div className="mt-8 flex gap-3">
-        <Button type="button" variant="outline" className="flex-1" onClick={onBack}>
+      <div className="mt-8 flex items-center gap-3">
+        <Button type="button" variant="outline" className="h-12 flex-1 text-base" onClick={onBack}>
           Back
         </Button>
         <Button
           type="button"
-          className="flex-1 bg-havn-navy text-white hover:bg-havn-navy-light"
+          className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light"
           onClick={onContinue}
         >
           {hasSelection ? "Continue" : "Skip"}
+          {hasSelection ? <ArrowRight className="ml-2 h-4 w-4" /> : null}
         </Button>
       </div>
     </div>

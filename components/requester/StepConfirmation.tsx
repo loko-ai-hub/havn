@@ -39,10 +39,10 @@ export default function StepConfirmation({
       </div>
 
       <div className="mt-8 flex items-center gap-3">
-        <Button type="button" variant="outline" onClick={() => router.push(`/r/${slug}/track/${orderNumber}`)}>
+        <Button type="button" variant="outline" className="h-12 flex-1 text-base" onClick={() => router.push(`/r/${slug}/track/${orderNumber}`)}>
           Track order
         </Button>
-        <Button type="button" onClick={() => router.push(`/r/${slug}`)} className="bg-havn-navy text-white hover:bg-havn-navy-light">
+        <Button type="button" onClick={() => router.push(`/r/${slug}`)} className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light">
           Return to portal
         </Button>
       </div>
