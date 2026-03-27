@@ -5,8 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 
 import StepDocumentSelection from "@/components/requester/StepDocumentSelection";
 import type { RequesterType } from "@/lib/portal-data";
+import { usePortalOrg } from "@/components/requester/RequesterPortalOrgContext";
 
 export default function RequesterDocumentsPage() {
+  const portalOrg = usePortalOrg();
+  const primaryColor = portalOrg?.brandColor ?? "#1B2B4B";
   const router = useRouter();
   const params = useParams<{ slug: string }>();
   const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
@@ -18,7 +21,7 @@ export default function RequesterDocumentsPage() {
       <StepDocumentSelection
         requesterType={requesterType}
         selected={selected}
-        primaryColor="#1B2B4B"
+        primaryColor={primaryColor}
         onToggle={(docId) =>
           setSelected((prev) =>
             prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]

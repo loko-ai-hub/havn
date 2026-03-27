@@ -6,6 +6,7 @@ import { ArrowRight, Briefcase, Building2, User } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { REQUESTER_TYPES, type RequesterType } from "@/lib/portal-data";
+import { usePortalOrg } from "@/components/requester/RequesterPortalOrgContext";
 
 const ICONS: Record<RequesterType, typeof User> = {
   homeowner: User,
@@ -14,7 +15,8 @@ const ICONS: Record<RequesterType, typeof User> = {
 };
 
 export default function RequesterRolePage() {
-  const primaryColor = "#1B2B4B";
+  const portalOrg = usePortalOrg();
+  const primaryColor = portalOrg?.brandColor ?? "#1B2B4B";
   const router = useRouter();
   const params = useParams<{ slug: string }>();
   const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
@@ -78,7 +80,12 @@ export default function RequesterRolePage() {
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
       <div className="mt-8">
-        <Button type="button" onClick={handleContinue} className="h-11 min-w-32 bg-havn-navy text-white hover:bg-havn-navy-light">
+        <Button
+          type="button"
+          onClick={handleContinue}
+          className="h-11 min-w-32 text-white hover:opacity-90"
+          style={{ backgroundColor: primaryColor }}
+        >
           Continue
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>

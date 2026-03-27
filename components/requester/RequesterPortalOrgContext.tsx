@@ -32,3 +32,14 @@ export function RequesterPortalOrgProvider({
 export function useRequesterPortalOrg() {
   return useContext(RequesterPortalOrgContext);
 }
+
+export function usePortalOrg() {
+  const org = useContext(RequesterPortalOrgContext);
+  if (!org) return null;
+  return {
+    name: org.name,
+    brandColor: org.brand_color ?? "#1B2B4B",
+    logoUrl: org.logo_url,
+    portalTagline: org.portal_tagline,
+  };
+}

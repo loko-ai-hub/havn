@@ -5,8 +5,11 @@ import { useParams } from "next/navigation";
 
 import StepConfirmation from "@/components/requester/StepConfirmation";
 import type { PortalOrder } from "@/lib/portal-data";
+import { usePortalOrg } from "@/components/requester/RequesterPortalOrgContext";
 
 export default function RequesterConfirmationPage() {
+  const portalOrg = usePortalOrg();
+  const primaryColor = portalOrg?.brandColor ?? "#1B2B4B";
   const params = useParams<{ slug: string }>();
   const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
   const mockOrder = useMemo<PortalOrder>(
@@ -35,6 +38,8 @@ export default function RequesterConfirmationPage() {
     []
   );
   return (
-    <StepConfirmation slug={slug} order={mockOrder} orderNumber="ORD-00001" />
+    <div data-primary-color={primaryColor}>
+      <StepConfirmation slug={slug} order={mockOrder} orderNumber="ORD-00001" />
+    </div>
   );
 }
