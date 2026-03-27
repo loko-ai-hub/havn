@@ -23,13 +23,19 @@ const AFTER_SUBMIT_ITEMS = [
 export function RequesterPortalLanding({
   slug,
   startOrderHref,
+  companyName,
+  primaryColor,
+  welcomeMessage,
   loading = false,
 }: {
   slug: string;
   startOrderHref: string;
+  companyName: string;
+  primaryColor: string;
+  welcomeMessage: string;
   loading?: boolean;
 }) {
-  const communityName = portalDisplayName(slug);
+  const communityName = companyName?.trim() || portalDisplayName(slug);
 
   if (loading) {
     return (
@@ -81,7 +87,7 @@ export function RequesterPortalLanding({
             Order Association Documents
           </h1>
           <p className="mt-3 max-w-md text-pretty text-sm leading-relaxed text-muted-foreground md:text-base">
-            Request HOA and association documents for your closing or refinance.
+            {welcomeMessage}
           </p>
         </div>
 
@@ -117,7 +123,8 @@ export function RequesterPortalLanding({
           <div className="mt-6 space-y-3">
             <Link
               href={startOrderHref}
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-havn-navy px-4 text-sm font-medium text-white transition-colors hover:bg-havn-navy-light hover:text-white"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium text-white transition-colors hover:opacity-90"
+              style={{ backgroundColor: primaryColor }}
             >
               Get Started
               <ArrowRight className="h-4 w-4" aria-hidden />

@@ -1,86 +1,43 @@
-"use client";
+import RequesterPortalFrame from "@/components/requester/RequesterPortalFrame";
+import {
+  RequesterPortalOrgProvider,
+  type OrgPortalData,
+} from "@/components/requester/RequesterPortalOrgContext";
+import { createPublicClient } from "@/lib/supabase/public";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams, usePathname } from "next/navigation";
-
-import PortalSidebar from "@/components/requester/PortalSidebar";
-
-function getCurrentStep(pathname: string): number {
-  if (/\/r\/[^/]+$/.test(pathname)) return 0;
-  if (pathname.includes("/role")) return 1;
-  if (pathname.includes("/info")) return 2;
-  if (pathname.includes("/property")) return 3;
-  if (pathname.includes("/documents")) return 4;
-  if (pathname.includes("/delivery")) return 5;
-  if (pathname.includes("/addons")) return 6;
-  if (pathname.includes("/review")) return 7;
-  if (pathname.includes("/confirmation")) return 8;
-  return 0;
-}
-
-function shouldShowSidebar(pathname: string): boolean {
-  if (/\/r\/[^/]+$/.test(pathname)) return true;
-  if (/\/r\/[^/]+\/role$/.test(pathname)) return true;
-  if (/\/r\/[^/]+\/info$/.test(pathname)) return true;
-  if (/\/r\/[^/]+\/property$/.test(pathname)) return true;
-  if (/\/r\/[^/]+\/documents$/.test(pathname)) return true;
-  if (/\/r\/[^/]+\/addons$/.test(pathname)) return true;
-  if (/\/r\/[^/]+\/delivery$/.test(pathname)) return true;
-  if (/\/r\/[^/]+\/review$/.test(pathname)) return true;
-  if (/\/r\/[^/]+\/confirmation$/.test(pathname)) return true;
-  if (/\/r\/[^/]+\/track\/[^/]+$/.test(pathname)) return true;
-  return false;
-}
-
-export default function RequesterPortalLayout({
+export default async function RequesterPortalLayout({
   children,
+  params,
 }: {
   children: React.ReactNode;
+  params: Promise<{ slug: string }>;
 }) {
-  const pathname = usePathname();
-  const params = useParams<{ slug: string }>();
-  const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
-  const [isRouteVisible, setIsRouteVisible] = useState(false);
-  const showSidebar = useMemo(() => shouldShowSidebar(pathname), [pathname]);
+  const { slug } = await params;
+  const supabase = createPublicClient();
+  const { data } = await supabase
+    .from("organizations")
+    .select(
+      "id, name, portal_slug, brand_color, logo_url, portal_tagline, portal_display_name, is_active"
+    )
+    .eq("portal_slug", slug)
+    .single();
+  const org = data;
 
-  useEffect(() => {
-    setIsRouteVisible(false);
-    const frame = requestAnimationFrame(() => setIsRouteVisible(true));
-    return () => cancelAnimationFrame(frame);
-  }, [pathname]);
+  if (!org || org.is_active === false) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-havn-surface px-6">
+        <p className="text-center text-base text-muted-foreground">
+          This portal is not available.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex min-h-screen bg-havn-surface text-foreground">
-      {showSidebar ? (
-        <PortalSidebar
-          slug={slug}
-          companyName="Acme Corp"
-          logoUrl={null}
-          primaryColor="#1B2B4B"
-          currentStep={getCurrentStep(pathname)}
-          requesterType={undefined}
-        />
-      ) : null}
-      <main className="min-w-0 flex-1">
-        <header className="border-b border-border bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/70">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
-            <span className="text-lg font-semibold tracking-tight text-havn-navy">
-              Havn
-            </span>
-            <code className="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground">
-              havn.com/r/{slug}
-            </code>
-          </div>
-        </header>
-        <div
-          key={pathname}
-          className={`transition-all duration-200 ease-out ${
-            isRouteVisible ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
-          }`}
-        >
-          {children}
-        </div>
-      </main>
-    </div>
+    <RequesterPortalOrgProvider org={org as OrgPortalData}>
+      <RequesterPortalFrame slug={slug} org={org as OrgPortalData}>
+        {children}
+      </RequesterPortalFrame>
+    </RequesterPortalOrgProvider>
   );
 }
