@@ -138,7 +138,7 @@ export async function submitOrder(input: {
           <p><strong>Delivery:</strong> ${deliveryLabel}</p>
           <p><strong>Total:</strong> ${formatCurrency(totalFee)}</p>
           <p>The management company will be in touch once your documents are ready.</p>
-          <p>Questions? Contact us at ${supportEmail || "support@havn.com"}</p>
+          <p>Questions? Contact us at ${supportEmail || "loren@havnhq.com"}</p>
         `,
       });
     } catch (emailError) {
