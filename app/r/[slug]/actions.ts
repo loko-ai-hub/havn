@@ -1,7 +1,7 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import resend from "@/lib/resend";
+import resend, { RESEND_FROM_EMAIL } from "@/lib/resend";
 import {
   DELIVERY_OPTIONS,
   HOMEOWNER_DELIVERY_OPTIONS,
@@ -127,7 +127,7 @@ export async function submitOrder(input: {
   if (process.env.RESEND_API_KEY) {
     try {
       await resend.emails.send({
-        from: "onboarding@resend.dev",
+        from: RESEND_FROM_EMAIL,
         to: order.requesterEmail,
         subject: `Your order has been received — ${portalDisplayName}`,
         html: `
