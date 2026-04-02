@@ -50,7 +50,8 @@ function getSteps(): SidebarStep[] {
     { number: 5, label: "Add-Ons", segment: "addons" },
     { number: 6, label: "Delivery & Timing", segment: "delivery" },
     { number: 7, label: "Review & Pay", segment: "review" },
-    { number: 8, label: "Confirmation", segment: "confirmation" },
+    { number: 8, label: "Payment", segment: "payment" },
+    { number: 9, label: "Confirmation", segment: "confirmation" },
   ];
 }
 

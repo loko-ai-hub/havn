@@ -4,13 +4,13 @@ import { useState, useTransition } from "react";
 import { useParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 
-import StepReview from "@/components/requester/StepReview";
-import type { PortalOrder } from "@/lib/portal-data";
+import StepReview from "../../../../components/requester/StepReview";
+import type { PortalOrder } from "../../../../lib/portal-data";
 import {
   usePortalOrg,
   usePortalOrder,
   useRequesterPortalOrg,
-} from "@/components/requester/RequesterPortalOrgContext";
+} from "../../../../components/requester/RequesterPortalOrgContext";
 import { submitOrder } from "./actions";
 
 export default function RequesterReviewPage() {
@@ -61,7 +61,12 @@ export default function RequesterReviewPage() {
         setSubmitError(result.error ?? "Unable to submit your order. Please try again.");
         return;
       }
-      router.push(result.redirectTo);
+      const firstId = result.insertedIds?.[0];
+      if (!firstId) {
+        setSubmitError("Unable to start payment. Please try again.");
+        return;
+      }
+      router.push(`/r/${slug}/payment?orderId=${encodeURIComponent(firstId)}`);
     });
   };
 
