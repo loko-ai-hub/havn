@@ -26,7 +26,8 @@ function getCurrentStep(pathname: string): number {
   if (pathname.includes("/addons")) return 5;
   if (pathname.includes("/delivery")) return 6;
   if (pathname.includes("/review")) return 7;
-  if (pathname.includes("/confirmation")) return 8;
+  if (pathname.includes("/payment")) return 8;
+  if (pathname.includes("/confirmation")) return 9;
   return 0;
 }
 
@@ -39,6 +40,7 @@ function shouldShowSidebar(pathname: string): boolean {
   if (/\/r\/[^/]+\/addons$/.test(pathname)) return true;
   if (/\/r\/[^/]+\/delivery$/.test(pathname)) return true;
   if (/\/r\/[^/]+\/review$/.test(pathname)) return true;
+  if (/\/r\/[^/]+\/payment$/.test(pathname)) return true;
   if (/\/r\/[^/]+\/confirmation$/.test(pathname)) return true;
   if (/\/r\/[^/]+\/track\/[^/]+$/.test(pathname)) return true;
   return false;
