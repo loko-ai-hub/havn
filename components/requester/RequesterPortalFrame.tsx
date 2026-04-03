@@ -42,8 +42,11 @@ function shouldShowSidebar(pathname: string): boolean {
   if (/\/r\/[^/]+\/review$/.test(pathname)) return true;
   if (/\/r\/[^/]+\/payment$/.test(pathname)) return true;
   if (/\/r\/[^/]+\/confirmation$/.test(pathname)) return true;
-  if (/\/r\/[^/]+\/track\/[^/]+$/.test(pathname)) return true;
   return false;
+}
+
+function isTrackPage(pathname: string): boolean {
+  return /\/r\/[^/]+\/track\/[^/]+$/.test(pathname);
 }
 
 export default function RequesterPortalFrame({
@@ -57,7 +60,9 @@ export default function RequesterPortalFrame({
 }) {
   const pathname = usePathname();
   const [isRouteVisible, setIsRouteVisible] = useState(false);
-  const showSidebar = useMemo(() => shouldShowSidebar(pathname), [pathname]);
+  const track = useMemo(() => isTrackPage(pathname), [pathname]);
+  const showSidebar = useMemo(() => !track && shouldShowSidebar(pathname), [pathname, track]);
+  const showPortalHeader = useMemo(() => !track, [track]);
 
   useEffect(() => {
     setIsRouteVisible(false);
@@ -78,14 +83,16 @@ export default function RequesterPortalFrame({
         />
       ) : null}
       <main className="min-w-0 flex-1 h-screen overflow-y-auto">
-        <header className="sticky top-0 z-20 border-b border-border bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/70">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
-            <span className="text-lg font-semibold tracking-tight text-havn-navy">Havn</span>
-            <code className="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground">
-              havn.com/r/{slug}
-            </code>
-          </div>
-        </header>
+        {showPortalHeader ? (
+          <header className="sticky top-0 z-20 border-b border-border bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/70">
+            <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
+              <span className="text-lg font-semibold tracking-tight text-havn-navy">Havn</span>
+              <code className="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground">
+                havn.com/r/{slug}
+              </code>
+            </div>
+          </header>
+        ) : null}
         <div
           key={pathname}
           className={`transition-all duration-200 ease-out ${
