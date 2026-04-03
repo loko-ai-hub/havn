@@ -42,10 +42,20 @@ export default async function DashboardOrdersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Orders</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Incoming document requests for your organization.
-      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Recent document requests for your organization.
+          </p>
+        </div>
+        <Link
+          href="/dashboard/requests"
+          className="inline-flex items-center justify-center rounded-lg border border-havn-navy bg-havn-navy px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+        >
+          View all requests →
+        </Link>
+      </div>
 
       {rows.length === 0 ? (
         <div className="mt-10 rounded-xl border border-border bg-card p-10 text-center">
@@ -70,7 +80,7 @@ export default async function DashboardOrdersPage() {
             </thead>
             <tbody>
               {rows.map((order) => {
-                const href = `/dashboard/orders/${order.id}`;
+                const href = `/dashboard/requests/${order.id}`;
                 return (
                   <tr key={order.id} className="border-b border-border last:border-0 hover:bg-muted/30">
                     <td className="px-4 py-3 align-top">
