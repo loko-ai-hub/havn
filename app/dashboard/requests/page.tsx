@@ -3,8 +3,8 @@
 import { format, parseISO } from "date-fns";
 import { Inbox, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,13 @@ type OrderRow = {
 
 type FilterTab = "all" | "pending_payment" | "paid" | "fulfilled";
 
+function filterFromSearchParam(param: string | null): FilterTab {
+  if (param === "pending_payment" || param === "paid" || param === "fulfilled" || param === "all") {
+    return param;
+  }
+  return "all";
+}
+
 function formatOrderDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
@@ -47,13 +54,18 @@ function formatOrderDate(iso: string | null | undefined): string {
   }
 }
 
-export default function DashboardRequestsPage() {
+function DashboardRequestsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    setFilter(filterFromSearchParam(searchParams.get("filter")));
+  }, [searchParams]);
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -285,5 +297,13 @@ export default function DashboardRequestsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DashboardRequestsPage() {
+  return (
+    <Suspense fallback={<p className="text-sm text-muted-foreground">Loading requests…</p>}>
+      <DashboardRequestsPageInner />
+    </Suspense>
   );
 }
