@@ -69,6 +69,9 @@ const OnboardingPage = () => {
           portal_slug: data.portalSlug,
           support_email: data.supportEmail,
           support_phone: data.supportPhone,
+          city: data.city.trim() || null,
+          state: data.state.trim() || null,
+          zip: data.zip.trim() || null,
         })
         .select("id")
         .single();

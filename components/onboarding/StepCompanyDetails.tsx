@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { ArrowRight, X, CheckCircle2, XCircle, Loader2, Lightbulb } from "lucide-react";
+import { ArrowRight, X, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
 import type { AccountType } from "./StepAccountType";
 import { US_STATES } from "@/lib/us-states";
+import { createClient } from "@/lib/supabase/client";
 
 export interface CompanyDetailsData {
   companyName: string;
@@ -15,10 +16,12 @@ export interface CompanyDetailsData {
   supportPhone: string;
   supportEmail: string;
   city: string;
-  state: string;
   zip: string;
+  state: string;
   isMultiState: boolean;
   additionalStates: string[];
+  managementSoftware: string;
+  managementSoftwareOther: string;
 }
 
 interface StepCompanyDetailsProps {
@@ -90,8 +93,6 @@ const MANAGEMENT_SOFTWARE_OPTIONS = [
   { value: "other", label: "Other" },
 ];
 
-const TAKEN_SLUGS = ["amlo", "demo", "sunset-property-group", "test"];
-
 const SectionHeader = ({ children }: { children: React.ReactNode }) => (
   <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{children}</h2>
 );
@@ -99,15 +100,15 @@ const SectionHeader = ({ children }: { children: React.ReactNode }) => (
 const FieldLabel = ({
   htmlFor,
   children,
-  required = true,
+  optional,
 }: {
   htmlFor: string;
   children: React.ReactNode;
-  required?: boolean;
+  optional?: boolean;
 }) => (
   <Label htmlFor={htmlFor} className="text-sm font-medium text-foreground">
     {children}
-    {!required && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>}
+    {optional && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>}
   </Label>
 );
 
@@ -138,14 +139,22 @@ const StepCompanyDetails = ({
     }
 
     setSlugStatus("checking");
-    const timer = setTimeout(() => {
-      const isTaken = TAKEN_SLUGS.includes(portalSlug);
-      setSlugStatus(isTaken ? "taken" : "available");
+    const timer = window.setTimeout(async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("organizations")
+        .select("id")
+        .eq("portal_slug", portalSlug)
+        .maybeSingle();
+
+      if (error) {
+        setSlugStatus("available");
+        return;
+      }
+      setSlugStatus(data ? "taken" : "available");
     }, 600);
 
-    return () => {
-      clearTimeout(timer);
-    };
+    return () => window.clearTimeout(timer);
   }, [portalSlug]);
 
   const handleCompanyNameChange = useCallback(
@@ -183,14 +192,14 @@ const StepCompanyDetails = ({
 
   const isCompany = accountType === "management_company";
 
+  const slugReady = portalSlug.length >= 2 && slugStatus === "available";
+
   const baseValid =
     companyName.trim().length > 0 &&
+    slugReady &&
     supportPhone.trim().length > 0 &&
     supportEmail.trim().length > 0 &&
-    city.trim().length > 0 &&
-    state.length > 0 &&
-    zip.trim().length > 0 &&
-    slugStatus !== "taken";
+    state.length > 0;
 
   const isValid = isCompany
     ? baseValid && isMultiState !== null && (isMultiState === false || additionalStates.length > 0)
@@ -205,13 +214,13 @@ const StepCompanyDetails = ({
       supportPhone,
       supportEmail,
       city,
-      state,
       zip,
+      state,
       isMultiState: isCompany ? (isMultiState ?? false) : false,
       additionalStates:
-        isCompany && isMultiState
-          ? [state, ...additionalStates.filter((s) => s !== state)]
-          : [],
+        isCompany && isMultiState ? [state, ...additionalStates.filter((s) => s !== state)] : [],
+      managementSoftware,
+      managementSoftwareOther: managementSoftware === "other" ? otherSoftware : "",
     });
   };
 
@@ -240,15 +249,20 @@ const StepCompanyDetails = ({
                 onChange={(e) => setSupportEmail(e.target.value)}
                 className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
               />
-              {!isCompany && supportEmail.trim().length > 0 && isPersonalEmail(supportEmail) && (
-                <div className="flex items-start gap-1.5 rounded-md bg-primary/10 px-3 py-2">
-                  <Lightbulb className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
-                  <p className="text-[11px] leading-snug text-primary">
-                    This looks like a personal email. Consider using a shared or
-                    association-specific email (e.g.{" "}
-                    <span className="font-semibold">board@yourhoa.org</span>) so access isn&apos;t tied
-                    to one person.
-                  </p>
+              {supportEmail.trim().length > 0 && isPersonalEmail(supportEmail) && (
+                <div className="rounded-md border border-havn-amber/40 bg-havn-amber/15 px-3 py-2 text-xs leading-snug text-foreground">
+                  {isCompany ? (
+                    <>
+                      This looks like a personal email. Consider using your company email for a more
+                      professional appearance.
+                    </>
+                  ) : (
+                    <>
+                      This looks like a personal email. Consider using a shared or association-specific
+                      email (e.g. <span className="font-semibold">board@yourhoa.org</span>) so access
+                      isn&apos;t tied to one person.
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -284,7 +298,7 @@ const StepCompanyDetails = ({
               <FieldLabel htmlFor="portalSlug">Portal URL</FieldLabel>
               <div className="flex h-11 items-center overflow-hidden rounded-md border border-border">
                 <span className="select-none border-r border-border bg-havn-surface px-3 text-sm text-muted-foreground">
-                  havn.com/r/
+                  havnhq.com/r/
                 </span>
                 <input
                   id="portalSlug"
@@ -304,6 +318,12 @@ const StepCompanyDetails = ({
                   <XCircle className="mr-3 h-4 w-4 shrink-0 text-destructive" />
                 )}
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                Full link:{" "}
+                <span className="font-medium text-foreground">
+                  havnhq.com/r/{portalSlug || "your-slug"}
+                </span>
+              </p>
               {slugStatus === "available" && (
                 <p className="text-xs text-[hsl(var(--havn-success))]">This URL is available</p>
               )}
@@ -315,21 +335,24 @@ const StepCompanyDetails = ({
 
           <div className="space-y-4">
             <SectionHeader>{isCompany ? "Primary Office Location" : "Association Location"}</SectionHeader>
+            <div className="space-y-2">
+              <FieldLabel htmlFor="city" optional>
+                City
+              </FieldLabel>
+              <Input
+                id="city"
+                type="text"
+                placeholder="Seattle"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
             <div className="flex gap-3">
-              <div className="flex-1 space-y-2">
-                <FieldLabel htmlFor="city">City</FieldLabel>
-                <Input
-                  id="city"
-                  type="text"
-                  placeholder="Seattle"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
-                />
-              </div>
-              <div className="w-28 space-y-2">
+              <div className="min-w-0 flex-1 space-y-2">
                 <FieldLabel htmlFor="state">State</FieldLabel>
                 <select
+                  id="state"
                   value={state}
                   onChange={(e) => setState(e.target.value)}
                   className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
@@ -342,8 +365,10 @@ const StepCompanyDetails = ({
                   ))}
                 </select>
               </div>
-              <div className="w-28 space-y-2">
-                <FieldLabel htmlFor="zip">ZIP</FieldLabel>
+              <div className="min-w-0 flex-1 space-y-2">
+                <FieldLabel htmlFor="zip" optional>
+                  ZIP
+                </FieldLabel>
                 <Input
                   id="zip"
                   type="text"
@@ -360,9 +385,7 @@ const StepCompanyDetails = ({
           {isCompany && (
             <div className="space-y-3">
               <SectionHeader>Service Area</SectionHeader>
-              <p className="text-sm text-muted-foreground">
-                Do you manage communities in multiple states?
-              </p>
+              <p className="text-sm text-muted-foreground">Do you manage communities in multiple states?</p>
               <div className="space-y-2">
                 <label
                   className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
@@ -381,11 +404,9 @@ const StepCompanyDetails = ({
                   <div>
                     <span className="text-sm font-medium text-foreground">
                       No, just{" "}
-                      {state ? US_STATES.find((s) => s.abbr === state)?.name ?? state : "one state"}
+                      {state ? (US_STATES.find((s) => s.abbr === state)?.name ?? state) : "one state"}
                     </span>
-                    <p className="text-xs text-muted-foreground">
-                      We&apos;ll tailor fee limits to your state&apos;s laws
-                    </p>
+                    <p className="text-xs text-muted-foreground">We&apos;ll tailor fee limits to your state&apos;s laws</p>
                   </div>
                 </label>
                 <label
@@ -403,9 +424,7 @@ const StepCompanyDetails = ({
                     onChange={() => setIsMultiState(true)}
                   />
                   <div>
-                    <span className="text-sm font-medium text-foreground">
-                      Yes, we operate in multiple states
-                    </span>
+                    <span className="text-sm font-medium text-foreground">Yes, we operate in multiple states</span>
                     <p className="text-xs text-muted-foreground">
                       We&apos;ll show fee limits for all applicable states
                     </p>
@@ -415,9 +434,7 @@ const StepCompanyDetails = ({
 
               {isMultiState && (
                 <div className="mt-4 space-y-3">
-                  <p className="text-sm font-medium text-foreground">
-                    Select all states you currently operate in
-                  </p>
+                  <p className="text-sm font-medium text-foreground">Select all states you currently operate in</p>
                   <div className="flex flex-wrap gap-2">
                     {state && (
                       <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-foreground">
@@ -474,9 +491,7 @@ const StepCompanyDetails = ({
                       );
                     })}
                     {filteredStates.length === 0 && (
-                      <p className="px-4 py-3 text-xs text-muted-foreground">
-                        No states match your search
-                      </p>
+                      <p className="px-4 py-3 text-xs text-muted-foreground">No states match your search</p>
                     )}
                   </div>
                 </div>
@@ -486,17 +501,21 @@ const StepCompanyDetails = ({
 
           {isCompany && (
             <div className="space-y-3">
-              <SectionHeader>Management Software</SectionHeader>
-              <p className="text-sm text-muted-foreground">
-                What software do you currently use to manage your communities? This helps us
-                prioritize integrations for Havn.
-              </p>
+              <div>
+                <FieldLabel htmlFor="managementSoftware" optional>
+                  Management Software
+                </FieldLabel>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  What software do you currently use? This helps us prioritize integrations.
+                </p>
+              </div>
               <select
+                id="managementSoftware"
                 value={managementSoftware}
                 onChange={(e) => setManagementSoftware(e.target.value)}
                 className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
               >
-                <option value="">Select your software...</option>
+                <option value="">Select your software…</option>
                 {MANAGEMENT_SOFTWARE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
@@ -506,15 +525,12 @@ const StepCompanyDetails = ({
               {managementSoftware === "other" && (
                 <Input
                   type="text"
-                  placeholder="Tell us what you use..."
+                  placeholder="Tell us what you use…"
                   value={otherSoftware}
                   onChange={(e) => setOtherSoftware(e.target.value)}
                   className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
                 />
               )}
-              <p className="text-xs italic text-muted-foreground">
-                Optional - skip if you&apos;re not sure
-              </p>
             </div>
           )}
 

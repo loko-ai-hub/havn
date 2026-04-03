@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, X, Mail, CheckCircle2, Shield, Info, AlertTriangle, Lightbulb } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Plus, X, Mail, CheckCircle2, Shield, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,11 +61,15 @@ export default function StepInviteAdmins({
   isSubmitting = false,
 }: StepInviteAdminsProps) {
   const [invites, setInvites] = useState<InviteEntry[]>([{ email: "" }]);
-  const [creatorEmail] = useState(
-    accountType === "self_managed" ? "boardmember@email.com" : "you@yourcompany.com"
-  );
 
-  const creatorDomain = getDomain(creatorEmail);
+  const referenceDomain = useMemo(() => {
+    for (const inv of invites) {
+      if (!isValidEmail(inv.email)) continue;
+      if (isPersonalEmail(inv.email)) continue;
+      return getDomain(inv.email);
+    }
+    return "";
+  }, [invites]);
 
   const isBoard = accountType === "self_managed";
   const title = isBoard ? "Invite board members" : "Invite your team";
@@ -99,14 +103,10 @@ export default function StepInviteAdmins({
         <div className="space-y-5">
           <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3.5">
             <Shield className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <div>
-              <p className="text-sm font-medium text-foreground">You&apos;re the Super Admin</p>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">You&apos;re the Super Admin</p>
               <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                As the account creator, you&apos;ll be set up as{" "}
-                <span className="font-semibold text-foreground">Super Admin</span> with full
-                access. This can be reassigned to another user in{" "}
-                <span className="font-semibold text-foreground">Settings -&gt; Roles</span> at any
-                time.
+                You have full access to all settings, billing, and team management.
               </p>
             </div>
           </div>
@@ -120,39 +120,35 @@ export default function StepInviteAdmins({
               const hasEmail = invite.email.trim().length > 0;
               const valid = isValidEmail(invite.email);
               const isConfirmed = hasEmail && valid;
-              const domainMismatch =
-                isConfirmed && creatorDomain && getDomain(invite.email) !== creatorDomain;
-              const showPersonalNudge = isBoard && isConfirmed && isPersonalEmail(invite.email);
-
+              const personal = isConfirmed && isPersonalEmail(invite.email);
+              const differentDomain =
+                isConfirmed &&
+                !personal &&
+                Boolean(referenceDomain) &&
+                getDomain(invite.email) !== referenceDomain;
               return (
                 <div
                   key={index}
                   className={`rounded-xl border-2 p-4 transition-all ${
-                    showPersonalNudge
-                      ? "border-primary/30 bg-primary/5"
-                      : domainMismatch
-                        ? "border-[hsl(var(--havn-warning))]/40 bg-[hsl(var(--havn-warning))]/5"
-                        : isConfirmed
-                          ? "border-[hsl(var(--havn-success))]/30 bg-[hsl(var(--havn-success))]/5"
-                          : "border-border bg-card"
+                    personal
+                      ? "border-havn-amber/40 bg-havn-amber/10"
+                      : isConfirmed
+                        ? "border-[hsl(var(--havn-success))]/30 bg-[hsl(var(--havn-success))]/5"
+                        : "border-border bg-card"
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
+                    <div className="relative min-w-0 flex-1">
                       <Mail className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         type="email"
-                        placeholder={isBoard ? "boardmember@email.com" : "teammate@company.com"}
+                        placeholder={isBoard ? "boardmember@yourhoa.org" : "teammate@company.com"}
                         value={invite.email}
                         onChange={(e) => updateEmail(index, e.target.value)}
                         className="h-10 border-border bg-background pl-10 text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
                       />
                     </div>
-                    {showPersonalNudge ? (
-                      <Lightbulb className="h-5 w-5 shrink-0 text-primary" />
-                    ) : domainMismatch ? (
-                      <AlertTriangle className="h-5 w-5 shrink-0 text-[hsl(var(--havn-warning))]" />
-                    ) : isConfirmed ? (
+                    {isConfirmed && !personal ? (
                       <CheckCircle2 className="h-5 w-5 shrink-0 text-[hsl(var(--havn-success))]" />
                     ) : null}
                     {invites.length > 1 && (
@@ -166,28 +162,31 @@ export default function StepInviteAdmins({
                     )}
                   </div>
 
-                  {showPersonalNudge && (
-                    <div className="mt-2 flex items-start gap-1.5 rounded-md bg-primary/10 px-3 py-2">
-                      <Lightbulb className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
-                      <p className="text-[11px] leading-snug text-primary">
-                        This looks like a personal email. Consider using a shared or
-                        association-specific email (e.g.{" "}
-                        <span className="font-semibold">board@yourhoa.org</span>) so access
-                        isn&apos;t tied to one person.
+                  {personal && (
+                    <div className="mt-2 rounded-md border border-havn-amber/40 bg-havn-amber/15 px-3 py-2">
+                      <p className="text-[11px] leading-snug text-foreground">
+                        {isBoard ? (
+                          <>
+                            This looks like a personal email address. Board members should use a shared
+                            association email when possible.
+                          </>
+                        ) : (
+                          <>
+                            This looks like a personal email address. Teammates should use their company
+                            email.
+                          </>
+                        )}
                       </p>
                     </div>
                   )}
 
-                  {!showPersonalNudge && domainMismatch && (
-                    <div className="mt-2 flex items-start gap-1.5 rounded-md bg-[hsl(var(--havn-warning))]/10 px-3 py-2">
-                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-[hsl(var(--havn-warning))]" />
-                      <p className="text-[11px] leading-snug text-[hsl(var(--havn-warning))]">
-                        This email uses a different domain than yours (
-                        <span className="font-semibold">@{creatorDomain}</span>). Make sure this is
-                        intentional.
-                      </p>
-                    </div>
-                  )}
+                  {differentDomain ? (
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      {isBoard
+                        ? "Different domain than your organization email"
+                        : "Different domain than your company email"}
+                    </p>
+                  ) : null}
 
                   {isBoard ? (
                     <div className="mt-3 flex items-center gap-1.5">
@@ -240,15 +239,15 @@ export default function StepInviteAdmins({
                 {isBoard ? (
                   <>
                     All invited board members will have{" "}
-                    <span className="font-semibold text-foreground">Admin</span> access - full
-                    control over the community and its settings. Roles can be changed later in{" "}
+                    <span className="font-semibold text-foreground">Admin</span> access - full control
+                    over the community and its settings. Roles can be changed later in{" "}
                     <span className="font-semibold text-foreground">Settings</span>.
                   </>
                 ) : (
                   <>
                     All invited teammates will have{" "}
-                    <span className="font-semibold text-foreground">Admin</span> access - full
-                    control over communities and settings. Roles can be changed later in{" "}
+                    <span className="font-semibold text-foreground">Admin</span> access - full control
+                    over communities and settings. Roles can be changed later in{" "}
                     <span className="font-semibold text-foreground">Settings</span>.
                   </>
                 )}

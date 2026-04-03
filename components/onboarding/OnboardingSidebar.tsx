@@ -74,7 +74,7 @@ const OnboardingSidebar = ({
               >
                 {step.label}
               </span>
-              {step.optional && (stepNum > currentStep || stepNum === currentStep) && (
+              {step.optional && !isCompleted && (
                 <span className="ml-auto text-[10px] text-havn-navy-muted">Optional</span>
               )}
             </button>
