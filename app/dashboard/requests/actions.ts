@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "../../../lib/supabase/admin";
 
-import { requireDashboardOrg } from "./_lib/require-dashboard-org";
+import { requireDashboardOrg } from "../_lib/require-dashboard-org";
 
 export async function fulfillOrder(orderId: string) {
   const { organizationId } = await requireDashboardOrg();
