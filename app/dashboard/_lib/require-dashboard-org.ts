@@ -23,14 +23,14 @@ export async function requireDashboardOrg(): Promise<DashboardSession> {
     redirect("/login");
   }
 
-  const admin = createAdminClient();
-  const { data: profile, error } = await admin
+  const adminClient = createAdminClient();
+  const { data: profile, error: profileError } = await adminClient
     .from("profiles")
     .select("organization_id")
     .eq("id", user.id)
     .single();
 
-  if (error || !profile?.organization_id) {
+  if (profileError || !profile?.organization_id) {
     redirect("/onboarding");
   }
 
