@@ -32,7 +32,13 @@ const StepPortalSetup = ({ onContinue, onSkip, isSubmitting = false }: StepPorta
   const colorInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = (file: File) => {
-    if (!file.type.match(/^image\/(png|jpe?g|svg\+xml)$/)) return;
+    const ok =
+      file.type === "image/png" ||
+      file.type === "image/jpeg" ||
+      file.type === "image/jpg" ||
+      file.type === "image/svg+xml" ||
+      file.name.toLowerCase().endsWith(".svg");
+    if (!ok) return;
     const reader = new FileReader();
     reader.onload = (e) => {
       setLogoDataUrl(e.target?.result as string);
@@ -110,7 +116,7 @@ const StepPortalSetup = ({ onContinue, onSkip, isSubmitting = false }: StepPorta
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".png,.jpg,.jpeg,.svg"
+                accept="image/png,image/jpeg,image/jpg,image/svg+xml,.png,.jpg,.jpeg,.svg"
                 onChange={handleFileSelect}
                 className="hidden"
               />
@@ -211,7 +217,7 @@ const StepPortalSetup = ({ onContinue, onSkip, isSubmitting = false }: StepPorta
               disabled={isSubmitting}
               className="h-11 flex-1 rounded-md border border-border text-sm font-medium text-muted-foreground transition-colors hover:bg-havn-surface"
             >
-              Skip for now
+              Skip for now →
             </button>
             <Button
               type="button"

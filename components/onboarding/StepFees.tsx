@@ -21,6 +21,19 @@ import {
   type StateDocDef,
 } from "@/lib/fee-data";
 
+const STATE_FEE_CAPS: Record<string, { resale?: number; update?: number; rush?: string; statute?: string }> = {
+  WA: { resale: 275, update: 100, rush: "3 business days", statute: "RCW 64.90.640" },
+  CA: { resale: 300, statute: "Civil Code §5600" },
+  TX: { resale: 375, statute: "Tex. Prop. Code §207.006" },
+  FL: { resale: 250, statute: "Fla. Stat. §720.30851" },
+  CO: { resale: 300, statute: "C.R.S. §38-33.3-209.5" },
+  VA: { resale: 350, statute: "Va. Code §55.1-1810" },
+  AZ: { resale: 400, statute: "A.R.S. §33-1806" },
+  NV: { resale: 250, statute: "NRS §116.4109" },
+  NC: { resale: 250, statute: "N.C.G.S. §47F-3-102" },
+  GA: { resale: 250, statute: "O.C.G.A. §44-3-101" },
+};
+
 interface StepFeesProps {
   primaryState: string;
   isMultiState: boolean;
@@ -44,6 +57,48 @@ export interface FeesData {
   rushSameDay: RushOption;
   rushNextDay: RushOption;
   rushThreeDay: RushOption;
+}
+
+function StatutoryCapBanner({
+  stateAbbr,
+  docKind,
+  feeStr,
+}: {
+  stateAbbr: string;
+  docKind: "resale" | "update" | "lender" | "demand";
+  feeStr: string;
+}) {
+  const stateName = US_STATES.find((s) => s.abbr === stateAbbr)?.name ?? stateAbbr;
+  if (!stateAbbr) return null;
+
+  const caps = STATE_FEE_CAPS[stateAbbr];
+  const fee = Number.parseFloat(feeStr.replace(/[^0-9.]/g, "")) || 0;
+  const cap = docKind === "resale" ? caps?.resale : docKind === "update" ? caps?.update : undefined;
+
+  if (!caps || cap == null) {
+    return (
+      <div className="rounded-md border border-border bg-havn-surface/40 px-3 py-2.5 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">{stateName}</span> has no fixed cap — fees must reflect actual
+        cost
+      </div>
+    );
+  }
+
+  if (fee > cap) {
+    return (
+      <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+        Exceeds {stateName} cap of ${cap}
+        {caps.statute ? ` (${caps.statute})` : ""}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-havn-success/40 bg-havn-success/15 px-3 py-2.5 text-xs text-emerald-950 dark:text-emerald-100">
+      {stateName} cap: ${cap} — you&apos;re within the limit
+      {caps.statute ? ` (${caps.statute})` : ""}
+    </div>
+  );
 }
 
 const DollarInput = ({
@@ -87,7 +142,7 @@ const StepFees = ({
   const [turnaround, setTurnaround] = useState("5");
   const [customDays, setCustomDays] = useState("");
   const [showPricingTip, setShowPricingTip] = useState(true);
-  const [showMultiStateTip, setShowMultiStateTip] = useState(true);
+  const [showMultiStateLegalBanner, setShowMultiStateLegalBanner] = useState(true);
 
   const [rushSameDay, setRushSameDay] = useState<RushOption>({
     enabled: false,
@@ -126,8 +181,6 @@ const StepFees = ({
     [primaryState, additionalStates]
   );
 
-  const primaryHasCap = RESALE_DEFS.some((l) => l.abbr === primaryState && l.capType === "fixed");
-
   return (
     <div className="flex h-full justify-center overflow-y-auto px-8 py-16">
       <div className="w-full max-w-md">
@@ -137,61 +190,34 @@ const StepFees = ({
             Configure pricing for resale documents and turnaround options.
           </p>
           {showPricingTip && (
-            <div className="relative mt-4 rounded-lg border border-accent bg-accent/20 px-4 py-3 pr-9">
+            <div className="relative mt-4 rounded-lg border border-havn-amber/30 bg-havn-amber/10 px-4 py-3 pr-20">
               <button
                 type="button"
                 onClick={() => setShowPricingTip(false)}
-                className="absolute top-2 right-2 rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+                className="absolute top-2 right-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
-                <X className="h-3.5 w-3.5" />
+                Dismiss
               </button>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                {primaryHasCap ? (
-                  isSingleState ? (
-                    <>
-                      <span className="font-semibold text-foreground">Pricing tip:</span> Your
-                      statutory cap is the legal ceiling - any fee at or below it is compliant.
-                      That said, most management companies price{" "}
-                      <span className="font-semibold text-foreground">10-20% below the cap</span>{" "}
-                      to stay competitive and keep homeowner trust. You have full flexibility
-                      within that range.
-                    </>
-                  ) : (
-                    <>
-                      <span className="font-semibold text-foreground">Pricing tip:</span> Your
-                      statutory cap is the legal ceiling - any fee at or below it is compliant.
-                      That said, most management companies price{" "}
-                      <span className="font-semibold text-foreground">10-20% below the cap</span>{" "}
-                      to stay competitive in multi-state markets. You have full flexibility within
-                      that range.
-                    </>
-                  )
-                ) : (
-                  <>
-                    <span className="font-semibold text-foreground">Pricing tip:</span> This state
-                    has no fixed cap - fees must reflect your actual cost to produce the document.
-                    Pricing significantly above your direct costs creates legal exposure. Our
-                    default is benchmarked to typical market rates as a starting point.
-                  </>
-                )}
+                <span aria-hidden>💡 </span>
+                <span className="font-semibold text-foreground">Pricing tip:</span> Most management
+                companies in {stateName} charge between $200–$300 for resale certificates. Setting
+                competitive prices helps ensure requesters complete their orders.
               </p>
             </div>
           )}
-          {isMultiState && showMultiStateTip && (
-            <div className="relative mt-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 pr-9">
+          {isMultiState && showMultiStateLegalBanner && (
+            <div className="relative mt-3 rounded-lg border border-havn-amber/40 bg-havn-amber/15 px-4 py-3 pr-9">
               <button
                 type="button"
-                onClick={() => setShowMultiStateTip(false)}
-                className="absolute top-2 right-2 rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
+                onClick={() => setShowMultiStateLegalBanner(false)}
+                className="absolute top-2 right-2 rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-havn-amber/25 hover:text-foreground"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                <span className="font-semibold text-foreground">Multi-state pricing:</span> The
-                fees you set here will apply as defaults across all your states. If you&apos;d like to
-                set <span className="font-medium text-foreground">state-specific pricing</span>,
-                you can do that after onboarding in the{" "}
-                <span className="font-semibold text-foreground">Pricing</span> tab.
+              <p className="text-xs leading-relaxed text-foreground">
+                Your fees apply across all states. Where state law sets a lower cap, we&apos;ll
+                automatically enforce it — your fee won&apos;t exceed the legal limit in any state.
               </p>
             </div>
           )}
@@ -204,6 +230,7 @@ const StepFees = ({
             </h2>
 
             <FeeField
+              docKind="resale"
               id="resale"
               defs={RESALE_DEFS}
               fallbackLabel="Resale Certificate"
@@ -212,13 +239,13 @@ const StepFees = ({
               placeholder="275"
               modalTitle="Resale Certificate - State Limits"
               primaryState={primaryState}
-              stateName={stateName}
               isSingleState={isSingleState}
               selectedStates={selectedStates}
               isMultiState={isMultiState}
             />
 
             <FeeField
+              docKind="update"
               id="update"
               defs={UPDATE_DEFS}
               fallbackLabel="Resale Certificate Update"
@@ -227,13 +254,13 @@ const StepFees = ({
               placeholder="100"
               modalTitle="Resale Certificate Update - State Limits"
               primaryState={primaryState}
-              stateName={stateName}
               isSingleState={isSingleState}
               selectedStates={selectedStates}
               isMultiState={isMultiState}
             />
 
             <FeeField
+              docKind="lender"
               id="lender"
               defs={LENDER_DEFS}
               fallbackLabel="Lender Questionnaire"
@@ -242,13 +269,13 @@ const StepFees = ({
               placeholder="200"
               modalTitle="Lender Questionnaire - State Limits"
               primaryState={primaryState}
-              stateName={stateName}
               isSingleState={isSingleState}
               selectedStates={selectedStates}
               isMultiState={isMultiState}
             />
 
             <FeeField
+              docKind="demand"
               id="demand"
               defs={DEMAND_DEFS}
               fallbackLabel="Demand Letter"
@@ -257,7 +284,6 @@ const StepFees = ({
               placeholder="250"
               modalTitle="Demand Letter - State Limits"
               primaryState={primaryState}
-              stateName={stateName}
               isSingleState={isSingleState}
               selectedStates={selectedStates}
               isMultiState={isMultiState}
@@ -375,7 +401,6 @@ const StepFees = ({
               label="Next day"
               option={rushNextDay}
               onChange={setRushNextDay}
-              showCutoff
             />
 
             <RushOptionRow
@@ -425,6 +450,7 @@ const MULTI_STATE_NAMING_TOOLTIP =
   "Some states use different names for this document (e.g. \"Resale Disclosure\" or \"Estoppel Certificate\"). We'll automatically map your pricing to the correct document name in each state.";
 
 const FeeField = ({
+  docKind,
   id,
   defs,
   fallbackLabel,
@@ -433,11 +459,11 @@ const FeeField = ({
   placeholder,
   modalTitle,
   primaryState,
-  stateName,
   isSingleState,
   selectedStates,
   isMultiState,
 }: {
+  docKind: "resale" | "update" | "lender" | "demand";
   id: string;
   defs: StateDocDef[];
   fallbackLabel: string;
@@ -446,12 +472,10 @@ const FeeField = ({
   placeholder: string;
   modalTitle: string;
   primaryState: string;
-  stateName: string;
   isSingleState: boolean;
   selectedStates: string[];
   isMultiState: boolean;
 }) => {
-  const stateEntry = defs.find((l) => l.abbr === primaryState);
   const label = fallbackLabel;
 
   const tooltip = FIELD_TOOLTIPS[id];
@@ -494,11 +518,11 @@ const FeeField = ({
       </div>
       <DollarInput id={id} value={value} onChange={onChange} placeholder={placeholder} />
 
-      {isSingleState ? (
-        <SingleStateBanner stateEntry={stateEntry} stateName={stateName} primaryState={primaryState} />
-      ) : (
+      <StatutoryCapBanner stateAbbr={primaryState} docKind={docKind} feeStr={value} />
+
+      {!isSingleState ? (
         <MultiStateBanner defs={defs} selectedStates={selectedStates} modalTitle={modalTitle} />
-      )}
+      ) : null}
     </div>
   );
 };
@@ -677,8 +701,7 @@ const RushOptionRow = ({
                     <Info className="h-3 w-3 cursor-help text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-[240px] text-xs">
-                    Orders placed after this time will be processed as the next tier. For example,
-                    a same-day order placed after the cutoff becomes next-day.
+                    Orders placed after this time will be processed as the next tier
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
