@@ -3,6 +3,8 @@ import { FileText, Mail, MapPin, Phone, User } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { mapFieldsToDocument } from "@/lib/autofill";
+import { getCommunityFields } from "@/lib/community-data";
 import { createAdminClient } from "../../../../lib/supabase/admin";
 
 import { formatCurrency, formatDeliverySpeed, formatMasterTypeKey, formatOrderDate } from "../../_lib/format";
@@ -68,6 +70,26 @@ export default async function DashboardRequestDetailPage({
   const showFulfill = row.order_status !== "fulfilled";
   const roleLabel = row.requester_role ? row.requester_role.split("_").join(" ") : "—";
 
+  const { data: community } = await admin
+    .from("communities")
+    .select("id")
+    .eq("organization_id", row.organization_id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const communityId = community?.id as string | undefined;
+  const rawFields = communityId ? await getCommunityFields(communityId) : null;
+  const mapped =
+    rawFields != null ? mapFieldsToDocument(rawFields, row.master_type_key ?? "") : null;
+  const autofillFieldCount = mapped
+    ? Object.values(mapped).filter((v) => v != null && String(v).trim() !== "").length
+    : 0;
+  const hasAutofillData = autofillFieldCount > 0;
+  const documentsHref = communityId
+    ? `/dashboard/communities/${communityId}/documents`
+    : "/dashboard/communities";
+
   return (
     <div className="space-y-8">
       <div>
@@ -89,6 +111,42 @@ export default async function DashboardRequestDetailPage({
           </div>
           <OrderStatusBadge status={row.order_status} />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        {hasAutofillData ? (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex rounded-full border border-havn-success/40 bg-havn-success/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-950 dark:text-emerald-100">
+                Community data available for auto-fill
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {autofillFieldCount} extracted field{autofillFieldCount === 1 ? "" : "s"} for this document
+                type
+              </span>
+            </div>
+            <Link
+              href={`/dashboard/requests/${row.id}/review`}
+              className="shrink-0 text-sm font-medium text-havn-navy underline-offset-4 hover:underline dark:text-white"
+            >
+              Open review →
+            </Link>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex rounded-full border border-amber-500/50 bg-amber-500/15 px-2.5 py-0.5 text-xs font-semibold text-amber-950 dark:text-amber-100">
+                No community data — upload documents to enable auto-fill
+              </span>
+            </div>
+            <Link
+              href={documentsHref}
+              className="shrink-0 text-sm font-medium text-havn-navy underline-offset-4 hover:underline dark:text-white"
+            >
+              Upload documents →
+            </Link>
+          </>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

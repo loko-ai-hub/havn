@@ -2,7 +2,15 @@
 
 import { format, parseISO } from "date-fns";
 import type { ReactNode } from "react";
-import { CheckCircle2, Clock, DollarSign, ExternalLink, Inbox, MoreHorizontal } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  DollarSign,
+  ExternalLink,
+  Inbox,
+  MoreHorizontal,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -91,6 +99,7 @@ export default function DashboardHomePage() {
   const [pendingPayment, setPendingPayment] = useState(0);
   const [fulfilled, setFulfilled] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
+  const [docsIndexed, setDocsIndexed] = useState(0);
   const [recent, setRecent] = useState<OrderRow[]>([]);
 
   const load = useCallback(async () => {
@@ -104,7 +113,7 @@ export default function DashboardHomePage() {
       return;
     }
 
-    const [paidRes, pendRes, fulRes, revRes, recentRes] = await Promise.all([
+    const [paidRes, pendRes, fulRes, revRes, indexedRes, recentRes] = await Promise.all([
       supabase
         .from("document_orders")
         .select("id", { count: "exact", head: true })
@@ -125,6 +134,11 @@ export default function DashboardHomePage() {
         .select("total_fee")
         .eq("organization_id", orgId)
         .in("order_status", ["paid", "fulfilled"]),
+      supabase
+        .from("community_documents")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", orgId)
+        .eq("ocr_status", "complete"),
       supabase
         .from("document_orders")
         .select(
@@ -155,6 +169,11 @@ export default function DashboardHomePage() {
       setLoading(false);
       return;
     }
+    if (indexedRes.error) {
+      setError(indexedRes.error.message);
+      setLoading(false);
+      return;
+    }
     if (recentRes.error) {
       setError(recentRes.error.message);
       setLoading(false);
@@ -166,6 +185,7 @@ export default function DashboardHomePage() {
     setFulfilled(fulRes.count ?? 0);
     const revSum = (revRes.data ?? []).reduce((s, r) => s + (Number((r as { total_fee: number | null }).total_fee) || 0), 0);
     setTotalRevenue(revSum);
+    setDocsIndexed(indexedRes.count ?? 0);
     setRecent((recentRes.data ?? []) as OrderRow[]);
     setLoading(false);
   }, []);
@@ -227,7 +247,7 @@ export default function DashboardHomePage() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <KpiCardWrapper href="/dashboard/requests?filter=paid">
           <div className="flex items-start justify-between gap-2">
             <div
@@ -290,6 +310,22 @@ export default function DashboardHomePage() {
           </p>
           <p className="mt-1 text-xs font-medium text-foreground/80">Total Revenue</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">Paid and fulfilled orders</p>
+        </KpiCardWrapper>
+
+        <KpiCardWrapper>
+          <div className="flex items-start justify-between gap-2">
+            <div
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/20 text-violet-700 dark:text-violet-300"
+              aria-hidden
+            >
+              <Sparkles className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">
+            {loading ? "—" : docsIndexed}
+          </p>
+          <p className="mt-1 text-xs font-medium text-foreground/80">Docs Indexed</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">Ready for auto-fill</p>
         </KpiCardWrapper>
 
         <a
