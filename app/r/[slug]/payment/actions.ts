@@ -1,7 +1,19 @@
 "use server";
 
+import {
+  formatDeliverySpeed,
+  formatMasterTypeKey,
+} from "@/app/dashboard/_lib/format";
+import { REQUESTER_TYPES } from "@/lib/portal-data";
+import { sendManagementNotification } from "@/lib/resend";
 import { createAdminClient } from "../../../../lib/supabase/admin";
 import { stripe } from "../../../../lib/stripe";
+
+function formatRequesterRole(role: string | null | undefined): string {
+  if (!role) return "—";
+  const match = REQUESTER_TYPES.find((t) => t.value === role);
+  return match?.title ?? formatMasterTypeKey(role);
+}
 
 export async function createPaymentIntent(orderId: string) {
   const supabase = createAdminClient();
@@ -75,6 +87,63 @@ export async function confirmPayment(orderId: string, paymentIntentId: string) {
 
   if (error) {
     return { error: error.message };
+  }
+
+  const { data: orderRow, error: orderFetchError } = await supabase
+    .from("document_orders")
+    .select(
+      "id, organization_id, requester_name, requester_email, requester_role, property_address, master_type_key, delivery_speed, total_fee"
+    )
+    .eq("id", orderId)
+    .single();
+
+  if (orderFetchError || !orderRow) {
+    console.error(
+      "confirmPayment: failed to load order for management notification:",
+      orderFetchError
+    );
+    return { ok: true };
+  }
+
+  const { data: orgRow, error: orgFetchError } = await supabase
+    .from("organizations")
+    .select("name, support_email, portal_slug")
+    .eq("id", orderRow.organization_id)
+    .single();
+
+  if (orgFetchError || !orgRow) {
+    console.error(
+      "confirmPayment: failed to load organization for management notification:",
+      orgFetchError
+    );
+    return { ok: true };
+  }
+
+  const supportEmail = orgRow.support_email as string | null | undefined;
+  if (supportEmail) {
+    try {
+      await sendManagementNotification({
+        orgName: (orgRow.name as string) ?? "Organization",
+        orgEmail: supportEmail,
+        orderId: orderRow.id as string,
+        requesterName: (orderRow.requester_name as string) ?? "",
+        requesterEmail: (orderRow.requester_email as string) ?? "",
+        requesterRole: formatRequesterRole(
+          orderRow.requester_role as string | null
+        ),
+        propertyAddress: (orderRow.property_address as string) ?? "",
+        documentType: formatMasterTypeKey(
+          orderRow.master_type_key as string | null
+        ),
+        deliverySpeed: formatDeliverySpeed(
+          orderRow.delivery_speed as string | null
+        ),
+        totalFee: Number(orderRow.total_fee ?? 0),
+        portalSlug: (orgRow.portal_slug as string) ?? "",
+      });
+    } catch (emailError) {
+      console.error("Management notification email failed:", emailError);
+    }
   }
 
   return { ok: true };
