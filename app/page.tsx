@@ -80,6 +80,12 @@ export default function Home() {
               Onboarding
             </Link>
             <Link
+              href="/my-orders"
+              className="rounded-lg border border-border bg-background px-4 py-3 text-center text-sm font-medium text-foreground transition hover:bg-muted"
+            >
+              My Orders
+            </Link>
+            <Link
               href="/login"
               className="rounded-lg border border-border bg-background px-4 py-3 text-center text-sm font-medium text-foreground transition hover:bg-muted"
             >

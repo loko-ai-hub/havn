@@ -65,19 +65,27 @@ export default function RequesterRolePage() {
                 "w-full rounded-xl border-2 p-5 text-left transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 isSelected
-                  ? "border-havn-navy"
+                  ? "border-2"
                   : "border-border bg-card hover:border-havn-navy/50 hover:bg-havn-surface/35",
               ].join(" ")}
-              style={isSelected ? { backgroundColor: `${primaryColor}25` } : undefined}
+              style={
+                isSelected
+                  ? {
+                      borderColor: primaryColor,
+                      backgroundColor: `${primaryColor}0D`,
+                    }
+                  : undefined
+              }
             >
               <div className="flex items-start gap-4">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-havn-surface text-foreground">
                   <Icon className="h-5 w-5" />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-base font-semibold text-foreground">{role.title}</p>
                   <p className="mt-1 text-sm text-muted-foreground">{role.description}</p>
                 </div>
+                <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
             </button>
           );

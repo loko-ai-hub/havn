@@ -66,7 +66,7 @@ export default async function CommunityDetailPage({ params }: { params: Promise<
   const c = community as CommunityRow;
   if (c.organization_id !== organizationId) notFound();
 
-  const [orgRes, paidCountRes] = await Promise.all([
+  const [orgRes, paidCountRes, docsRes] = await Promise.all([
     admin
       .from("organizations")
       .select("support_email, support_phone")
@@ -77,10 +77,21 @@ export default async function CommunityDetailPage({ params }: { params: Promise<
       .select("id", { count: "exact", head: true })
       .eq("organization_id", organizationId)
       .eq("order_status", "paid"),
+    admin
+      .from("community_documents")
+      .select("id, ocr_status")
+      .eq("community_id", id),
   ]);
 
   const org = orgRes.data as { support_email: string | null; support_phone: string | null } | null;
   const openRequestsCount = paidCountRes.count ?? 0;
+  const docs = (docsRes.data ?? []) as Array<{ id: string; ocr_status: string | null }>;
+  const docsUploaded = docs.length;
+  const docsComplete = docs.filter((d) => d.ocr_status === "complete").length;
+  const docsPending = docs.filter(
+    (d) => d.ocr_status === "pending" || d.ocr_status === "processing"
+  ).length;
+  const docsFailed = docs.filter((d) => d.ocr_status === "failed").length;
 
   const status = (c.status ?? "active").toLowerCase();
   const isActive = status === "active";
@@ -190,10 +201,31 @@ export default async function CommunityDetailPage({ params }: { params: Promise<
         </DashboardSectionCard>
 
         <DashboardSectionCard title="Document Completion">
-          <div className="rounded-lg border border-border bg-havn-surface/30 px-4 py-6 text-center">
-            <p className="text-sm font-medium text-foreground">
-              Document management for this community coming soon
-            </p>
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-4">
+              <div className="rounded-lg border border-border bg-havn-surface/30 px-3 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Uploaded</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{docsUploaded}</p>
+              </div>
+              <div className="rounded-lg border border-havn-success/30 bg-havn-success/10 px-3 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Complete</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{docsComplete}</p>
+              </div>
+              <div className="rounded-lg border border-havn-amber/30 bg-havn-amber/10 px-3 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pending</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{docsPending}</p>
+              </div>
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Failed</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{docsFailed}</p>
+              </div>
+            </div>
+            <Link
+              href={`/dashboard/communities/${id}/documents`}
+              className="inline-flex rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              Manage Documents
+            </Link>
           </div>
         </DashboardSectionCard>
 
