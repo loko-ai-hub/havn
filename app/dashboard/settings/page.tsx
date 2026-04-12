@@ -2,7 +2,8 @@
 
 import { ChevronDown, UserPlus } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,11 @@ import { cn } from "@/lib/utils";
 
 import { DashboardSectionCard } from "../_lib/dashboard-section-card";
 import { updatePortalSettings } from "./actions";
+import {
+  checkStripeOnboardingStatus,
+  createStripeConnectLink,
+  getStripeBankLast4,
+} from "./stripe/actions";
 
 type OrgRow = {
   id: string;
@@ -93,6 +99,7 @@ function Disclosure({
 }
 
 export default function DashboardSettingsPage() {
+  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -118,6 +125,9 @@ export default function DashboardSettingsPage() {
 
   const [stripeAccountId, setStripeAccountId] = useState<string | null>(null);
   const [stripeComplete, setStripeComplete] = useState<boolean | null>(null);
+  const [stripeConnectLoading, setStripeConnectLoading] = useState(false);
+  const [stripeBankLast4, setStripeBankLast4] = useState<string | null>(null);
+  const stripeReturnHandled = useRef(false);
 
   const [pendingPortal, startPortalTransition] = useTransition();
 
@@ -182,6 +192,58 @@ export default function DashboardSettingsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!orgId || stripeComplete !== true) {
+      setStripeBankLast4(null);
+      return;
+    }
+    void getStripeBankLast4(orgId).then((res) => {
+      if (res && "last4" in res && res.last4) {
+        setStripeBankLast4(res.last4);
+      } else {
+        setStripeBankLast4(null);
+      }
+    });
+  }, [orgId, stripeComplete]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !orgId || stripeReturnHandled.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const stripe = params.get("stripe");
+    if (stripe === "success") {
+      stripeReturnHandled.current = true;
+      void (async () => {
+        await checkStripeOnboardingStatus(orgId);
+        toast.success("Stripe account connected successfully!");
+        router.replace("/dashboard/settings");
+        await load();
+      })();
+    } else if (stripe === "refresh") {
+      stripeReturnHandled.current = true;
+      toast.error("Stripe onboarding incomplete — please try again");
+      router.replace("/dashboard/settings");
+    }
+  }, [orgId, router, load]);
+
+  const handleStripeConnect = () => {
+    if (!orgId) return;
+    setStripeConnectLoading(true);
+    void (async () => {
+      try {
+        const result = await createStripeConnectLink(orgId);
+        if (result && "error" in result) {
+          toast.error(result.error);
+          return;
+        }
+        if (result && "url" in result) {
+          window.location.href = result.url;
+        }
+      } finally {
+        setStripeConnectLoading(false);
+      }
+    })();
+  };
 
   const handleCompanySave = () => {
     toast.success("Changes saved");
@@ -402,23 +464,43 @@ export default function DashboardSettingsPage() {
               <p className="text-sm text-muted-foreground">
                 Connect Stripe to receive payouts from completed document orders.
               </p>
-              <Button type="button" onClick={() => toast.info("Coming soon — Stripe onboarding will be wired here")}>
-                Connect bank account
+              <Button
+                type="button"
+                disabled={stripeConnectLoading || !orgId}
+                onClick={handleStripeConnect}
+              >
+                {stripeConnectLoading ? "Creating link…" : "Connect bank account"}
               </Button>
             </div>
           ) : stripeComplete !== true ? (
-            <div className="rounded-lg border border-havn-amber/40 bg-havn-amber/15 px-4 py-3 text-sm text-foreground">
-              <p className="font-semibold">Finish Stripe onboarding</p>
-              <p className="mt-1 text-muted-foreground">
-                Your Connect account is created but onboarding isn&apos;t complete. Return to Stripe to add any
-                missing details.
-              </p>
+            <div className="space-y-4">
+              <div className="rounded-lg border border-havn-amber/40 bg-havn-amber/15 px-4 py-3 text-sm text-foreground">
+                <p className="font-semibold">Finish Stripe onboarding</p>
+                <p className="mt-1 text-muted-foreground">
+                  Your Connect account is created but onboarding isn&apos;t complete. Use the button below to resume
+                  setup in Stripe.
+                </p>
+              </div>
+              <Button
+                type="button"
+                disabled={stripeConnectLoading || !orgId}
+                onClick={handleStripeConnect}
+              >
+                {stripeConnectLoading ? "Opening Stripe…" : "Complete setup"}
+              </Button>
             </div>
           ) : (
-            <div className="rounded-lg border border-havn-success/40 bg-havn-success/15 px-4 py-3 text-sm text-foreground">
-              <p className="font-semibold text-emerald-950 dark:text-emerald-100">You&apos;re all set</p>
-              <p className="mt-1 text-muted-foreground">
-                Payouts are enabled for your organization. Bank transfers are handled by Stripe Connect.
+            <div className="space-y-3 rounded-lg border border-havn-success/40 bg-havn-success/15 px-4 py-4 text-sm text-foreground">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-semibold text-emerald-950 dark:text-emerald-100">You&apos;re all set</p>
+                <span className="inline-flex rounded-full border border-havn-success/50 bg-havn-success/25 px-2.5 py-0.5 text-xs font-semibold text-emerald-950 dark:text-emerald-100">
+                  Payouts enabled
+                </span>
+              </div>
+              <p className="text-muted-foreground">
+                {stripeBankLast4
+                  ? `Connected · Bank account ending in ${stripeBankLast4}`
+                  : "Connected — your payout account is linked with Stripe."}
               </p>
             </div>
           )}

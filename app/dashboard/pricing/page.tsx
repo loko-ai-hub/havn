@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,21 @@ import {
 import { createClient } from "@/lib/supabase/client";
 
 import { configureDefaultFees, saveFees, type FeeSaveRow } from "./actions";
+
+const PRICING_TIP_KEY = "havn_pricing_tip_dismissed";
+
+const STATE_FEE_CAPS: Record<string, { resale?: number; update?: number; statute?: string }> = {
+  WA: { resale: 275, update: 100, statute: "RCW 64.90.640" },
+  CA: { resale: 300, statute: "Civil Code §5600" },
+  TX: { resale: 375, statute: "Tex. Prop. Code §207.006" },
+  FL: { resale: 250, statute: "Fla. Stat. §720.30851" },
+  CO: { resale: 300, statute: "C.R.S. §38-33.3-209.5" },
+  VA: { resale: 350, statute: "Va. Code §55.1-1810" },
+  AZ: { resale: 400, statute: "A.R.S. §33-1806" },
+  NV: { resale: 250, statute: "NRS §116.4109" },
+  NC: { resale: 250, statute: "N.C.G.S. §47F-3-102" },
+  GA: { resale: 250, statute: "O.C.G.A. §44-3-101" },
+};
 
 const DOC_ROWS: { key: FeeSaveRow["document_type"]; label: string }[] = [
   { key: "resale_certificate", label: "Resale Certificate" },
@@ -56,6 +72,96 @@ function parseDays(s: string): number {
   return n;
 }
 
+function formatMoney(n: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+}
+
+function BaseFeeCapBanner({
+  state,
+  documentType,
+  fee,
+}: {
+  state: string;
+  documentType: FeeSaveRow["document_type"];
+  fee: number;
+}) {
+  const st = state.trim().toUpperCase();
+  if (!st) {
+    return (
+      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+        Set your organization state in Settings to see statutory fee guidance.
+      </p>
+    );
+  }
+
+  const caps = STATE_FEE_CAPS[st];
+  if (!caps) {
+    return (
+      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+        {st} has no fixed cap in Havn&apos;s reference list — fees must reflect actual cost.
+      </p>
+    );
+  }
+
+  let capAmount: number | undefined;
+  let label = "Resale-style";
+  if (documentType === "resale_certificate") {
+    capAmount = caps.resale;
+    label = "Resale certificate";
+  } else if (documentType === "certificate_update") {
+    if (caps.update == null) {
+      return (
+        <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+          {st} has no fixed certificate-update cap in this list — fees must reflect actual cost.
+        </p>
+      );
+    }
+    capAmount = caps.update;
+    label = "Certificate update";
+  } else {
+    return (
+      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+        {st} has no fixed cap for this document type — fees must reflect actual cost.
+      </p>
+    );
+  }
+
+  if (capAmount == null) {
+    return (
+      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+        {st} has no fixed cap for this document type — fees must reflect actual cost.
+      </p>
+    );
+  }
+
+  const statute = caps.statute ? ` (${caps.statute})` : "";
+  if (fee > capAmount) {
+    return (
+      <p className="mt-1 text-[11px] font-medium leading-snug text-destructive">
+        Exceeds {st} cap of {formatMoney(capAmount)}
+        {statute} for {label.toLowerCase()}.
+      </p>
+    );
+  }
+  return (
+    <p className="mt-1 text-[11px] font-medium leading-snug text-emerald-800 dark:text-emerald-200">
+      {st} cap: {formatMoney(capAmount)}
+      {statute} — you&apos;re within the limit.
+    </p>
+  );
+}
+
+function RushFeeHint({ state }: { state: string }) {
+  const st = state.trim().toUpperCase();
+  return (
+    <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+      {st
+        ? `Rush fees in ${st} are not shown with a fixed statutory cap here — ensure amounts reflect added cost.`
+        : "Rush fees should reflect incremental cost to expedite."}
+    </p>
+  );
+}
+
 async function resolveOrgId(supabase: ReturnType<typeof createClient>): Promise<string | null> {
   const {
     data: { user },
@@ -76,10 +182,12 @@ async function resolveOrgId(supabase: ReturnType<typeof createClient>): Promise<
 
 export default function DashboardPricingPage() {
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [orgState, setOrgState] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rows, setRows] = useState<EditableFee[] | null>(null);
   const [pending, startTransition] = useTransition();
+  const [showPricingTip, setShowPricingTip] = useState(true);
 
   const loadFees = useCallback(async () => {
     setLoading(true);
@@ -90,9 +198,13 @@ export default function DashboardPricingPage() {
     if (!oid) {
       setLoadError("No organization linked to this account.");
       setRows(null);
+      setOrgState("");
       setLoading(false);
       return;
     }
+
+    const { data: orgRow } = await supabase.from("organizations").select("state").eq("id", oid).single();
+    setOrgState(typeof orgRow?.state === "string" ? orgRow.state : "");
 
     const keys = DOC_ROWS.map((r) => r.key);
     const { data, error } = await supabase
@@ -137,6 +249,16 @@ export default function DashboardPricingPage() {
   useEffect(() => {
     void loadFees();
   }, [loadFees]);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== "undefined" && localStorage.getItem(PRICING_TIP_KEY) === "1") {
+        setShowPricingTip(false);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const emptyState = useMemo(() => !loading && orgId && rows === null && !loadError, [loading, orgId, rows, loadError]);
 
@@ -246,6 +368,30 @@ export default function DashboardPricingPage() {
         </div>
       ) : rows ? (
         <>
+          {showPricingTip ? (
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-havn-amber/40 bg-havn-amber/10 px-4 py-3 text-sm text-foreground">
+              <p>
+                <span aria-hidden>💡 </span>
+                Most management companies in {orgState.trim() || "your state"} charge $200–$300 for resale
+                certificates.
+              </p>
+              <button
+                type="button"
+                className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                aria-label="Dismiss pricing tip"
+                onClick={() => {
+                  setShowPricingTip(false);
+                  try {
+                    localStorage.setItem(PRICING_TIP_KEY, "1");
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : null}
           <div className="overflow-x-auto rounded-xl border border-border bg-card">
             <Table className="min-w-[900px]">
               <TableHeader>
@@ -274,6 +420,11 @@ export default function DashboardPricingPage() {
                         disabled={pending}
                         onChange={(e) => updateRow(i, { base_fee: e.target.value })}
                       />
+                      <BaseFeeCapBanner
+                        state={orgState}
+                        documentType={row.document_type}
+                        fee={parseRequiredMoney(row.base_fee)}
+                      />
                     </TableCell>
                     <TableCell>
                       <RushCell
@@ -282,6 +433,7 @@ export default function DashboardPricingPage() {
                         onEnable={() => updateRow(i, { rush_same_day_fee: "0" })}
                         onChange={(v) => updateRow(i, { rush_same_day_fee: v })}
                       />
+                      <RushFeeHint state={orgState} />
                     </TableCell>
                     <TableCell>
                       <RushCell
@@ -290,6 +442,7 @@ export default function DashboardPricingPage() {
                         onEnable={() => updateRow(i, { rush_next_day_fee: "0" })}
                         onChange={(v) => updateRow(i, { rush_next_day_fee: v })}
                       />
+                      <RushFeeHint state={orgState} />
                     </TableCell>
                     <TableCell>
                       <RushCell
@@ -298,6 +451,7 @@ export default function DashboardPricingPage() {
                         onEnable={() => updateRow(i, { rush_3day_fee: "0" })}
                         onChange={(v) => updateRow(i, { rush_3day_fee: v })}
                       />
+                      <RushFeeHint state={orgState} />
                     </TableCell>
                     <TableCell>
                       <Input

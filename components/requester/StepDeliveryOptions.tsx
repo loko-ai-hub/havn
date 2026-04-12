@@ -8,7 +8,12 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { DELIVERY_OPTIONS, HOMEOWNER_DELIVERY_OPTIONS, formatCurrency, type RequesterType } from "@/lib/portal-data";
+import {
+  DELIVERY_OPTIONS,
+  HOMEOWNER_DELIVERY_OPTIONS,
+  formatCurrency,
+  type RequesterType,
+} from "@/lib/portal-data";
 import { usePortalOrder } from "@/components/requester/RequesterPortalOrgContext";
 
 export default function StepDeliveryOptions({
@@ -22,9 +27,7 @@ export default function StepDeliveryOptions({
 }) {
   const router = useRouter();
   const { order, updateOrder } = usePortalOrder();
-  const [deliveryType, setDeliveryType] = useState<string>(
-    order.deliveryType || "standard"
-  );
+  const [deliveryType, setDeliveryType] = useState<string>(order.deliveryType || "standard");
   const [closingDate, setClosingDate] = useState<Date | undefined>(
     order.closingDate ? new Date(order.closingDate) : undefined
   );
@@ -34,16 +37,6 @@ export default function StepDeliveryOptions({
 
   const baseOptions =
     requesterType === "homeowner" ? HOMEOWNER_DELIVERY_OPTIONS : DELIVERY_OPTIONS;
-  const standardOption = baseOptions.find((opt) => opt.id === "standard") ?? {
-    id: "standard",
-    label: "Standard",
-    fee: 0,
-  };
-  const rushOption = baseOptions.find((opt) => opt.id === "rush") ?? {
-    id: "rush",
-    label: "Rush",
-    fee: 75,
-  };
 
   const addBusinessDays = (date: Date, days: number) => {
     const next = new Date(date);
@@ -74,7 +67,7 @@ export default function StepDeliveryOptions({
       deliveryType,
       closingDate: closingDate ? closingDate.toISOString() : "",
     });
-    router.push(`/r/${slug}/review`);
+    router.push(`/r/${slug}/info`);
   };
 
   const handleDateSelect = (date: Date | undefined) => {
@@ -91,9 +84,7 @@ export default function StepDeliveryOptions({
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12 md:py-16">
       <h1 className="text-3xl font-semibold tracking-tight text-foreground">Delivery &amp; Timing</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Select how quickly you need your documents.
-      </p>
+      <p className="mt-2 text-sm text-muted-foreground">Select how quickly you need your documents.</p>
 
       <div className="mt-6 rounded-xl border border-border bg-card p-4">
         <p className="text-sm font-medium text-foreground">When is your targeted closing date?</p>
@@ -108,7 +99,7 @@ export default function StepDeliveryOptions({
               </span>
             ) : null}
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-0 pointer-events-auto" align="start">
+          <PopoverContent className="pointer-events-auto w-auto p-0" align="start">
             <Calendar
               className="pointer-events-auto"
               mode="single"
@@ -127,73 +118,76 @@ export default function StepDeliveryOptions({
       {standardTooLate ? (
         <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-4">
           <p className="text-sm text-destructive">
-            Your targeted closing date is within the standard turnaround window. Rush has been selected to help meet your timeline.
+            Your targeted closing date is within the standard turnaround window. Rush has been selected to help meet
+            your timeline.
           </p>
         </div>
       ) : null}
 
-      <div className="mt-6 grid gap-3 md:grid-cols-2">
-        <button
-          type="button"
-          onClick={() => {
-            if (standardTooLate) return;
-            setDeliveryType("standard");
-            updateOrder({ deliveryType: "standard" });
-            if (error) setError(null);
-          }}
-          disabled={standardTooLate}
-          className={[
-            "rounded-xl border-2 p-4 text-left transition-colors",
-            deliveryType === "standard"
-              ? "border-havn-success bg-havn-success/10"
-              : "border-border bg-card hover:border-havn-navy/40",
-            standardTooLate ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-          ].join(" ")}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4" style={{ color: deliveryType === "standard" ? primaryColor : "var(--muted-foreground)" }} />
-              <span className="text-sm font-semibold text-foreground">{standardOption.label}</span>
-            </div>
-            <span className="text-sm text-foreground">{formatCurrency(standardOption.fee)}</span>
-          </div>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setDeliveryType("rush");
-            updateOrder({ deliveryType: "rush" });
-            if (error) setError(null);
-          }}
-          className={[
-            "rounded-xl border-2 p-4 text-left transition-colors",
-            deliveryType === "rush"
-              ? "border-havn-success bg-havn-success/10"
-              : "border-border bg-card hover:border-havn-navy/40",
-          ].join(" ")}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Zap className="h-4 w-4" style={{ color: deliveryType === "rush" ? primaryColor : "var(--muted-foreground)" }} />
-              <span className="text-sm font-semibold text-foreground">{rushOption.label}</span>
-            </div>
-            <span className="text-sm text-foreground">{formatCurrency(rushOption.fee)}</span>
-          </div>
-        </button>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        {baseOptions.map((opt) => {
+          const isStandard = opt.id === "standard";
+          const disabled = isStandard && standardTooLate;
+          const isSelected = deliveryType === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                if (disabled) return;
+                setDeliveryType(opt.id);
+                updateOrder({ deliveryType: opt.id });
+                if (error) setError(null);
+              }}
+              disabled={disabled}
+              className={[
+                "rounded-xl border-2 p-4 text-left transition-colors",
+                isSelected ? "border-havn-success bg-havn-success/10" : "border-border bg-card hover:border-havn-navy/40",
+                disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+              ].join(" ")}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  {isStandard ? (
+                    <Clock
+                      className="h-4 w-4"
+                      style={{
+                        color: isSelected ? primaryColor : "var(--muted-foreground)",
+                      }}
+                    />
+                  ) : (
+                    <Zap
+                      className="h-4 w-4"
+                      style={{
+                        color: isSelected ? primaryColor : "var(--muted-foreground)",
+                      }}
+                    />
+                  )}
+                  <span className="text-sm font-semibold text-foreground">{opt.label}</span>
+                </div>
+                <span className="text-sm text-foreground">{formatCurrency(opt.fee)}</span>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
-      <div className="mt-8 flex items-center gap-3">
+      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
         <Button
           type="button"
           variant="outline"
-          className="h-12 flex-1 text-base"
+          className="h-12 w-full text-base"
           onClick={() => router.push(`/r/${slug}/addons`)}
         >
           Back
         </Button>
-        <Button type="button" onClick={handleContinue} className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light">
+        <Button
+          type="button"
+          onClick={handleContinue}
+          className="h-12 w-full bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light"
+        >
           Continue
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>

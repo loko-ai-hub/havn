@@ -5,6 +5,7 @@ import { CreditCard } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
+  CUSTOM_FORM_FEE,
   DELIVERY_OPTIONS,
   HOMEOWNER_DELIVERY_OPTIONS,
   LENDER_ADDONS,
@@ -12,6 +13,7 @@ import {
   PORTAL_DOCUMENTS,
   formatCurrency,
   getDeliveryDate,
+  getDocumentFee,
   getTotalFee,
   type PortalOrder,
 } from "@/lib/portal-data";
@@ -59,7 +61,14 @@ export default function StepReview({
       )
     : "Not provided";
   const additionalEmailList = order.additionalEmails.filter(Boolean);
-  const docBaseTotal = selectedDocs.reduce((sum, doc) => sum + doc.fee, 0);
+  let docBaseTotal = getDocumentFee(order.documentsSelected);
+  if (order.documentsSelected.includes("custom_company_form")) {
+    docBaseTotal += 200;
+  }
+  const addonsTotal = selectedAddOns.reduce((sum, addon) => sum + addon.fee, 0);
+  const customFormFee = order.documentsSelected.includes("custom_company_form") ? CUSTOM_FORM_FEE : 0;
+  const baseAndAddOns = docBaseTotal + addonsTotal + customFormFee;
+  const rushFee = Number(deliveryOption.fee) || 0;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-12 md:py-16">
@@ -68,7 +77,7 @@ export default function StepReview({
         Confirm your order details before proceeding to secure payment.
       </p>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-5">
+      <div className="mt-8 grid gap-8 lg:grid-cols-5">
         <div className="space-y-4 lg:col-span-3">
           <SectionCard title="Requester">
             <div className="flex items-start justify-between gap-3">
@@ -148,21 +157,26 @@ export default function StepReview({
         </div>
 
         <div className="lg:col-span-2">
-          <div className="sticky top-24 overflow-hidden rounded-xl border border-border bg-card">
+          <div className="sticky top-24 flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card">
             <div className="bg-havn-navy px-5 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-white">Price Breakdown</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-white">Price breakdown</p>
             </div>
-            <div className="space-y-3 p-5">
+            <div className="flex flex-1 flex-col space-y-3 p-5">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Base fee</span>
-                <span className="text-foreground">{formatCurrency(docBaseTotal)}</span>
+                <span className="text-foreground">{formatCurrency(baseAndAddOns)}</span>
               </div>
-              {Number(deliveryOption.fee) > 0 ? (
+              {rushFee > 0 ? (
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Rush fee</span>
-                  <span className="text-foreground">{formatCurrency(deliveryOption.fee)}</span>
+                  <span className="text-foreground">{formatCurrency(rushFee)}</span>
                 </div>
-              ) : null}
+              ) : (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Rush fee</span>
+                  <span className="text-foreground">{formatCurrency(0)}</span>
+                </div>
+              )}
               <div className="border-t border-border pt-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-foreground">Total</span>
@@ -174,16 +188,18 @@ export default function StepReview({
                   {submitError}
                 </div>
               ) : null}
-              <Button
-                type="button"
-                disabled={isSubmitting}
-                onClick={onSubmit ?? (() => router.push(`/r/${slug}/confirmation`))}
-                className="h-12 w-full text-base font-semibold text-white hover:opacity-90"
-                style={{ backgroundColor: primaryColor }}
-              >
-                <CreditCard className="mr-2 h-4 w-4" />
-                {isSubmitting ? "Submitting..." : "Proceed to Payment"}
-              </Button>
+              <div className="mt-auto pt-4">
+                <Button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={onSubmit ?? (() => router.push(`/r/${slug}/confirmation`))}
+                  className="h-12 w-full text-base font-semibold text-white hover:opacity-90"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  {isSubmitting ? "Submitting..." : "Proceed to Payment"}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

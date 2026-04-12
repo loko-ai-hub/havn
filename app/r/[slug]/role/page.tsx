@@ -38,7 +38,7 @@ export default function RequesterRolePage() {
       return;
     }
     setError(null);
-    router.push(`/r/${slug}/info`);
+    router.push(`/r/${slug}/property`);
   };
 
   return (

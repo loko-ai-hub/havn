@@ -76,7 +76,7 @@ export default function StepYourInfo({
       additionalEmails,
     });
     updateEmails(additionalEmails);
-    router.push(`/r/${slug}/property`);
+    router.push(`/r/${slug}/review`);
   };
 
   const addAdditionalEmail = () => {
@@ -234,14 +234,14 @@ export default function StepYourInfo({
               ) : null}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="nmlsNumber">
+              <Label htmlFor="loanNumber">
                 Loan number <span className="text-muted-foreground">(optional)</span>
               </Label>
               <Input
-                id="nmlsNumber"
+                id="loanNumber"
                 value={nmlsNumber}
                 onChange={(event) => setNmlsNumber(event.target.value)}
-                placeholder="NMLS-10001"
+                placeholder="Loan reference or file number"
                 className="bg-white"
               />
             </div>
@@ -299,11 +299,11 @@ export default function StepYourInfo({
         </div>
       </div>
 
-      <div className="mt-8 flex items-center gap-3">
-        <Button type="button" variant="outline" className="h-12 flex-1 text-base" onClick={() => router.push(`/r/${slug}/role`)}>
+      <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Button type="button" variant="outline" className="h-12 w-full text-base" onClick={() => router.push(`/r/${slug}/delivery`)}>
           Back
         </Button>
-        <Button type="button" onClick={handleContinue} className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light">
+        <Button type="button" onClick={handleContinue} className="h-12 w-full bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light">
           Continue
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>

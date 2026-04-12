@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { Check } from "lucide-react";
 
 import type { RequesterType } from "@/lib/portal-data";
 import { requesterPortalPath } from "@/lib/requester-flow";
@@ -64,8 +65,6 @@ export default function PortalSidebar({
 }: PortalSidebarProps) {
   const textColor = getTextColor(primaryColor);
   const steps = getSteps();
-  const completedBg = textColor === "#ffffff" ? "bg-white/20" : "bg-black/15";
-  const activeBg = textColor === "#ffffff" ? "bg-white text-slate-900" : "bg-slate-900 text-white";
   const mutedText = textColor === "#ffffff" ? "text-white/65" : "text-black/60";
   const borderMuted = textColor === "#ffffff" ? "border-white/35" : "border-black/35";
 
@@ -96,16 +95,25 @@ export default function PortalSidebar({
 
           const itemContent = (
             <>
-              <div
-                className={[
-                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-                  isCompleted ? completedBg : "",
-                  isActive ? activeBg : "",
-                  isFuture ? `border ${borderMuted}` : "",
-                ].join(" ")}
-              >
-                {isCompleted ? "✓" : step.number + 1}
-              </div>
+              {isCompleted ? (
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/25 text-emerald-800 dark:text-emerald-100">
+                  <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+                </div>
+              ) : (
+                <div
+                  className={[
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+                    isActive
+                      ? textColor === "#ffffff"
+                        ? "bg-white text-slate-900"
+                        : "bg-slate-900 text-white"
+                      : "",
+                    isFuture ? `border ${borderMuted}` : "",
+                  ].join(" ")}
+                >
+                  {step.number + 1}
+                </div>
+              )}
               <span className={isFuture ? `text-sm ${mutedText}` : "text-sm font-medium"}>{step.label}</span>
             </>
           );
@@ -115,7 +123,7 @@ export default function PortalSidebar({
               <Link
                 key={step.number}
                 href={requesterPortalPath(slug, step.segment)}
-                className="flex items-center gap-3 rounded-md transition-opacity hover:opacity-90"
+                className="flex items-center gap-3 rounded-md pl-1 transition-opacity hover:opacity-90"
               >
                 {itemContent}
               </Link>
@@ -125,8 +133,11 @@ export default function PortalSidebar({
           return (
             <div
               key={step.number}
-              className="flex items-center gap-3 rounded-md border-l-2 pl-2"
-              style={isActive ? { borderLeftColor: normalizeHex(primaryColor) } : { borderLeftColor: "transparent" }}
+              className={[
+                "flex items-center gap-3 rounded-md pl-1",
+                isActive ? "border-l-4 py-0.5" : "border-l-4 border-transparent py-0.5",
+              ].join(" ")}
+              style={isActive ? { borderLeftColor: normalizeHex(primaryColor) } : undefined}
             >
               {itemContent}
             </div>

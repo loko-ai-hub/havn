@@ -122,13 +122,13 @@ export default function StepAddons({
         </div>
       </div>
 
-      <div className="mt-8 flex items-center gap-3">
-        <Button type="button" variant="outline" className="h-12 flex-1 text-base" onClick={onBack}>
+      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+        <Button type="button" variant="outline" className="h-12 w-full text-base" onClick={onBack}>
           Back
         </Button>
         <Button
           type="button"
-          className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light"
+          className="h-12 w-full bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light"
           onClick={onContinue}
         >
           {hasSelection ? "Continue" : "Skip"}

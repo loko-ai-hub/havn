@@ -15,6 +15,19 @@ const REQUIRED_ITEMS = [
   "A payment method for processing fees",
 ] as const;
 
+function hexWithAlpha(hex: string, alphaSuffix: string): string {
+  const raw = hex.trim();
+  if (!raw.startsWith("#")) return `#1B2B4B${alphaSuffix}`;
+  if (raw.length === 7) return `${raw}${alphaSuffix}`;
+  if (raw.length === 4) {
+    const r = raw[1];
+    const g = raw[2];
+    const b = raw[3];
+    return `#${r}${r}${g}${g}${b}${b}${alphaSuffix}`;
+  }
+  return `${raw}${alphaSuffix}`;
+}
+
 const AFTER_SUBMIT_ITEMS = [
   "Your completed report will be sent directly to your email",
   "You'll be able to create an account to track your request status in real time",
@@ -89,9 +102,7 @@ export function RequesterPortalLanding({
               className="mx-auto h-12 w-full max-w-[220px] object-contain"
             />
           ) : (
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-havn-navy-muted">
-              {communityName}
-            </p>
+            <p className="text-balance text-lg font-semibold tracking-tight text-havn-navy">{communityName}</p>
           )}
           <h1 className="mt-3 text-balance text-3xl font-semibold tracking-tight text-havn-navy md:text-4xl">
             Order Association Documents
@@ -139,7 +150,10 @@ export function RequesterPortalLanding({
               Get Started
               <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
-            <p className="text-center text-xs text-muted-foreground">
+            <p
+              className="mt-3 text-center text-xs"
+              style={{ color: hexWithAlpha(primaryColor, "99") }}
+            >
               Takes less than 5 minutes · Secure payment
             </p>
             <div className="relative py-1 text-center">
@@ -155,7 +169,7 @@ export function RequesterPortalLanding({
             </Link>
           </div>
         </div>
-        <p className="mt-8 text-center text-xs text-muted-foreground">Powered by Havn</p>
+        <p className="py-6 text-center text-xs text-muted-foreground">Powered by Havn</p>
       </div>
     </div>
   );

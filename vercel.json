@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/reminders/stripe-nudge",
+      "schedule": "0 14 * * *"
+    }
+  ]
+}

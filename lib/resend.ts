@@ -79,4 +79,30 @@ export async function sendManagementNotification({
   });
 }
 
+const appBaseUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? "https://havnhq.com";
+
+export async function sendStripeConnectNudgeEmail({
+  to,
+  orgName,
+}: {
+  to: string;
+  orgName: string;
+}) {
+  const settingsUrl = `${appBaseUrl()}/dashboard/settings`;
+
+  await getResend().emails.send({
+    from: RESEND_FROM_EMAIL,
+    to,
+    subject: "Complete your Havn setup — start receiving payouts",
+    html: `
+          <p>Hi ${orgName},</p>
+          <p>Your Havn portal is live and ready to accept orders — but you haven&apos;t connected your bank account yet.</p>
+          <p>Until you connect, any payments collected are held and cannot be released to you.</p>
+          <p><a href="${settingsUrl}">Connect your bank account →</a></p>
+          <p>Takes less than 5 minutes. Secured by Stripe.</p>
+          <p>— The Havn Team</p>
+        `,
+  });
+}
+
 export default resend;
