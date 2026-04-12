@@ -26,6 +26,7 @@ export function RequesterPortalLanding({
   companyName,
   primaryColor,
   welcomeMessage,
+  logoUrl,
   loading = false,
 }: {
   slug: string;
@@ -33,6 +34,7 @@ export function RequesterPortalLanding({
   companyName: string;
   primaryColor: string;
   welcomeMessage: string;
+  logoUrl?: string | null;
   loading?: boolean;
 }) {
   const communityName = companyName?.trim() || portalDisplayName(slug);
@@ -80,9 +82,17 @@ export function RequesterPortalLanding({
       />
       <div className="relative mx-auto max-w-2xl px-6 py-14 md:py-20">
         <div className="flex flex-col text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-havn-navy-muted">
-            {communityName}
-          </p>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={`${communityName} logo`}
+              className="mx-auto h-12 w-full max-w-[220px] object-contain"
+            />
+          ) : (
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-havn-navy-muted">
+              {communityName}
+            </p>
+          )}
           <h1 className="mt-3 text-balance text-3xl font-semibold tracking-tight text-havn-navy md:text-4xl">
             Order Association Documents
           </h1>
@@ -129,6 +139,9 @@ export function RequesterPortalLanding({
               Get Started
               <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
+            <p className="text-center text-xs text-muted-foreground">
+              Takes less than 5 minutes · Secure payment
+            </p>
             <div className="relative py-1 text-center">
               <div className="absolute left-0 right-0 top-1/2 h-px bg-border" />
               <span className="relative bg-card px-2 text-xs text-muted-foreground">or</span>
@@ -142,6 +155,7 @@ export function RequesterPortalLanding({
             </Link>
           </div>
         </div>
+        <p className="mt-8 text-center text-xs text-muted-foreground">Powered by Havn</p>
       </div>
     </div>
   );

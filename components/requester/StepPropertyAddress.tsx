@@ -347,11 +347,11 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
 
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
-      <div className="mt-8 flex items-center gap-3">
-        <Button type="button" variant="outline" className="h-12 flex-1 text-base" onClick={() => router.push(`/r/${slug}/info`)}>
+      <div className="mt-8 flex flex-col items-center gap-3">
+        <Button type="button" variant="outline" className="h-12 w-full text-base" onClick={() => router.push(`/r/${slug}/info`)}>
           Back
         </Button>
-        <Button type="button" className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light" onClick={handleContinue}>
+        <Button type="button" className="h-12 w-full bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light" onClick={handleContinue}>
           Continue
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>

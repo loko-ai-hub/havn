@@ -42,6 +42,7 @@ export default function DashboardCommunitiesPage() {
 
   const [orgId, setOrgId] = useState<string | null>(null);
   const [openRequestsCount, setOpenRequestsCount] = useState(0);
+  const [docsByCommunity, setDocsByCommunity] = useState<Record<string, number>>({});
   const [communities, setCommunities] = useState<CommunityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -136,8 +137,28 @@ export default function DashboardCommunitiesPage() {
       return;
     }
 
+    const communityRows = (communitiesRes.data ?? []) as CommunityRow[];
+    const communityIds = communityRows.map((c) => c.id);
+    let docMap: Record<string, number> = {};
+    if (communityIds.length > 0) {
+      const { data: docsData, error: docsError } = await supabase
+        .from("community_documents")
+        .select("community_id")
+        .in("community_id", communityIds);
+      if (docsError) {
+        setLoadError(docsError.message);
+      } else {
+        docMap = (docsData ?? []).reduce<Record<string, number>>((acc, row) => {
+          const key = (row as { community_id: string | null }).community_id;
+          if (key) acc[key] = (acc[key] ?? 0) + 1;
+          return acc;
+        }, {});
+      }
+    }
+
     setOpenRequestsCount(paidCountRes.count ?? 0);
-    setCommunities((communitiesRes.data ?? []) as CommunityRow[]);
+    setDocsByCommunity(docMap);
+    setCommunities(communityRows);
     setLoading(false);
   }, [resolveOrgId]);
 
@@ -440,6 +461,7 @@ export default function DashboardCommunitiesPage() {
                 <TableHead className="text-muted-foreground">Units</TableHead>
                 <TableHead className="text-muted-foreground">Open Requests</TableHead>
                 <TableHead className="text-muted-foreground">Manager</TableHead>
+                <TableHead className="text-muted-foreground">Docs Uploaded</TableHead>
                 <TableHead className="text-muted-foreground">Status</TableHead>
                 <TableHead className="w-[120px] text-muted-foreground">Actions</TableHead>
               </TableRow>
@@ -484,6 +506,10 @@ export default function DashboardCommunitiesPage() {
 
                     <TableCell className="text-foreground">
                       {c.manager_name?.trim() ? c.manager_name : "Unassigned"}
+                    </TableCell>
+
+                    <TableCell className="text-foreground">
+                      {docsByCommunity[c.id] ?? 0}
                     </TableCell>
 
                     <TableCell>

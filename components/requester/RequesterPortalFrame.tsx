@@ -20,11 +20,11 @@ type OrgPortalData = {
 function getCurrentStep(pathname: string): number {
   if (/\/r\/[^/]+$/.test(pathname)) return 0;
   if (pathname.includes("/role")) return 1;
-  if (pathname.includes("/info")) return 2;
-  if (pathname.includes("/property")) return 3;
-  if (pathname.includes("/documents")) return 4;
-  if (pathname.includes("/addons")) return 5;
-  if (pathname.includes("/delivery")) return 6;
+  if (pathname.includes("/property")) return 2;
+  if (pathname.includes("/documents")) return 3;
+  if (pathname.includes("/addons")) return 4;
+  if (pathname.includes("/delivery")) return 5;
+  if (pathname.includes("/info")) return 6;
   if (pathname.includes("/review")) return 7;
   if (pathname.includes("/payment")) return 8;
   if (pathname.includes("/confirmation")) return 9;

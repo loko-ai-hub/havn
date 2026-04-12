@@ -59,12 +59,6 @@ export default function StepYourInfo({
     if (!name.trim()) nextErrors.name = "Name is required.";
     if (!email.trim()) nextErrors.email = "Email is required.";
     else if (!isValidEmail(email)) nextErrors.email = "Please enter a valid email.";
-    if (order.requesterType === "buyer_agent" && !brokerageName.trim()) {
-      nextErrors.brokerageName = "Brokerage Name is required for buyer's agents.";
-    }
-    if (order.requesterType === "lender_title" && !companyName.trim()) {
-      nextErrors.companyName = "Company Name is required for lenders/title companies.";
-    }
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors);
       return;
@@ -170,7 +164,21 @@ export default function StepYourInfo({
           <div className="rounded-xl border border-border bg-card p-4 space-y-4">
             <p className="text-sm font-medium text-foreground">Agent details</p>
             <div className="space-y-2">
-              <Label htmlFor="brokerageName">Brokerage Name</Label>
+              <Label htmlFor="licenseNumber">
+                Agent license number <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="licenseNumber"
+                value={licenseNumber}
+                onChange={(event) => setLicenseNumber(event.target.value)}
+                placeholder="LIC-123456"
+                className="bg-white"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="brokerageName">
+                Brokerage name <span className="text-muted-foreground">(optional)</span>
+              </Label>
               <Input
                 id="brokerageName"
                 value={brokerageName}
@@ -186,18 +194,6 @@ export default function StepYourInfo({
               {fieldErrors.brokerageName ? (
                 <p className="text-xs text-destructive">{fieldErrors.brokerageName}</p>
               ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="licenseNumber">
-                License Number <span className="text-muted-foreground">(optional)</span>
-              </Label>
-              <Input
-                id="licenseNumber"
-                value={licenseNumber}
-                onChange={(event) => setLicenseNumber(event.target.value)}
-                placeholder="LIC-123456"
-                className="bg-white"
-              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="mlsId">
@@ -218,7 +214,9 @@ export default function StepYourInfo({
           <div className="rounded-xl border border-border bg-card p-4 space-y-4">
             <p className="text-sm font-medium text-foreground">Lender details</p>
             <div className="space-y-2">
-              <Label htmlFor="companyName">Company Name</Label>
+              <Label htmlFor="companyName">
+                Lender company name <span className="text-muted-foreground">(optional)</span>
+              </Label>
               <Input
                 id="companyName"
                 value={companyName}
@@ -237,7 +235,7 @@ export default function StepYourInfo({
             </div>
             <div className="space-y-2">
               <Label htmlFor="nmlsNumber">
-                NMLS Number <span className="text-muted-foreground">(optional)</span>
+                Loan number <span className="text-muted-foreground">(optional)</span>
               </Label>
               <Input
                 id="nmlsNumber"
@@ -251,13 +249,9 @@ export default function StepYourInfo({
         ) : null}
 
         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-          <p className="text-sm font-medium text-foreground">
-            Also send documents to{" "}
-            <span className="text-muted-foreground">(up to 5 additional emails)</span>
-          </p>
+          <p className="text-sm font-medium text-foreground">Additional recipients</p>
           <p className="text-xs text-muted-foreground">
-            Add additional recipients who should receive a copy of the completed
-            documents.
+            Add anyone else who should receive a copy of the completed documents
           </p>
           <div className="space-y-2">
             {additionalEmails.length > 0 ? (

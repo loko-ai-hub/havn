@@ -1,6 +1,5 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Check } from "lucide-react";
 
 import type { RequesterType } from "@/lib/portal-data";
 import { requesterPortalPath } from "@/lib/requester-flow";
@@ -43,12 +42,13 @@ function getTextColor(hex: string): string {
 
 function getSteps(): SidebarStep[] {
   return [
-    { number: 1, label: "Your Role", segment: "role" },
-    { number: 2, label: "Your Information", segment: "info" },
-    { number: 3, label: "Property Address", segment: "property" },
-    { number: 4, label: "Documents", segment: "documents" },
-    { number: 5, label: "Add-Ons", segment: "addons" },
-    { number: 6, label: "Delivery & Timing", segment: "delivery" },
+    { number: 0, label: "Landing", segment: "" },
+    { number: 1, label: "Role", segment: "role" },
+    { number: 2, label: "Property", segment: "property" },
+    { number: 3, label: "Documents", segment: "documents" },
+    { number: 4, label: "Add-ons", segment: "addons" },
+    { number: 5, label: "Delivery", segment: "delivery" },
+    { number: 6, label: "Your Info", segment: "info" },
     { number: 7, label: "Review & Pay", segment: "review" },
     { number: 8, label: "Payment", segment: "payment" },
     { number: 9, label: "Confirmation", segment: "confirmation" },
@@ -104,7 +104,7 @@ export default function PortalSidebar({
                   isFuture ? `border ${borderMuted}` : "",
                 ].join(" ")}
               >
-                {isCompleted ? <Check className="h-3.5 w-3.5" /> : step.number}
+                {isCompleted ? "✓" : step.number + 1}
               </div>
               <span className={isFuture ? `text-sm ${mutedText}` : "text-sm font-medium"}>{step.label}</span>
             </>
@@ -123,7 +123,11 @@ export default function PortalSidebar({
           }
 
           return (
-            <div key={step.number} className="flex items-center gap-3">
+            <div
+              key={step.number}
+              className="flex items-center gap-3 rounded-md border-l-2 pl-2"
+              style={isActive ? { borderLeftColor: normalizeHex(primaryColor) } : { borderLeftColor: "transparent" }}
+            >
               {itemContent}
             </div>
           );

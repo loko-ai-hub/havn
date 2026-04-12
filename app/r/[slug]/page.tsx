@@ -31,12 +31,13 @@ export default async function RequesterPortalLandingPage({
     <RequesterPortalLanding
       slug={slug}
       startOrderHref={requesterPortalPath(slug, "role")}
-      companyName={org.name}
+      companyName={org.portal_display_name ?? org.name}
       primaryColor={org.brand_color ?? "#1B2B4B"}
       welcomeMessage={
         org.portal_tagline ??
         "Request HOA and association documents for your closing or refinance."
       }
+      logoUrl={org.logo_url}
     />
   );
 }
