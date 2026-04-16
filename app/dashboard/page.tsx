@@ -3,13 +3,13 @@
 import { format, parseISO } from "date-fns";
 import type { ReactNode } from "react";
 import {
-  CheckCircle2,
   Clock,
   DollarSign,
-  Inbox,
+  FileText,
   MoreHorizontal,
   Plus,
-  Sparkles,
+  Timer,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -92,8 +92,8 @@ function formatOrderDate(iso: string | null | undefined): string {
 
 function KpiCardWrapper({ href, children }: { href?: string; children: ReactNode }) {
   const className = cn(
-    "block rounded-xl border border-border bg-card p-5 text-left transition-all duration-200",
-    "hover:-translate-y-0.5 hover:shadow-md",
+    "group block rounded-xl border border-border bg-card p-5 text-left transition-all duration-200",
+    "hover:-translate-y-0.5 hover:border-muted-foreground/40 hover:shadow-md",
     href && "cursor-pointer"
   );
   if (href) {
@@ -245,10 +245,12 @@ export default function DashboardHomePage() {
   const [error, setError] = useState<string | null>(null);
 
   // KPI state
-  const [openPaid, setOpenPaid] = useState(0);
-  const [pendingPayment, setPendingPayment] = useState(0);
-  const [fulfilled, setFulfilled] = useState(0);
+  const [openRequests, setOpenRequests] = useState(0);
+  const [autoCompletedPct, setAutoCompletedPct] = useState(0);
+  const [timeSavedHours, setTimeSavedHours] = useState(0);
+  const [pagesProcessed, setPagesProcessed] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
+  // used by checklist
   const [docsIndexed, setDocsIndexed] = useState(0);
 
   // Org state
@@ -289,29 +291,46 @@ export default function DashboardHomePage() {
     setPortalSlug(slug);
     setStripeConnected(stripe);
 
-    const [paidRes, pendRes, fulRes, revRes, indexedRes, recentRes, commRes, feesRes] = await Promise.all([
-      supabase.from("document_orders").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("order_status", "paid"),
-      supabase.from("document_orders").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("order_status", "pending_payment"),
+    const [openRes, fulRes, revRes, indexedRes, totalDocsRes, pagesRes, recentRes, commRes, feesRes] = await Promise.all([
+      // Open requests = paid + in_progress (not yet fulfilled)
+      supabase.from("document_orders").select("id", { count: "exact", head: true }).eq("organization_id", orgId).in("order_status", ["paid", "in_progress"]),
+      // Fulfilled count (for time saved estimate)
       supabase.from("document_orders").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("order_status", "fulfilled"),
+      // Revenue
       supabase.from("document_orders").select("total_fee").eq("organization_id", orgId).in("order_status", ["paid", "fulfilled"]),
+      // Docs with OCR complete (for auto-completed %)
       supabase.from("community_documents").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("ocr_status", "complete"),
+      // Total docs uploaded (denominator for auto-completed %)
+      supabase.from("community_documents").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
+      // Pages processed (sum of page_count)
+      supabase.from("community_documents").select("page_count").eq("organization_id", orgId),
+      // Recent orders
       supabase.from("document_orders").select("id, created_at, requester_name, requester_email, property_address, master_type_key, delivery_speed, total_fee, order_status").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(5),
+      // Checklist: communities count
       supabase.from("companies").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
+      // Checklist: fees count
       supabase.from("document_request_fees").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
     ]);
 
-    if (paidRes.error || pendRes.error || fulRes.error || revRes.error || indexedRes.error || recentRes.error) {
-      setError((paidRes.error ?? pendRes.error ?? fulRes.error ?? revRes.error ?? indexedRes.error ?? recentRes.error)?.message ?? "Failed to load dashboard data.");
+    if (openRes.error || fulRes.error || revRes.error || indexedRes.error || recentRes.error) {
+      setError((openRes.error ?? fulRes.error ?? revRes.error ?? indexedRes.error ?? recentRes.error)?.message ?? "Failed to load dashboard data.");
       setLoading(false);
       return;
     }
 
-    setOpenPaid(paidRes.count ?? 0);
-    setPendingPayment(pendRes.count ?? 0);
-    setFulfilled(fulRes.count ?? 0);
+    const fulfilledCount = fulRes.count ?? 0;
+    const indexedCount = indexedRes.count ?? 0;
+    const totalDocsCount = totalDocsRes.count ?? 0;
+    const pctComplete = totalDocsCount > 0 ? Math.round((indexedCount / totalDocsCount) * 100) : 0;
+    const pages = (pagesRes.data ?? []).reduce((s, r) => s + (Number((r as { page_count: number | null }).page_count) || 0), 0);
+
+    setOpenRequests(openRes.count ?? 0);
+    setAutoCompletedPct(pctComplete);
+    setTimeSavedHours(fulfilledCount * 2);
+    setPagesProcessed(pages);
     const revSum = (revRes.data ?? []).reduce((s, r) => s + (Number((r as { total_fee: number | null }).total_fee) || 0), 0);
     setTotalRevenue(revSum);
-    setDocsIndexed(indexedRes.count ?? 0);
+    setDocsIndexed(indexedCount);
     setRecent((recentRes.data ?? []) as OrderRow[]);
     setCommunitiesCount(commRes.count ?? 0);
     setFeesCount(feesRes.count ?? 0);
@@ -437,7 +456,7 @@ export default function DashboardHomePage() {
 
       {/* KPI cards */}
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="rounded-xl border border-border bg-card p-5">
               <Skeleton className="h-9 w-9 rounded-lg" />
@@ -448,51 +467,69 @@ export default function DashboardHomePage() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <KpiCardWrapper href="/dashboard/requests?filter=paid">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-amber/25 text-havn-amber">
-              <Inbox className="h-4 w-4" />
-            </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{openPaid}</p>
-            <p className="mt-1 text-xs font-medium text-foreground/80">Open requests</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Paid, awaiting fulfillment</p>
-          </KpiCardWrapper>
-
-          <KpiCardWrapper href="/dashboard/requests?filter=pending_payment">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-yellow-400/25 text-yellow-700">
-              <Clock className="h-4 w-4" />
-            </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{pendingPayment}</p>
-            <p className="mt-1 text-xs font-medium text-foreground/80">Pending payment</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Awaiting requester payment</p>
-          </KpiCardWrapper>
-
-          <KpiCardWrapper href="/dashboard/requests?filter=fulfilled">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-success/25 text-emerald-700">
-              <CheckCircle2 className="h-4 w-4" />
-            </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{fulfilled}</p>
-            <p className="mt-1 text-xs font-medium text-foreground/80">Fulfilled</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Completed orders</p>
-          </KpiCardWrapper>
-
-          <KpiCardWrapper>
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-success/25 text-emerald-700">
-              <DollarSign className="h-4 w-4" />
-            </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{formatCurrency(totalRevenue)}</p>
-            <p className="mt-1 text-xs font-medium text-foreground/80">Lifetime earnings</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Paid and fulfilled orders</p>
-          </KpiCardWrapper>
-
-          <KpiCardWrapper>
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/20 text-violet-700">
-              <Sparkles className="h-4 w-4" />
-            </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{docsIndexed}</p>
-            <p className="mt-1 text-xs font-medium text-foreground/80">Docs ready</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Indexed for auto-fill</p>
-          </KpiCardWrapper>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {[
+            {
+              label: "Open requests",
+              value: String(openRequests),
+              subtext: "Orders not yet completed",
+              icon: Clock,
+              accent: "text-havn-amber",
+              iconBg: "bg-havn-amber/10",
+              href: "/dashboard/requests",
+              delay: 0,
+            },
+            {
+              label: "Auto-completed",
+              value: `${autoCompletedPct}%`,
+              subtext: "Of uploaded documents",
+              icon: Zap,
+              accent: autoCompletedPct >= 70 ? "text-havn-success" : autoCompletedPct >= 40 ? "text-havn-amber" : "text-destructive",
+              iconBg: autoCompletedPct >= 70 ? "bg-havn-success/10" : autoCompletedPct >= 40 ? "bg-havn-amber/10" : "bg-destructive/10",
+              delay: 60,
+            },
+            {
+              label: "Time saved",
+              value: `${timeSavedHours}h`,
+              subtext: "Estimated hours saved",
+              icon: Timer,
+              accent: "text-havn-success",
+              iconBg: "bg-havn-success/10",
+              delay: 120,
+            },
+            {
+              label: "Pages processed",
+              value: pagesProcessed.toLocaleString(),
+              subtext: "Total all time",
+              icon: FileText,
+              accent: "text-primary",
+              iconBg: "bg-primary/10",
+              delay: 180,
+            },
+            {
+              label: "Lifetime earnings",
+              value: formatCurrency(totalRevenue),
+              subtext: "All time",
+              icon: DollarSign,
+              accent: "text-havn-success",
+              iconBg: "bg-havn-success/10",
+              delay: 240,
+            },
+          ].map((card) => (
+            <KpiCardWrapper key={card.label} href={card.href}>
+              <div
+                className={cn(
+                  "inline-flex h-9 w-9 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-110",
+                  card.iconBg
+                )}
+              >
+                <card.icon className={cn("h-4 w-4", card.accent)} />
+              </div>
+              <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{card.value}</p>
+              <p className="mt-1 text-xs font-medium text-foreground/80">{card.label}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{card.subtext}</p>
+            </KpiCardWrapper>
+          ))}
         </div>
       )}
 
