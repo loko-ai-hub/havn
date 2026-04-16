@@ -241,6 +241,33 @@ export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
           Download the CSV template, fill it in with your communities, then upload it here.
         </p>
 
+        {/* Field reference */}
+        <div className="mb-6 rounded-xl border border-border bg-muted/30 p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Field Reference
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[
+              { field: "Legal Name", req: true, note: "Full legal name of the association" },
+              { field: "City", req: true, note: "City where the community is located" },
+              { field: "State", req: true, note: "2-letter abbreviation, e.g. WA" },
+              { field: "ZIP", req: true, note: "5-digit ZIP code" },
+              { field: "Community Type", req: false, note: "HOA · COA · Condo Association · Planned Development (default: HOA)" },
+              { field: "Manager Name", req: false, note: "Assigned property manager" },
+            ].map(({ field, req, note }) => (
+              <div key={field} className="flex gap-2 text-xs">
+                <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-semibold ${req ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>
+                  {req ? "required" : "optional"}
+                </span>
+                <div>
+                  <span className="font-medium text-foreground">{field}</span>
+                  <span className="ml-1 text-muted-foreground">— {note}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Download templates */}
         <div className="mb-6 flex items-center gap-2">
           <button
