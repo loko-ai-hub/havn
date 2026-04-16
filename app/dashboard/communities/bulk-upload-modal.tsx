@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { type DragEvent, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 import { bulkAddCommunities } from "./actions";
 
@@ -98,6 +99,72 @@ function parseCSV(text: string): ParsedRow[] {
   });
 }
 
+// Column name aliases so "legal name", "Legal Name", "LegalName" all work
+const ALIASES: Record<string, keyof Omit<ParsedRow, "errors">> = {
+  "legal name": "legal_name",
+  "legal_name": "legal_name",
+  "legalname": "legal_name",
+  "name": "legal_name",
+  "association name": "legal_name",
+  "community name": "legal_name",
+  "city": "city",
+  "state": "state",
+  "zip": "zip",
+  "zip code": "zip",
+  "postal code": "zip",
+  "community type": "community_type",
+  "communitytype": "community_type",
+  "type": "community_type",
+  "manager name": "manager_name",
+  "managername": "manager_name",
+  "manager": "manager_name",
+  "contact name": "manager_name",
+};
+
+function parseSpreadsheet(buffer: ArrayBuffer): ParsedRow[] {
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!sheet) throw new Error("No sheets found in the file.");
+
+  // Get as array-of-arrays so we control header mapping
+  const raw = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "" });
+  if (raw.length < 2) return [];
+
+  const headerRow = (raw[0] as string[]).map((h) => String(h).trim().toLowerCase());
+
+  // Map header index → our field key
+  const colMap: Record<number, keyof Omit<ParsedRow, "errors">> = {};
+  headerRow.forEach((h, i) => {
+    const key = ALIASES[h];
+    if (key) colMap[i] = key;
+  });
+
+  return raw.slice(1).map((row) => {
+    const record: Partial<Omit<ParsedRow, "errors">> = {};
+    Object.entries(colMap).forEach(([i, key]) => {
+      record[key] = String((row as string[])[Number(i)] ?? "").trim();
+    });
+    const legal_name = record.legal_name ?? "";
+    const city = record.city ?? "";
+    const state = record.state ?? "";
+    const zip = record.zip ?? "";
+    const errors: string[] = [];
+    if (!legal_name) errors.push("Missing legal name");
+    if (!city) errors.push("Missing city");
+    if (!state) errors.push("Missing state");
+    if (!zip) errors.push("Missing ZIP");
+    return {
+      legal_name,
+      city,
+      state,
+      zip,
+      community_type: record.community_type || "HOA",
+      manager_name: record.manager_name ?? "",
+      errors,
+    };
+  }).filter((r) => Object.values(r).some((v) => v !== "" && v !== "HOA"));
+}
+
 function text(el: Element, tag: string): string {
   return el.getElementsByTagName(tag)[0]?.textContent?.trim() ?? "";
 }
@@ -161,27 +228,48 @@ export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
   };
 
   const processFile = (file: File) => {
-    const isCSV = file.name.endsWith(".csv");
-    const isXML = file.name.endsWith(".xml");
-    if (!isCSV && !isXML) {
-      toast.error("Only .csv or .xml files are accepted.");
+    const name = file.name.toLowerCase();
+    const isCSV = name.endsWith(".csv");
+    const isXML = name.endsWith(".xml");
+    const isSpreadsheet = name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".numbers");
+
+    if (!isCSV && !isXML && !isSpreadsheet) {
+      toast.error("Accepted formats: CSV, XML, Excel (.xlsx/.xls), Numbers (.numbers)");
       return;
     }
+
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target?.result as string;
-      try {
-        const rows = isCSV ? parseCSV(content) : parseXML(content);
-        if (rows.length === 0) {
-          toast.error(`No communities found in the ${isCSV ? "CSV" : "XML"}.`);
-          return;
+
+    if (isSpreadsheet) {
+      reader.onload = (e) => {
+        try {
+          const rows = parseSpreadsheet(e.target?.result as ArrayBuffer);
+          if (rows.length === 0) {
+            toast.error("No communities found in the spreadsheet.");
+            return;
+          }
+          setParsed(rows);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Failed to parse spreadsheet.");
         }
-        setParsed(rows);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to parse file.");
-      }
-    };
-    reader.readAsText(file);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        try {
+          const rows = isCSV ? parseCSV(content) : parseXML(content);
+          if (rows.length === 0) {
+            toast.error(`No communities found in the ${isCSV ? "CSV" : "XML"}.`);
+            return;
+          }
+          setParsed(rows);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Failed to parse file.");
+        }
+      };
+      reader.readAsText(file);
+    }
   };
 
   const handleDrop = (e: DragEvent) => {
@@ -303,11 +391,11 @@ export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
             <p className="text-sm font-medium text-foreground">
               Drag & drop your file or click to upload
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">CSV or XML accepted</p>
+            <p className="mt-1 text-xs text-muted-foreground">CSV, XML, Excel, or Numbers</p>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,.xml"
+              accept=".csv,.xml,.xlsx,.xls,.numbers"
               onChange={handleFileSelect}
               className="hidden"
             />
