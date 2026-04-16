@@ -8,6 +8,7 @@ import {
   DollarSign,
   Inbox,
   MoreHorizontal,
+  Plus,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
@@ -409,9 +410,18 @@ export default function DashboardHomePage() {
               <option value="all">All communities</option>
             </select>
           </div>
-          <Button type="button" variant="outline" className="shrink-0 gap-2" disabled={!portalSlug} onClick={() => void handleSharePortal()}>
-            Share portal link
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/communities"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-havn-navy px-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            >
+              <Plus className="h-4 w-4" />
+              Add community
+            </Link>
+            <Button type="button" variant="outline" className="shrink-0 gap-2" disabled={!portalSlug} onClick={() => void handleSharePortal()}>
+              Share portal link
+            </Button>
+          </div>
         </div>
       </div>
 
