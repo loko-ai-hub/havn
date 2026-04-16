@@ -3,7 +3,7 @@ import {
   RequesterPortalOrgProvider,
   type OrgPortalData,
 } from "@/components/requester/RequesterPortalOrgContext";
-import { createPublicClient } from "@/lib/supabase/public";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export default async function RequesterPortalLayout({
   children,
@@ -13,7 +13,7 @@ export default async function RequesterPortalLayout({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const supabase = createPublicClient();
+  const supabase = createAdminClient();
   const { data } = await supabase
     .from("organizations")
     .select(

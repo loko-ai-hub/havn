@@ -1,6 +1,6 @@
 import { RequesterPortalLanding } from "@/components/requester/RequesterPortalLanding";
 import { requesterPortalPath } from "@/lib/requester-flow";
-import { createPublicClient } from "@/lib/supabase/public";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export default async function RequesterPortalLandingPage({
   params,
@@ -8,7 +8,7 @@ export default async function RequesterPortalLandingPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const supabase = createPublicClient();
+  const supabase = createAdminClient();
   const { data: org } = await supabase
     .from("organizations")
     .select(
