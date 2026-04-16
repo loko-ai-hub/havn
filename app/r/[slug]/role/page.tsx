@@ -25,9 +25,8 @@ export default function RequesterRolePage() {
   const params = useParams<{ slug: string }>();
   const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
 
-  const [selected, setSelected] = useState<RequesterType | null>(
-    order.requesterType
-  );
+  const [selected, setSelected] = useState<RequesterType | null>(order.requesterType);
+  const [hovered, setHovered] = useState<RequesterType | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const roleCards = useMemo(() => REQUESTER_TYPES, []);
@@ -39,6 +38,18 @@ export default function RequesterRolePage() {
     }
     setError(null);
     router.push(`/r/${slug}/info`);
+  };
+
+  const getCardStyle = (value: RequesterType): React.CSSProperties => {
+    const isSelected = selected === value;
+    const isHovered = hovered === value;
+    if (isSelected) {
+      return { borderColor: primaryColor, backgroundColor: `${primaryColor}1A` };
+    }
+    if (isHovered) {
+      return { borderColor: "rgba(26,23,21,0.4)", backgroundColor: "#f4f3f0" };
+    }
+    return {};
   };
 
   return (
@@ -61,23 +72,12 @@ export default function RequesterRolePage() {
                 updateOrder({ requesterType: role.value });
                 if (error) setError(null);
               }}
-              className={[
-                "w-full rounded-xl border-2 p-5 text-left transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                isSelected
-                  ? "border-[var(--card-border)] bg-[var(--card-bg)] hover:border-[var(--card-border)] hover:bg-[var(--card-bg)]"
-                  : "border-border bg-card hover:border-havn-navy/50 hover:bg-havn-surface/35",
-              ].join(" ")}
-              style={
-                isSelected
-                  ? ({
-                      "--card-border": primaryColor,
-                      "--card-bg": `${primaryColor}1A`,
-                    } as React.CSSProperties)
-                  : undefined
-              }
+              onMouseEnter={() => setHovered(role.value)}
+              onMouseLeave={() => setHovered(null)}
+              className="w-full rounded-xl border-2 border-border bg-card p-5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              style={getCardStyle(role.value)}
             >
-              <div className="flex items-start gap-4">
+              <div className="flex items-center gap-4">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-havn-surface text-foreground">
                   <Icon className="h-5 w-5" />
                 </div>
@@ -85,7 +85,7 @@ export default function RequesterRolePage() {
                   <p className="text-base font-semibold text-foreground">{role.title}</p>
                   <p className="mt-1 text-sm text-muted-foreground">{role.description}</p>
                 </div>
-                <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
             </button>
           );
