@@ -57,9 +57,6 @@ export async function POST(request: Request) {
         organization_id: organizationId,
         original_filename: file.name,
         document_category: category,
-        mime_type: file.type,
-        file_size_bytes: file.size,
-        storage_path_original: originalPath,
         ocr_status: "pending",
       })
       .select("id")
