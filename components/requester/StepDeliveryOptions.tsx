@@ -175,11 +175,11 @@ export default function StepDeliveryOptions({
 
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
-      <div className="mt-8 flex flex-col gap-3">
+      <div className="mt-8 flex flex-row gap-3">
         <Button
           type="button"
           variant="outline"
-          className="h-12 w-full text-base"
+          className="h-12 flex-1 text-base"
           onClick={() => router.push(`/r/${slug}/documents`)}
         >
           Back
@@ -187,7 +187,7 @@ export default function StepDeliveryOptions({
         <Button
           type="button"
           onClick={handleContinue}
-          className="h-12 w-full bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light"
+          className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light"
         >
           Continue
           <ArrowRight className="ml-2 h-4 w-4" />

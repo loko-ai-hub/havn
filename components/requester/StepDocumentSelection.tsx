@@ -197,8 +197,8 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
         <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrency(total)}</p>
       </div>
 
-      <div className="flex flex-col items-center gap-3">
-        <button onClick={onBack} className="h-12 w-full rounded-lg border border-border px-6 text-base font-medium text-foreground transition-colors hover:bg-secondary">
+      <div className="flex flex-row gap-3">
+        <button onClick={onBack} className="h-12 flex-1 rounded-lg border border-border px-6 text-base font-medium text-foreground transition-colors hover:bg-secondary">
           Back
         </button>
         <button
@@ -210,7 +210,7 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
             setUploadError(null);
             onContinue();
           }}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg px-8 text-base font-semibold text-white transition-colors hover:opacity-90"
+          className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg px-8 text-base font-semibold text-white transition-colors hover:opacity-90"
           style={{ backgroundColor: primaryColor }}
         >
           Continue

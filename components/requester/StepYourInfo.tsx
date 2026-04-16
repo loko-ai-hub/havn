@@ -299,11 +299,11 @@ export default function StepYourInfo({
         </div>
       </div>
 
-      <div className="mt-8 flex flex-col gap-3">
-        <Button type="button" variant="outline" className="h-12 w-full text-base" onClick={() => router.push(`/r/${slug}/role`)}>
+      <div className="mt-8 flex flex-row gap-3">
+        <Button type="button" variant="outline" className="h-12 flex-1 text-base" onClick={() => router.push(`/r/${slug}/role`)}>
           Back
         </Button>
-        <Button type="button" onClick={handleContinue} className="h-12 w-full bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light">
+        <Button type="button" onClick={handleContinue} className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light">
           Continue
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
