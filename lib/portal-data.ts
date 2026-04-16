@@ -14,7 +14,7 @@ export const REQUESTER_TYPES: RequesterTypeOption[] = [
   },
   {
     value: "buyer_agent",
-    title: "Buyer or Seller's Agent",
+    title: "Real Estate Agent",
     description: "I represent the buyer or seller in this transaction.",
   },
   {
