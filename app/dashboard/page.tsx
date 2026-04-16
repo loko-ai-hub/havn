@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -123,7 +124,29 @@ function RecentOrdersSection({
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading orders…</p>
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="border-b border-border bg-muted/40 px-4 py-3">
+            <Skeleton className="h-4 w-48" />
+          </div>
+          <div className="divide-y divide-border">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-16" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-40" />
+                </div>
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-12" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-5 w-14 rounded-full" />
+                <Skeleton className="h-7 w-7 rounded-md" />
+              </div>
+            ))}
+          </div>
+        </div>
       ) : recent.length === 0 ? (
         <div className="rounded-xl border border-border bg-card px-6 py-12 text-center text-sm text-muted-foreground">
           No orders yet. Share your portal link to receive requests.
@@ -403,62 +426,65 @@ export default function DashboardHomePage() {
       ) : null}
 
       {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <KpiCardWrapper href="/dashboard/requests?filter=paid">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-amber/25 text-havn-amber">
-            <Inbox className="h-4 w-4" />
-          </div>
-          <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">
-            {loading ? "—" : openPaid}
-          </p>
-          <p className="mt-1 text-xs font-medium text-foreground/80">Open requests</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Paid, awaiting fulfillment</p>
-        </KpiCardWrapper>
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="rounded-xl border border-border bg-card p-5">
+              <Skeleton className="h-9 w-9 rounded-lg" />
+              <Skeleton className="mt-3 h-8 w-16" />
+              <Skeleton className="mt-2 h-3 w-24" />
+              <Skeleton className="mt-1.5 h-2.5 w-32" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <KpiCardWrapper href="/dashboard/requests?filter=paid">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-amber/25 text-havn-amber">
+              <Inbox className="h-4 w-4" />
+            </div>
+            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{openPaid}</p>
+            <p className="mt-1 text-xs font-medium text-foreground/80">Open requests</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Paid, awaiting fulfillment</p>
+          </KpiCardWrapper>
 
-        <KpiCardWrapper href="/dashboard/requests?filter=pending_payment">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-yellow-400/25 text-yellow-700">
-            <Clock className="h-4 w-4" />
-          </div>
-          <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">
-            {loading ? "—" : pendingPayment}
-          </p>
-          <p className="mt-1 text-xs font-medium text-foreground/80">Pending payment</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Awaiting requester payment</p>
-        </KpiCardWrapper>
+          <KpiCardWrapper href="/dashboard/requests?filter=pending_payment">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-yellow-400/25 text-yellow-700">
+              <Clock className="h-4 w-4" />
+            </div>
+            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{pendingPayment}</p>
+            <p className="mt-1 text-xs font-medium text-foreground/80">Pending payment</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Awaiting requester payment</p>
+          </KpiCardWrapper>
 
-        <KpiCardWrapper href="/dashboard/requests?filter=fulfilled">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-success/25 text-emerald-700">
-            <CheckCircle2 className="h-4 w-4" />
-          </div>
-          <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">
-            {loading ? "—" : fulfilled}
-          </p>
-          <p className="mt-1 text-xs font-medium text-foreground/80">Fulfilled</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Completed orders</p>
-        </KpiCardWrapper>
+          <KpiCardWrapper href="/dashboard/requests?filter=fulfilled">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-success/25 text-emerald-700">
+              <CheckCircle2 className="h-4 w-4" />
+            </div>
+            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{fulfilled}</p>
+            <p className="mt-1 text-xs font-medium text-foreground/80">Fulfilled</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Completed orders</p>
+          </KpiCardWrapper>
 
-        <KpiCardWrapper>
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-success/25 text-emerald-700">
-            <DollarSign className="h-4 w-4" />
-          </div>
-          <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">
-            {loading ? "—" : formatCurrency(totalRevenue)}
-          </p>
-          <p className="mt-1 text-xs font-medium text-foreground/80">Lifetime earnings</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Paid and fulfilled orders</p>
-        </KpiCardWrapper>
+          <KpiCardWrapper>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-success/25 text-emerald-700">
+              <DollarSign className="h-4 w-4" />
+            </div>
+            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{formatCurrency(totalRevenue)}</p>
+            <p className="mt-1 text-xs font-medium text-foreground/80">Lifetime earnings</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Paid and fulfilled orders</p>
+          </KpiCardWrapper>
 
-        <KpiCardWrapper>
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/20 text-violet-700">
-            <Sparkles className="h-4 w-4" />
-          </div>
-          <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">
-            {loading ? "—" : docsIndexed}
-          </p>
-          <p className="mt-1 text-xs font-medium text-foreground/80">Docs ready</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Indexed for auto-fill</p>
-        </KpiCardWrapper>
-      </div>
+          <KpiCardWrapper>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/20 text-violet-700">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">{docsIndexed}</p>
+            <p className="mt-1 text-xs font-medium text-foreground/80">Docs ready</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Indexed for auto-fill</p>
+          </KpiCardWrapper>
+        </div>
+      )}
 
       {/* Main content — two-column when checklist visible */}
       {showChecklist ? (
