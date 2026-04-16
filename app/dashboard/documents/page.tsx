@@ -74,10 +74,19 @@ export default function DashboardDocumentsPage() {
       return;
     }
 
-    const orgId =
+    let orgId =
       typeof user.user_metadata?.organization_id === "string"
         ? user.user_metadata.organization_id
         : null;
+
+    if (!orgId) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("organization_id")
+        .eq("id", user.id)
+        .single();
+      orgId = (profile?.organization_id as string | undefined) ?? null;
+    }
 
     if (!orgId) {
       setLoading(false);
