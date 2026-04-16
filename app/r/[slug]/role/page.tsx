@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowRight, Briefcase, Building2, User } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { REQUESTER_TYPES, type RequesterType } from "@/lib/portal-data";
 import {
   usePortalOrg,
@@ -95,15 +94,15 @@ export default function RequesterRolePage() {
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
       <div className="mt-8 flex justify-end">
-        <Button
+        <button
           type="button"
           onClick={handleContinue}
-          className="h-14 min-w-32 px-6 py-4 text-base font-semibold text-white hover:opacity-90"
+          className="inline-flex h-14 min-w-32 items-center justify-center gap-2 rounded-lg px-6 text-base font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           style={{ backgroundColor: primaryColor }}
         >
           Continue
-          <ArrowRight className="ml-2 h-4 w-4" />
-        </Button>
+          <ArrowRight className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );
