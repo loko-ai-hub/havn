@@ -132,21 +132,7 @@ export type PortalAddon = {
   popular?: boolean;
 };
 
-export const PORTAL_ADDONS: PortalAddon[] = [
-  {
-    id: "rush_review",
-    name: "Priority Review",
-    description: "Your order is reviewed first",
-    fee: 25,
-    popular: true,
-  },
-  {
-    id: "digital_notary",
-    name: "Digital Notary",
-    description: "Notarized digital copy included",
-    fee: 45,
-  },
-];
+export const PORTAL_ADDONS: PortalAddon[] = [];
 
 export const LENDER_ADDONS: PortalAddon[] = [
   {

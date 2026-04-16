@@ -18,10 +18,10 @@ import {
   type PortalOrder,
 } from "@/lib/portal-data";
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({ title, primaryColor, children }: { title: string; primaryColor: string; children: React.ReactNode }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="bg-havn-navy px-5 py-3">
+      <div className="px-5 py-3" style={{ backgroundColor: primaryColor }}>
         <p className="text-xs font-semibold uppercase tracking-wider text-white">{title}</p>
       </div>
       <div className="p-5">{children}</div>
@@ -79,7 +79,7 @@ export default function StepReview({
 
       <div className="mt-8 grid gap-8 lg:grid-cols-5">
         <div className="space-y-4 lg:col-span-3">
-          <SectionCard title="Requester">
+          <SectionCard title="Requester" primaryColor={primaryColor}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-foreground">{order.requesterName || "Not provided"}</p>
@@ -100,7 +100,7 @@ export default function StepReview({
             ) : null}
           </SectionCard>
 
-          <SectionCard title="Property">
+          <SectionCard title="Property" primaryColor={primaryColor}>
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm text-foreground">{fullAddress}</p>
               <button type="button" onClick={() => router.push(`/r/${slug}/property`)} className="text-xs font-medium text-havn-navy hover:underline">
@@ -109,7 +109,7 @@ export default function StepReview({
             </div>
           </SectionCard>
 
-          <SectionCard title="Documents">
+          <SectionCard title="Documents" primaryColor={primaryColor}>
             <div className="space-y-2">
               {selectedDocs.map((doc) => (
                 <div key={doc.id} className="flex items-center justify-between text-sm">
@@ -126,7 +126,7 @@ export default function StepReview({
           </SectionCard>
 
           {selectedAddOns.length > 0 ? (
-            <SectionCard title="Add-ons">
+            <SectionCard title="Add-ons" primaryColor={primaryColor}>
               <div className="space-y-2">
                 {selectedAddOns.map((addon) => (
                   <div key={addon.id} className="flex items-center justify-between text-sm">
@@ -143,7 +143,7 @@ export default function StepReview({
             </SectionCard>
           ) : null}
 
-          <SectionCard title="Delivery">
+          <SectionCard title="Delivery" primaryColor={primaryColor}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm text-foreground">{deliveryOption.label}</p>
@@ -158,7 +158,7 @@ export default function StepReview({
 
         <div className="lg:col-span-2">
           <div className="sticky top-24 flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card">
-            <div className="bg-havn-navy px-5 py-3">
+            <div className="px-5 py-3" style={{ backgroundColor: primaryColor }}>
               <p className="text-xs font-semibold uppercase tracking-wider text-white">Price breakdown</p>
             </div>
             <div className="flex flex-1 flex-col space-y-3 p-5">
@@ -171,12 +171,7 @@ export default function StepReview({
                   <span className="text-muted-foreground">Rush fee</span>
                   <span className="text-foreground">{formatCurrency(rushFee)}</span>
                 </div>
-              ) : (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Rush fee</span>
-                  <span className="text-foreground">{formatCurrency(0)}</span>
-                </div>
-              )}
+              ) : null}
               <div className="border-t border-border pt-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-foreground">Total</span>

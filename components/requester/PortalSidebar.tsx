@@ -43,13 +43,12 @@ function getTextColor(hex: string): string {
 
 function getSteps(): SidebarStep[] {
   return [
-    { number: 0, label: "Landing", segment: "" },
     { number: 1, label: "Role", segment: "role" },
-    { number: 2, label: "Property", segment: "property" },
-    { number: 3, label: "Documents", segment: "documents" },
-    { number: 4, label: "Add-ons", segment: "addons" },
+    { number: 2, label: "Your Info", segment: "info" },
+    { number: 3, label: "Property", segment: "property" },
+    { number: 4, label: "Documents", segment: "documents" },
     { number: 5, label: "Delivery", segment: "delivery" },
-    { number: 6, label: "Your Info", segment: "info" },
+    { number: 6, label: "Add-ons", segment: "addons" },
     { number: 7, label: "Review & Pay", segment: "review" },
     { number: 8, label: "Payment", segment: "payment" },
     { number: 9, label: "Confirmation", segment: "confirmation" },
@@ -96,7 +95,7 @@ export default function PortalSidebar({
           const itemContent = (
             <>
               {isCompleted ? (
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/25 text-emerald-800 dark:text-emerald-100">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
                   <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
                 </div>
               ) : (
@@ -111,7 +110,7 @@ export default function PortalSidebar({
                     isFuture ? `border ${borderMuted}` : "",
                   ].join(" ")}
                 >
-                  {step.number + 1}
+                  {step.number}
                 </div>
               )}
               <span className={isFuture ? `text-sm ${mutedText}` : "text-sm font-medium"}>{step.label}</span>
@@ -137,7 +136,7 @@ export default function PortalSidebar({
                 "flex items-center gap-3 rounded-md pl-1",
                 isActive ? "border-l-4 py-0.5" : "border-l-4 border-transparent py-0.5",
               ].join(" ")}
-              style={isActive ? { borderLeftColor: normalizeHex(primaryColor) } : undefined}
+              style={isActive ? { borderLeftColor: textColor } : undefined}
             >
               {itemContent}
             </div>

@@ -32,11 +32,11 @@ export type RequesterFlowStep = {
 export const REQUESTER_FLOW_STEP_ORDER: readonly RequesterLinearStepId[] = [
   "landing",
   "role",
+  "info",
   "property",
   "documents",
-  "addons",
   "delivery",
-  "info",
+  "addons",
   "review",
   "payment",
   "confirmation",

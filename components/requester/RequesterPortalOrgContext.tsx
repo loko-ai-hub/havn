@@ -13,6 +13,8 @@ export type OrgPortalData = {
   portal_display_name: string | null;
   support_email: string | null;
   is_active: boolean | null;
+  /** master_type_key values the org has configured fees for */
+  availableDocTypes: string[];
 };
 
 const RequesterPortalOrgContext = createContext<OrgPortalData | null>(null);
@@ -108,6 +110,7 @@ export function usePortalOrg() {
     brandColor: org.brand_color ?? "#1B2B4B",
     logoUrl: org.logo_url,
     portalTagline: org.portal_tagline,
+    availableDocTypes: org.availableDocTypes,
   };
 }
 

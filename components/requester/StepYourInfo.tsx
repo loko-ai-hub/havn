@@ -76,7 +76,7 @@ export default function StepYourInfo({
       additionalEmails,
     });
     updateEmails(additionalEmails);
-    router.push(`/r/${slug}/review`);
+    router.push(`/r/${slug}/property`);
   };
 
   const addAdditionalEmail = () => {
@@ -299,8 +299,8 @@ export default function StepYourInfo({
         </div>
       </div>
 
-      <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <Button type="button" variant="outline" className="h-12 w-full text-base" onClick={() => router.push(`/r/${slug}/delivery`)}>
+      <div className="mt-8 flex flex-col gap-3">
+        <Button type="button" variant="outline" className="h-12 w-full text-base" onClick={() => router.push(`/r/${slug}/role`)}>
           Back
         </Button>
         <Button type="button" onClick={handleContinue} className="h-12 w-full bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light">

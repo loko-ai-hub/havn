@@ -12,10 +12,26 @@ import {
 const RESALE_IDS = ["resale_cert", "resale_cert_update"];
 const LENDER_IDS = ["lender_questionnaire", "custom_company_form"];
 
+// Maps master_type_key (DB) → PORTAL_DOCUMENTS id (frontend)
+const DOC_TYPE_TO_ID: Record<string, string> = {
+  resale_certificate: "resale_cert",
+  certificate_update: "resale_cert_update",
+  lender_questionnaire: "lender_questionnaire",
+  estoppel_letter: "estoppel",
+  governing_documents: "governing_docs",
+  demand_letter: "demand_letter",
+};
+
 export default function RequesterDocumentsPage() {
   const portalOrg = usePortalOrg();
   const { order, updateOrder } = usePortalOrder();
   const primaryColor = portalOrg?.brandColor ?? "#1B2B4B";
+  // Doc ids the org has actually configured fees for; empty = show all (fallback)
+  const orgDocIds = useMemo(() => {
+    const types = portalOrg?.availableDocTypes ?? [];
+    if (types.length === 0) return null;
+    return types.map((t) => DOC_TYPE_TO_ID[t]).filter(Boolean);
+  }, [portalOrg?.availableDocTypes]);
   const router = useRouter();
   const params = useParams<{ slug: string }>();
   const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug;
@@ -63,6 +79,7 @@ export default function RequesterDocumentsPage() {
         requesterType={requesterType}
         selected={selected}
         primaryColor={primaryColor}
+        availableDocIds={orgDocIds ?? undefined}
         onToggle={(docId) => {
           setSelected((prev) => {
             if (requesterType === "lender_title") {
@@ -78,7 +95,7 @@ export default function RequesterDocumentsPage() {
           });
         }}
         onBack={() => router.push(`/r/${slug}/property`)}
-        onContinue={() => router.push(`/r/${slug}/addons`)}
+        onContinue={() => router.push(`/r/${slug}/delivery`)}
       />
     </div>
   );

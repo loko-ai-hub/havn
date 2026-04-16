@@ -11,6 +11,8 @@ interface StepDocumentSelectionProps {
   requesterType: RequesterType;
   selected: string[];
   primaryColor: string;
+  /** If provided, only show documents whose id is in this list */
+  availableDocIds?: string[];
   onToggle: (docId: string) => void;
   onContinue: () => void;
   onBack: () => void;
@@ -19,7 +21,7 @@ interface StepDocumentSelectionProps {
 const RESALE_IDS = ["resale_cert", "resale_cert_update"];
 const LENDER_DOC_IDS = ["lender_questionnaire", "custom_company_form"] as const;
 
-const StepDocumentSelection = ({ requesterType, selected, primaryColor, onToggle, onContinue, onBack }: StepDocumentSelectionProps) => {
+const StepDocumentSelection = ({ requesterType, selected, primaryColor, availableDocIds, onToggle, onContinue, onBack }: StepDocumentSelectionProps) => {
   const isHomeowner = requesterType === "homeowner";
   const isLender = requesterType === "lender_title";
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
@@ -49,6 +51,7 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, onToggle
     : PORTAL_DOCUMENTS.filter((d) => {
         if (!d.availableTo.includes(requesterType)) return false;
         if (!isHomeowner && d.id === "resale_cert_update") return false;
+        if (availableDocIds && !availableDocIds.includes(d.id)) return false;
         return true;
       });
 

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import StepAddons from "@/components/requester/StepAddons";
-import { PORTAL_ADDONS, getDocumentFee } from "@/lib/portal-data";
+import { LENDER_ADDONS, getDocumentFee } from "@/lib/portal-data";
 import {
   usePortalOrg,
   usePortalOrder,
@@ -32,10 +32,10 @@ export default function RequesterAddonsPage() {
       primaryColor={primaryColor}
       requesterType={order.requesterType ?? "homeowner"}
       onToggle={handleToggle}
-      addOnsList={PORTAL_ADDONS}
+      addOnsList={LENDER_ADDONS}
       documentTotal={getDocumentFee(order.documentsSelected)}
-      onBack={() => router.push(`/r/${slug}/documents`)}
-      onContinue={() => router.push(`/r/${slug}/delivery`)}
+      onBack={() => router.push(`/r/${slug}/delivery`)}
+      onContinue={() => router.push(`/r/${slug}/review`)}
     />
   );
 }

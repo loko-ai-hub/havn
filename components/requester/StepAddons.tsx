@@ -122,7 +122,7 @@ export default function StepAddons({
         </div>
       </div>
 
-      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+      <div className="mt-8 flex flex-col gap-3">
         <Button type="button" variant="outline" className="h-12 w-full text-base" onClick={onBack}>
           Back
         </Button>

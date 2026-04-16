@@ -17,7 +17,7 @@ export default async function RequesterPortalLayout({
   const { data } = await supabase
     .from("organizations")
     .select(
-      "id, name, portal_slug, brand_color, logo_url, portal_tagline, portal_display_name, support_email, is_active"
+      "id, name, portal_slug, brand_color, logo_url, portal_tagline, portal_display_name, support_email, is_active, document_request_fees(document_type)"
     )
     .eq("portal_slug", slug)
     .single();
@@ -33,9 +33,16 @@ export default async function RequesterPortalLayout({
     );
   }
 
+  const availableDocTypes =
+    (org.document_request_fees as { document_type: string }[] | null)?.map(
+      (f) => f.document_type
+    ) ?? [];
+
+  const { document_request_fees: _fees, ...orgData } = org;
+
   return (
-    <RequesterPortalOrgProvider org={org as OrgPortalData}>
-      <RequesterPortalFrame slug={slug} org={org as OrgPortalData}>
+    <RequesterPortalOrgProvider org={{ ...(orgData as OrgPortalData), availableDocTypes }}>
+      <RequesterPortalFrame slug={slug} org={orgData as OrgPortalData}>
         {children}
       </RequesterPortalFrame>
     </RequesterPortalOrgProvider>

@@ -119,10 +119,6 @@ export default async function RequesterPaymentPage({
         confirmationQuery={confirmationQuery.toString()}
         primaryColor={primaryColor}
       />
-      {/* Keep a minimal summary for users with JS disabled */}
-      <div className="mx-auto mt-6 w-full max-w-3xl px-6 text-sm text-muted-foreground">
-        Total: {formatCurrency(totalFee)}
-      </div>
     </div>
   );
 }

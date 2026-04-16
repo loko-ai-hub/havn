@@ -67,7 +67,8 @@ export default function StepDeliveryOptions({
       deliveryType,
       closingDate: closingDate ? closingDate.toISOString() : "",
     });
-    router.push(`/r/${slug}/info`);
+    // Lenders have add-ons (Rush Processing, HOA Violation Search, etc.); others skip that step
+    router.push(requesterType === "lender_title" ? `/r/${slug}/addons` : `/r/${slug}/review`);
   };
 
   const handleDateSelect = (date: Date | undefined) => {
@@ -174,12 +175,12 @@ export default function StepDeliveryOptions({
 
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
-      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+      <div className="mt-8 flex flex-col gap-3">
         <Button
           type="button"
           variant="outline"
           className="h-12 w-full text-base"
-          onClick={() => router.push(`/r/${slug}/addons`)}
+          onClick={() => router.push(`/r/${slug}/documents`)}
         >
           Back
         </Button>
