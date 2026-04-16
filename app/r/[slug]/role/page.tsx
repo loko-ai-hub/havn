@@ -65,15 +65,15 @@ export default function RequesterRolePage() {
                 "w-full rounded-xl border-2 p-5 text-left transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 isSelected
-                  ? "border-2"
+                  ? "border-[var(--card-border)] bg-[var(--card-bg)] hover:border-[var(--card-border)] hover:bg-[var(--card-bg)]"
                   : "border-border bg-card hover:border-havn-navy/50 hover:bg-havn-surface/35",
               ].join(" ")}
               style={
                 isSelected
-                  ? {
-                      borderColor: primaryColor,
-                      backgroundColor: `${primaryColor}0D`,
-                    }
+                  ? ({
+                      "--card-border": primaryColor,
+                      "--card-bg": `${primaryColor}1A`,
+                    } as React.CSSProperties)
                   : undefined
               }
             >

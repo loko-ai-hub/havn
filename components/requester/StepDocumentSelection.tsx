@@ -88,10 +88,10 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
             <div key={doc.id} className="space-y-3">
               <button
                 onClick={() => !isRequired && handleToggle(doc.id)}
-                className={`w-full flex items-center gap-4 rounded-xl border-2 border-border bg-white p-5 text-left transition-all hover:border-muted-foreground/40 ${
+                className={`w-full flex items-center gap-4 rounded-xl border-2 border-border bg-white p-5 text-left transition-all ${
                   isRequired ? "cursor-default" : "cursor-pointer"
-                }`}
-                style={isSelected ? { borderColor: primaryColor, backgroundColor: `${primaryColor}08` } : undefined}
+                } ${isSelected ? "" : "hover:border-muted-foreground/40"}`}
+                style={isSelected ? ({ "--card-border": primaryColor, "--card-bg": `${primaryColor}08`, borderColor: "var(--card-border)", backgroundColor: "var(--card-bg)" } as React.CSSProperties) : undefined}
               >
                 {isResale || isLenderSingleSelect ? (
                   <div
