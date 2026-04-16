@@ -164,7 +164,7 @@ export default function DashboardSidebar({
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-white">{userName}</p>
             <span className="mt-0.5 inline-block rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/90">
-              {userRole.replace(/_/g, " ")}
+              {({ management_admin: "Admin", property_manager: "Manager", board_member: "Board Member", owner: "Owner" } as Record<string, string>)[userRole] ?? userRole.replace(/_/g, " ")}
             </span>
           </div>
         </div>
