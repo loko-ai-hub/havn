@@ -44,7 +44,6 @@ type OrderRow = {
   delivery_speed: string | null;
   total_fee: number | null;
   order_status: string | null;
-  community_id: string | null;
   closing_date: string | null;
 };
 
@@ -171,7 +170,7 @@ export default function DashboardPerformancePage() {
       supabase
         .from("document_orders")
         .select(
-          "id, created_at, requester_name, requester_email, property_address, master_type_key, delivery_speed, total_fee, order_status, community_id, closing_date"
+          "id, created_at, requester_name, requester_email, property_address, master_type_key, delivery_speed, total_fee, order_status, closing_date"
         )
         .eq("organization_id", orgId)
         .neq("order_status", "pending_payment")
@@ -214,12 +213,8 @@ export default function DashboardPerformancePage() {
   }, [load]);
 
   const orders = useMemo(() => {
-    let result = allOrders.filter((o) => isInPeriod(o.created_at, period));
-    if (selectedCommunity) {
-      result = result.filter((o) => o.community_id === selectedCommunity);
-    }
-    return result;
-  }, [allOrders, period, selectedCommunity]);
+    return allOrders.filter((o) => isInPeriod(o.created_at, period));
+  }, [allOrders, period]);
 
   // KPIs
   const total = orders.length;
