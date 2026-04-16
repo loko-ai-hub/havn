@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { US_STATES } from "@/lib/us-states";
 
 import { addCommunity, archiveCommunity } from "./actions";
+import BulkUploadModal from "./bulk-upload-modal";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ export default function DashboardCommunitiesPage() {
   const [loading, setLoading] = useState(true);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const [form, setForm] = useState({
@@ -262,7 +264,7 @@ export default function DashboardCommunitiesPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => toast.info("Coming soon")}
+              onClick={() => setIsBulkOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
               <Upload className="h-4 w-4" />
@@ -456,6 +458,18 @@ export default function DashboardCommunitiesPage() {
           )}
         </div>
       </div>
+
+      {/* Bulk Upload Modal */}
+      {isBulkOpen && orgId && (
+        <BulkUploadModal
+          orgId={orgId}
+          onClose={() => setIsBulkOpen(false)}
+          onDone={() => {
+            setIsBulkOpen(false);
+            void loadData();
+          }}
+        />
+      )}
 
       {/* Add Community Modal */}
       {isAddOpen && (

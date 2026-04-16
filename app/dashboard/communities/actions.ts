@@ -42,6 +42,44 @@ export async function addCommunity(
   return { ok: true };
 }
 
+export async function bulkAddCommunities(
+  orgId: string,
+  rows: Array<{
+    legal_name: string;
+    city: string;
+    state: string;
+    zip: string;
+    community_type: string;
+    manager_name: string;
+  }>
+) {
+  const { organizationId } = await requireDashboardOrg();
+  if (organizationId !== orgId) {
+    return { error: "You cannot add communities for this organization." };
+  }
+
+  const admin = createAdminClient();
+
+  const { error } = await admin.from("communities").insert(
+    rows.map((r) => ({
+      organization_id: orgId,
+      legal_name: r.legal_name,
+      city: r.city,
+      state: r.state,
+      zip: r.zip,
+      community_type: r.community_type || "HOA",
+      manager_name: r.manager_name || null,
+      unit_count: 0,
+      status: "active",
+    }))
+  );
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/communities");
+  return { ok: true };
+}
+
 export async function archiveCommunity(id: string, status: "active" | "archived") {
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();

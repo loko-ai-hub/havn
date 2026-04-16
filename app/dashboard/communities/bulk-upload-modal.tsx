@@ -1,0 +1,314 @@
+"use client";
+
+import {
+  AlertCircle,
+  CheckCircle2,
+  Download,
+  Loader2,
+  Upload,
+  X,
+} from "lucide-react";
+import { type DragEvent, useRef, useState, useTransition } from "react";
+import { toast } from "sonner";
+
+import { bulkAddCommunities } from "./actions";
+
+// ─── CSV template ─────────────────────────────────────────────────────────────
+
+const CSV_HEADERS = [
+  "Legal Name",
+  "City",
+  "State",
+  "ZIP",
+  "Community Type",
+  "Manager Name",
+];
+
+const TEMPLATE_CSV = [
+  CSV_HEADERS.join(","),
+  '"Sunset Ridge HOA, Inc.",Bellevue,WA,98004,HOA,Patricia Wells',
+  '"Oak Creek Estates",Tampa,FL,33602,COA,Robert Garcia',
+].join("\n");
+
+// ─── CSV parsing ──────────────────────────────────────────────────────────────
+
+interface ParsedRow {
+  legal_name: string;
+  city: string;
+  state: string;
+  zip: string;
+  community_type: string;
+  manager_name: string;
+  errors: string[];
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function parseCSV(text: string): ParsedRow[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
+  return lines.slice(1).map((line) => {
+    const cols = parseCSVLine(line);
+    const errors: string[] = [];
+    const legal_name = cols[0] ?? "";
+    const city = cols[1] ?? "";
+    const state = cols[2] ?? "";
+    const zip = cols[3] ?? "";
+    if (!legal_name) errors.push("Missing legal name");
+    if (!city) errors.push("Missing city");
+    if (!state) errors.push("Missing state");
+    if (!zip) errors.push("Missing ZIP");
+    return {
+      legal_name,
+      city,
+      state,
+      zip,
+      community_type: cols[4]?.trim() || "HOA",
+      manager_name: cols[5]?.trim() ?? "",
+      errors,
+    };
+  });
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+interface Props {
+  orgId: string;
+  onClose: () => void;
+  onDone: () => void;
+}
+
+export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
+  const [parsed, setParsed] = useState<ParsedRow[] | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadTemplate = () => {
+    const blob = new Blob([TEMPLATE_CSV], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "havn-communities-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const processFile = (file: File) => {
+    if (!file.name.endsWith(".csv")) {
+      toast.error("Only .csv files are accepted.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const rows = parseCSV(text);
+      if (rows.length === 0) {
+        toast.error("No data rows found in the CSV.");
+        return;
+      }
+      setParsed(rows);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+  };
+
+  const validRows = parsed?.filter((r) => r.errors.length === 0) ?? [];
+  const errorRows = parsed?.filter((r) => r.errors.length > 0) ?? [];
+
+  const handleImport = () => {
+    if (!validRows.length) return;
+    startTransition(async () => {
+      const result = await bulkAddCommunities(
+        orgId,
+        validRows.map(({ legal_name, city, state, zip, community_type, manager_name }) => ({
+          legal_name,
+          city,
+          state,
+          zip,
+          community_type,
+          manager_name,
+        }))
+      );
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        `${validRows.length} ${validRows.length === 1 ? "community" : "communities"} imported.`
+      );
+      onDone();
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card p-8 shadow-2xl">
+        {/* Close */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <h2 className="mb-1 text-lg font-semibold text-foreground">Bulk Upload Communities</h2>
+        <p className="mb-6 text-sm text-muted-foreground">
+          Download the CSV template, fill it in with your communities, then upload it here.
+        </p>
+
+        {/* Download template */}
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={handleDownloadTemplate}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            <Download className="h-4 w-4" />
+            Download CSV Template
+          </button>
+        </div>
+
+        {!parsed ? (
+          /* ── Drop zone ─────────────────────────────────────────────────── */
+          <div
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => fileRef.current?.click()}
+            className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-10 transition-colors ${
+              isDragging
+                ? "border-primary bg-primary/5"
+                : "border-border bg-muted/20 hover:border-muted-foreground/40 hover:bg-muted/30"
+            }`}
+          >
+            <Upload className="mb-2 h-6 w-6 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">
+              Drag & drop your CSV or click to upload
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Only .csv files are accepted</p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+          </div>
+        ) : (
+          /* ── Preview ───────────────────────────────────────────────────── */
+          <div className="space-y-4">
+            {/* Summary */}
+            <div className="flex items-center gap-4">
+              {validRows.length > 0 && (
+                <span className="flex items-center gap-1.5 text-sm text-havn-success">
+                  <CheckCircle2 className="h-4 w-4" />
+                  {validRows.length} ready to import
+                </span>
+              )}
+              {errorRows.length > 0 && (
+                <span className="flex items-center gap-1.5 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  {errorRows.length} with errors (will be skipped)
+                </span>
+              )}
+            </div>
+
+            {/* Preview table */}
+            <div className="max-h-64 overflow-y-auto overflow-x-auto rounded-lg border border-border">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-havn-surface/30">
+                    <th className="px-3 py-2 font-semibold text-muted-foreground"></th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">Legal Name</th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">City</th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">State</th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">ZIP</th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">Type</th>
+                    <th className="px-3 py-2 font-semibold text-muted-foreground">Manager</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {parsed.map((row, i) => (
+                    <tr key={i} className={row.errors.length > 0 ? "bg-destructive/5" : ""}>
+                      <td className="px-3 py-2">
+                        {row.errors.length > 0 ? (
+                          <span title={row.errors.join(", ")}>
+                            <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                          </span>
+                        ) : (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-havn-success" />
+                        )}
+                      </td>
+                      <td className="max-w-[160px] truncate px-3 py-2 font-medium text-foreground">
+                        {row.legal_name || "—"}
+                      </td>
+                      <td className="px-3 py-2 text-foreground">{row.city || "—"}</td>
+                      <td className="px-3 py-2 text-foreground">{row.state || "—"}</td>
+                      <td className="px-3 py-2 text-foreground">{row.zip || "—"}</td>
+                      <td className="px-3 py-2 text-foreground">{row.community_type || "—"}</td>
+                      <td className="max-w-[120px] truncate px-3 py-2 text-foreground">
+                        {row.manager_name || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setParsed(null)}
+                className="h-11 flex-1 rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                disabled={isPending}
+              >
+                Upload Different File
+              </button>
+              <button
+                type="button"
+                onClick={handleImport}
+                disabled={validRows.length === 0 || isPending}
+                className="h-11 flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-havn-navy px-4 text-sm font-medium text-white transition-colors hover:bg-havn-navy/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Import {validRows.length}{" "}
+                {validRows.length === 1 ? "Community" : "Communities"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
