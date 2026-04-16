@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   Clock,
   DollarSign,
-  ExternalLink,
   Inbox,
   MoreHorizontal,
   Sparkles,
@@ -255,7 +254,7 @@ export default function DashboardHomePage() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <KpiCardWrapper href="/dashboard/requests?filter=paid">
           <div className="flex items-start justify-between gap-2">
             <div
@@ -336,26 +335,6 @@ export default function DashboardHomePage() {
           <p className="mt-0.5 text-[11px] text-muted-foreground">Ready for auto-fill</p>
         </KpiCardWrapper>
 
-        {portalSlug ? (
-          <a
-            href={`https://havnhq.com/r/${portalSlug}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block rounded-xl border border-border bg-card p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div
-                className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-navy/15 text-havn-navy"
-                aria-hidden
-              >
-                <ExternalLink className="h-4 w-4" />
-              </div>
-            </div>
-            <p className="mt-3 text-2xl font-bold tracking-tight text-foreground">Portal</p>
-            <p className="mt-1 text-xs font-medium text-foreground/80">Resident portal</p>
-            <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{`havnhq.com/r/${portalSlug}`}</p>
-          </a>
-        ) : null}
       </div>
 
       <div>
