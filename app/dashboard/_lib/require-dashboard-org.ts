@@ -9,6 +9,7 @@ export type DashboardSession = {
   organizationId: string;
   userName: string;
   userRole: string;
+  portalSlug: string | null;
 };
 
 function displayNameFromUser(user: {
@@ -55,11 +56,18 @@ export async function requireDashboardOrg(): Promise<DashboardSession> {
       ? profile.role
       : "member";
 
+  const { data: org } = await adminClient
+    .from("organizations")
+    .select("portal_slug")
+    .eq("id", profile.organization_id as string)
+    .single();
+
   return {
     userId: user.id,
     email: user.email ?? "",
     organizationId: profile.organization_id as string,
     userName: displayNameFromUser(user),
     userRole,
+    portalSlug: org?.portal_slug ?? null,
   };
 }

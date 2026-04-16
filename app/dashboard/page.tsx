@@ -33,8 +33,6 @@ import { formatCurrency, formatDeliverySpeed, formatMasterTypeKey } from "./_lib
 import { OrderStatusBadge } from "./_lib/status-badge";
 import { fulfillOrder } from "./requests/actions";
 
-const PORTAL_HREF = "https://havnhq.com/r/amlo-management";
-const PORTAL_CLIPBOARD = "havnhq.com/r/amlo-management";
 
 type OrderRow = {
   id: string;
@@ -48,7 +46,7 @@ type OrderRow = {
   order_status: string | null;
 };
 
-async function resolveOrgId(supabase: ReturnType<typeof createClient>): Promise<string | null> {
+async function resolveOrg(supabase: ReturnType<typeof createClient>): Promise<{ orgId: string; portalSlug: string | null } | null> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -63,7 +61,13 @@ async function resolveOrgId(supabase: ReturnType<typeof createClient>): Promise<
       .single();
     orgId = profile?.organization_id ?? null;
   }
-  return orgId;
+  if (!orgId) return null;
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("portal_slug")
+    .eq("id", orgId)
+    .single();
+  return { orgId, portalSlug: org?.portal_slug ?? null };
 }
 
 function formatOrderDate(iso: string | null | undefined): string {
@@ -101,17 +105,20 @@ export default function DashboardHomePage() {
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [docsIndexed, setDocsIndexed] = useState(0);
   const [recent, setRecent] = useState<OrderRow[]>([]);
+  const [portalSlug, setPortalSlug] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     const supabase = createClient();
-    const orgId = await resolveOrgId(supabase);
-    if (!orgId) {
+    const resolved = await resolveOrg(supabase);
+    if (!resolved) {
       setError("No organization linked to this account.");
       setLoading(false);
       return;
     }
+    const { orgId, portalSlug: slug } = resolved;
+    setPortalSlug(slug);
 
     const [paidRes, pendRes, fulRes, revRes, indexedRes, recentRes] = await Promise.all([
       supabase
@@ -206,8 +213,9 @@ export default function DashboardHomePage() {
   };
 
   const handleSharePortal = async () => {
+    if (!portalSlug) return;
     try {
-      await navigator.clipboard.writeText(PORTAL_CLIPBOARD);
+      await navigator.clipboard.writeText(`havnhq.com/r/${portalSlug}`);
       toast.success("Portal link copied!");
     } catch {
       toast.error("Could not copy to clipboard.");
@@ -230,7 +238,7 @@ export default function DashboardHomePage() {
               <option value="all">All communities</option>
             </select>
           </div>
-          <Button type="button" variant="outline" className="shrink-0 gap-2" onClick={() => void handleSharePortal()}>
+          <Button type="button" variant="outline" className="shrink-0 gap-2" disabled={!portalSlug} onClick={() => void handleSharePortal()}>
             Share portal link
           </Button>
         </div>
@@ -328,24 +336,26 @@ export default function DashboardHomePage() {
           <p className="mt-0.5 text-[11px] text-muted-foreground">Ready for auto-fill</p>
         </KpiCardWrapper>
 
-        <a
-          href={PORTAL_HREF}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block rounded-xl border border-border bg-card p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div
-              className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-navy/15 text-havn-navy"
-              aria-hidden
-            >
-              <ExternalLink className="h-4 w-4" />
+        {portalSlug ? (
+          <a
+            href={`https://havnhq.com/r/${portalSlug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded-xl border border-border bg-card p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-havn-navy/15 text-havn-navy"
+                aria-hidden
+              >
+                <ExternalLink className="h-4 w-4" />
+              </div>
             </div>
-          </div>
-          <p className="mt-3 text-2xl font-bold tracking-tight text-foreground">Portal</p>
-          <p className="mt-1 text-xs font-medium text-foreground/80">Resident portal</p>
-          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">havnhq.com/r/amlo-management</p>
-        </a>
+            <p className="mt-3 text-2xl font-bold tracking-tight text-foreground">Portal</p>
+            <p className="mt-1 text-xs font-medium text-foreground/80">Resident portal</p>
+            <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{`havnhq.com/r/${portalSlug}`}</p>
+          </a>
+        ) : null}
       </div>
 
       <div>

@@ -82,10 +82,12 @@ export default function DashboardSidebar({
   email,
   userName,
   userRole,
+  portalSlug,
 }: {
   email: string;
   userName: string;
   userRole: string;
+  portalSlug: string | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -140,15 +142,17 @@ export default function DashboardSidebar({
       </nav>
 
       <div className="border-t border-white/10 px-4 py-4">
-        <a
-          href="https://havnhq.com/r/amlo-management"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 text-sm font-medium text-white/80 transition-colors hover:text-white"
-        >
-          <span>View resident portal</span>
-          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-        </a>
+        {portalSlug ? (
+          <a
+            href={`https://havnhq.com/r/${portalSlug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-sm font-medium text-white/80 transition-colors hover:text-white"
+          >
+            <span>View resident portal</span>
+            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+          </a>
+        ) : null}
 
         <div className="mt-4 flex items-center gap-3">
           <div
