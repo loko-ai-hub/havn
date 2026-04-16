@@ -18,6 +18,8 @@ import {
   YAxis,
 } from "recharts";
 
+import Link from "next/link";
+
 import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -375,8 +377,8 @@ export default function DashboardPerformancePage() {
   useEffect(() => { void load(); }, [load]);
 
   // Derived orders (community filter omitted — document_orders has no community_id)
+  // selectedCommunity is retained in state for future use when the column is added
   const orders = useMemo(() => allOrders, [allOrders]);
-  const _ = selectedCommunity; // retained for future use when column is added
 
   // ─ KPI values ─
   const periodSubtext = period === "t12" ? "Last 12 months" : period === "t24" ? "Last 24 months" : "All time";
@@ -672,9 +674,9 @@ export default function DashboardPerformancePage() {
           ) : autoCompletionData.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No documents uploaded yet.{" "}
-              <a href="/dashboard/communities" className="underline hover:text-foreground">
+              <Link href="/dashboard/communities" className="underline hover:text-foreground">
                 Upload documents
-              </a>{" "}
+              </Link>{" "}
               to see auto-completion rates.
             </p>
           ) : (
