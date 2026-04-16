@@ -13,22 +13,33 @@ import { toast } from "sonner";
 
 import { bulkAddCommunities } from "./actions";
 
-// ─── CSV template ─────────────────────────────────────────────────────────────
-
-const CSV_HEADERS = [
-  "Legal Name",
-  "City",
-  "State",
-  "ZIP",
-  "Community Type",
-  "Manager Name",
-];
+// ─── Templates ────────────────────────────────────────────────────────────────
 
 const TEMPLATE_CSV = [
-  CSV_HEADERS.join(","),
+  "Legal Name,City,State,ZIP,Community Type,Manager Name",
   '"Sunset Ridge HOA, Inc.",Bellevue,WA,98004,HOA,Patricia Wells',
   '"Oak Creek Estates",Tampa,FL,33602,COA,Robert Garcia',
 ].join("\n");
+
+const TEMPLATE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<communities>
+  <community>
+    <legal_name>Sunset Ridge HOA, Inc.</legal_name>
+    <city>Bellevue</city>
+    <state>WA</state>
+    <zip>98004</zip>
+    <community_type>HOA</community_type>
+    <manager_name>Patricia Wells</manager_name>
+  </community>
+  <community>
+    <legal_name>Oak Creek Estates</legal_name>
+    <city>Tampa</city>
+    <state>FL</state>
+    <zip>33602</zip>
+    <community_type>COA</community_type>
+    <manager_name>Robert Garcia</manager_name>
+  </community>
+</communities>`;
 
 // ─── CSV parsing ──────────────────────────────────────────────────────────────
 
@@ -87,6 +98,41 @@ function parseCSV(text: string): ParsedRow[] {
   });
 }
 
+function text(el: Element, tag: string): string {
+  return el.getElementsByTagName(tag)[0]?.textContent?.trim() ?? "";
+}
+
+function parseXML(xmlText: string): ParsedRow[] {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, "application/xml");
+  const parseError = doc.querySelector("parsererror");
+  if (parseError) throw new Error("Invalid XML file.");
+
+  const nodes = Array.from(doc.getElementsByTagName("community"));
+  if (nodes.length === 0) throw new Error("No <community> elements found.");
+
+  return nodes.map((node) => {
+    const legal_name = text(node, "legal_name");
+    const city = text(node, "city");
+    const state = text(node, "state");
+    const zip = text(node, "zip");
+    const errors: string[] = [];
+    if (!legal_name) errors.push("Missing legal_name");
+    if (!city) errors.push("Missing city");
+    if (!state) errors.push("Missing state");
+    if (!zip) errors.push("Missing zip");
+    return {
+      legal_name,
+      city,
+      state,
+      zip,
+      community_type: text(node, "community_type") || "HOA",
+      manager_name: text(node, "manager_name"),
+      errors,
+    };
+  });
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -101,30 +147,39 @@ export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
   const [isPending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleDownloadTemplate = () => {
-    const blob = new Blob([TEMPLATE_CSV], { type: "text/csv" });
+  const downloadTemplate = (format: "csv" | "xml") => {
+    const isCSV = format === "csv";
+    const blob = new Blob([isCSV ? TEMPLATE_CSV : TEMPLATE_XML], {
+      type: isCSV ? "text/csv" : "application/xml",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "havn-communities-template.csv";
+    a.download = `havn-communities-template.${format}`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const processFile = (file: File) => {
-    if (!file.name.endsWith(".csv")) {
-      toast.error("Only .csv files are accepted.");
+    const isCSV = file.name.endsWith(".csv");
+    const isXML = file.name.endsWith(".xml");
+    if (!isCSV && !isXML) {
+      toast.error("Only .csv or .xml files are accepted.");
       return;
     }
     const reader = new FileReader();
     reader.onload = (e) => {
-      const text = e.target?.result as string;
-      const rows = parseCSV(text);
-      if (rows.length === 0) {
-        toast.error("No data rows found in the CSV.");
-        return;
+      const content = e.target?.result as string;
+      try {
+        const rows = isCSV ? parseCSV(content) : parseXML(content);
+        if (rows.length === 0) {
+          toast.error(`No communities found in the ${isCSV ? "CSV" : "XML"}.`);
+          return;
+        }
+        setParsed(rows);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to parse file.");
       }
-      setParsed(rows);
     };
     reader.readAsText(file);
   };
@@ -186,15 +241,23 @@ export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
           Download the CSV template, fill it in with your communities, then upload it here.
         </p>
 
-        {/* Download template */}
-        <div className="mb-6">
+        {/* Download templates */}
+        <div className="mb-6 flex items-center gap-2">
           <button
             type="button"
-            onClick={handleDownloadTemplate}
+            onClick={() => downloadTemplate("csv")}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
             <Download className="h-4 w-4" />
-            Download CSV Template
+            CSV Template
+          </button>
+          <button
+            type="button"
+            onClick={() => downloadTemplate("xml")}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            <Download className="h-4 w-4" />
+            XML Template
           </button>
         </div>
 
@@ -213,13 +276,13 @@ export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
           >
             <Upload className="mb-2 h-6 w-6 text-muted-foreground" />
             <p className="text-sm font-medium text-foreground">
-              Drag & drop your CSV or click to upload
+              Drag & drop your file or click to upload
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">Only .csv files are accepted</p>
+            <p className="mt-1 text-xs text-muted-foreground">CSV or XML accepted</p>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv"
+              accept=".csv,.xml"
               onChange={handleFileSelect}
               className="hidden"
             />
