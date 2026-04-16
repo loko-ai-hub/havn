@@ -124,29 +124,7 @@ export async function submitOrder(input: {
     .join(", ");
   const deliveryLabel = getDeliveryLabel(order.deliveryType);
 
-  if (process.env.RESEND_API_KEY) {
-    try {
-      await resend.emails.send({
-        from: RESEND_FROM_EMAIL,
-        to: order.requesterEmail,
-        subject: `Your order has been received — ${portalDisplayName}`,
-        html: `
-          <p>Hi ${order.requesterName}, your order has been received.</p>
-          <p><strong>Order ID:</strong> ${shortId}</p>
-          <p><strong>Documents:</strong> ${documentNames}</p>
-          <p><strong>Property:</strong> ${propertyAddress}</p>
-          <p><strong>Delivery:</strong> ${deliveryLabel}</p>
-          <p><strong>Total:</strong> ${formatCurrency(totalFee)}</p>
-          <p>The management company will be in touch once your documents are ready.</p>
-          <p>Questions? Contact us at ${supportEmail || "loren@havnhq.com"}</p>
-        `,
-      });
-    } catch (emailError) {
-      console.error("Resend email send failed:", emailError);
-    }
-  } else {
-    console.error("RESEND_API_KEY missing; skipping confirmation email.");
-  }
+  // Requester confirmation email is sent in confirmPayment() after successful payment.
 
   const params = new URLSearchParams({
     orderId: firstId,

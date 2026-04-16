@@ -308,8 +308,8 @@ export default function DashboardHomePage() {
       supabase.from("community_documents").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
       // Pages processed (sum of page_count)
       supabase.from("community_documents").select("page_count").eq("organization_id", orgId),
-      // Recent orders
-      supabase.from("document_orders").select("id, created_at, requester_name, requester_email, property_address, master_type_key, delivery_speed, total_fee, order_status").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(5),
+      // Recent orders — only paid/confirmed orders visible to management
+      supabase.from("document_orders").select("id, created_at, requester_name, requester_email, property_address, master_type_key, delivery_speed, total_fee, order_status").eq("organization_id", orgId).neq("order_status", "pending_payment").order("created_at", { ascending: false }).limit(5),
       // Checklist: communities count
       supabase.from("companies").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
       // Checklist: fees count
@@ -525,7 +525,7 @@ export default function DashboardHomePage() {
             },
             {
               label: "Lifetime earnings",
-              value: formatCurrency(totalRevenue),
+              value: `$${Math.round(totalRevenue).toLocaleString("en-US")}`,
               subtext: "All time",
               icon: DollarSign,
               accent: "text-havn-success",

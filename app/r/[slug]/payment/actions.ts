@@ -1,11 +1,12 @@
 "use server";
 
 import {
+  formatCurrency,
   formatDeliverySpeed,
   formatMasterTypeKey,
 } from "@/app/dashboard/_lib/format";
 import { REQUESTER_TYPES } from "@/lib/portal-data";
-import { sendManagementNotification } from "@/lib/resend";
+import resend, { RESEND_FROM_EMAIL, sendManagementNotification } from "@/lib/resend";
 import { createAdminClient } from "../../../../lib/supabase/admin";
 import { stripe } from "../../../../lib/stripe";
 
@@ -143,6 +144,34 @@ export async function confirmPayment(orderId: string, paymentIntentId: string) {
       });
     } catch (emailError) {
       console.error("Management notification email failed:", emailError);
+    }
+  }
+
+  // Send requester confirmation email now that payment is confirmed
+  const requesterEmail = orderRow.requester_email as string | null;
+  if (requesterEmail && process.env.RESEND_API_KEY) {
+    try {
+      const shortId = (orderRow.id as string).slice(0, 8);
+      const totalFee = Number(orderRow.total_fee ?? 0);
+      const orgDisplayName = (orgRow.name as string) ?? "Havn";
+      const supportEmail = orgRow.support_email as string | null;
+      await resend.emails.send({
+        from: RESEND_FROM_EMAIL,
+        to: requesterEmail,
+        subject: `Your order has been received — ${orgDisplayName}`,
+        html: `
+          <p>Hi ${(orderRow.requester_name as string) ?? "there"}, your payment was confirmed and your order is now being processed.</p>
+          <p><strong>Order ID:</strong> ${shortId}</p>
+          <p><strong>Document:</strong> ${formatMasterTypeKey(orderRow.master_type_key as string | null)}</p>
+          <p><strong>Property:</strong> ${(orderRow.property_address as string) ?? ""}</p>
+          <p><strong>Delivery:</strong> ${formatDeliverySpeed(orderRow.delivery_speed as string | null)}</p>
+          <p><strong>Total:</strong> ${formatCurrency(totalFee)}</p>
+          <p>The management company will be in touch once your documents are ready.</p>
+          <p>Questions? Contact us at ${supportEmail ?? "support@havnhq.com"}</p>
+        `,
+      });
+    } catch (emailError) {
+      console.error("Requester confirmation email failed:", emailError);
     }
   }
 

@@ -36,10 +36,10 @@ type OrderRow = {
   order_status: string | null;
 };
 
-type FilterTab = "all" | "pending_payment" | "paid" | "fulfilled";
+type FilterTab = "all" | "paid" | "in_progress" | "fulfilled";
 
 function filterFromSearchParam(param: string | null): FilterTab {
-  if (param === "pending_payment" || param === "paid" || param === "fulfilled" || param === "all") {
+  if (param === "paid" || param === "in_progress" || param === "fulfilled" || param === "all") {
     return param;
   }
   return "all";
@@ -112,6 +112,7 @@ function DashboardRequestsPageInner() {
         "id, created_at, requester_name, requester_email, property_address, master_type_key, delivery_speed, total_fee, order_status"
       )
       .eq("organization_id", orgId)
+      .neq("order_status", "pending_payment")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -154,8 +155,8 @@ function DashboardRequestsPageInner() {
 
   const tabs: { id: FilterTab; label: string }[] = [
     { id: "all", label: "All" },
-    { id: "pending_payment", label: "Pending Payment" },
     { id: "paid", label: "Paid" },
+    { id: "in_progress", label: "In Progress" },
     { id: "fulfilled", label: "Fulfilled" },
   ];
 
