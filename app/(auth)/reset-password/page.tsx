@@ -19,8 +19,13 @@ export default function ResetPasswordPage() {
   // clicks the reset link. The onAuthStateChange event PASSWORD_RECOVERY
   // fires once the session is established from the hash.
   useEffect(() => {
+    // Check if the session is already established (event may have fired before listener registered)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setReady(true);
+    });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
         setReady(true);
       }
     });
