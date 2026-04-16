@@ -102,7 +102,7 @@ export default function DashboardSidebar({
   };
 
   return (
-    <aside className="flex h-screen min-h-screen w-64 shrink-0 flex-col bg-havn-navy text-white">
+    <aside className="flex h-full w-64 shrink-0 flex-col bg-havn-navy text-white">
       <div className="border-b border-white/10 px-5 py-4">
         <Link href="/dashboard" className="text-xl font-semibold tracking-tight text-white">
           Havn

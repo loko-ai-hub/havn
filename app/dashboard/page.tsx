@@ -342,11 +342,9 @@ export default function DashboardHomePage() {
               <ExternalLink className="h-4 w-4" />
             </div>
           </div>
-          <p className="mt-3 break-all text-2xl font-bold tracking-tight text-foreground">
-            havnhq.com/r/amlo-management
-          </p>
-          <p className="mt-1 text-xs font-medium text-foreground/80">Portal link</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Opens in a new tab</p>
+          <p className="mt-3 text-2xl font-bold tracking-tight text-foreground">Portal</p>
+          <p className="mt-1 text-xs font-medium text-foreground/80">Resident portal</p>
+          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">havnhq.com/r/amlo-management</p>
         </a>
       </div>
 

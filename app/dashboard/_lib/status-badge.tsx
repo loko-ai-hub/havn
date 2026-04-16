@@ -1,8 +1,17 @@
 import { cn } from "@/lib/utils";
 
+const STATUS_LABELS: Record<string, string> = {
+  pending_payment: "Unpaid",
+  paid: "Paid",
+  in_progress: "In Progress",
+  fulfilled: "Fulfilled",
+  cancelled: "Cancelled",
+  refunded: "Refunded",
+};
+
 export function OrderStatusBadge({ status }: { status: string | null | undefined }) {
   const s = status ?? "unknown";
-  const label = s.split("_").join(" ");
+  const label = STATUS_LABELS[s] ?? s.split("_").join(" ");
 
   const styles: Record<string, string> = {
     pending_payment: "bg-havn-amber/25 text-amber-950 dark:text-amber-100 border-havn-amber/40",
