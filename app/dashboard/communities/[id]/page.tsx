@@ -1,41 +1,38 @@
-import { Pencil } from "lucide-react";
-import { notFound } from "next/navigation";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Building2,
+  CheckCircle2,
+  FileText,
+  MapPin,
+  Pencil,
+  Users,
+  XCircle,
+} from "lucide-react";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
-import { DashboardSectionCard } from "../../_lib/dashboard-section-card";
-
-import ComingSoonButton from "../coming-soon-button";
 import ArchiveRestoreCommunityButton from "../archive-restore-button";
+import ComingSoonButton from "../coming-soon-button";
 
-function formatStatusBadge(status: string | null | undefined) {
-  const s = (status ?? "active").toLowerCase();
-  const isActive = s === "active";
-  if (isActive) {
-    return (
-      <span className="inline-flex rounded-full border border-havn-success/40 bg-havn-success/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-950 dark:text-emerald-100">
-        Active
-      </span>
-    );
-  }
+// ─── Config ───────────────────────────────────────────────────────────────────
 
-  return (
-    <span className="inline-flex rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
-      Archived
-    </span>
-  );
-}
+const REQUIRED_CATEGORIES = [
+  "CC&Rs / Declaration",
+  "Bylaws",
+  "Amendments",
+  "Financial Reports",
+  "Insurance Certificate",
+  "Reserve Study",
+  "Budget",
+  "Meeting Minutes",
+  "Rules & Regulations",
+];
 
-function KpiCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{value}</p>
-    </div>
-  );
-}
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type CommunityRow = {
   id: string;
@@ -50,7 +47,13 @@ type CommunityRow = {
   status: "active" | "archived" | string | null;
 };
 
-export default async function CommunityDetailPage({ params }: { params: Promise<{ id: string }> }) {
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default async function CommunityDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();
@@ -66,7 +69,7 @@ export default async function CommunityDetailPage({ params }: { params: Promise<
   const c = community as CommunityRow;
   if (c.organization_id !== organizationId) notFound();
 
-  const [orgRes, paidCountRes, docsRes] = await Promise.all([
+  const [orgRes, openRequestsRes, docsRes] = await Promise.all([
     admin
       .from("organizations")
       .select("support_email, support_phone")
@@ -76,174 +79,321 @@ export default async function CommunityDetailPage({ params }: { params: Promise<
       .from("document_orders")
       .select("id", { count: "exact", head: true })
       .eq("organization_id", organizationId)
-      .eq("order_status", "paid"),
+      .in("order_status", ["paid", "in_progress"]),
     admin
       .from("community_documents")
-      .select("id, ocr_status")
+      .select("document_category")
       .eq("community_id", id),
   ]);
 
   const org = orgRes.data as { support_email: string | null; support_phone: string | null } | null;
-  const openRequestsCount = paidCountRes.count ?? 0;
-  const docs = (docsRes.data ?? []) as Array<{ id: string; ocr_status: string | null }>;
-  const docsUploaded = docs.length;
-  const docsComplete = docs.filter((d) => d.ocr_status === "complete").length;
-  const docsPending = docs.filter(
-    (d) => d.ocr_status === "pending" || d.ocr_status === "processing"
-  ).length;
-  const docsFailed = docs.filter((d) => d.ocr_status === "failed").length;
+  const openRequestsCount = openRequestsRes.count ?? 0;
 
-  const status = (c.status ?? "active").toLowerCase();
-  const isActive = status === "active";
+  type DocRow = { document_category: string | null };
+  const presentCategories = new Set(
+    ((docsRes.data ?? []) as DocRow[])
+      .map((d) => d.document_category)
+      .filter((v): v is string => v != null)
+  );
+  const completedCount = REQUIRED_CATEGORIES.filter((cat) => presentCategories.has(cat)).length;
+  const missingCount = REQUIRED_CATEGORIES.length - completedCount;
+  const docPercent = Math.round((completedCount / REQUIRED_CATEGORIES.length) * 100);
+  const totalDocsUploaded = (docsRes.data ?? []).length;
+
+  const isActive = (c.status ?? "active").toLowerCase() === "active";
+
+  // KPI card definitions
+  const kpiCards = [
+    {
+      label: "Units",
+      value: String(c.unit_count ?? 0),
+      subtext: "Total properties",
+      Icon: Building2,
+      accent: "text-primary",
+      iconBg: "bg-primary/10",
+    },
+    {
+      label: "Open Requests",
+      value: String(openRequestsCount),
+      subtext: "Orders not yet completed",
+      Icon: FileText,
+      accent: "text-havn-amber",
+      iconBg: "bg-havn-amber/10",
+    },
+    {
+      label: "Docs Uploaded",
+      value: String(totalDocsUploaded),
+      subtext: `${docPercent}% categories complete`,
+      Icon: FileText,
+      accent: "text-primary",
+      iconBg: "bg-primary/10",
+    },
+    {
+      label: "Document Alerts",
+      value: String(missingCount),
+      subtext: missingCount === 0 ? "All categories complete" : "Categories missing",
+      Icon: AlertTriangle,
+      accent: missingCount === 0 ? "text-havn-success" : "text-destructive",
+      iconBg: missingCount === 0 ? "bg-havn-success/10" : "bg-destructive/10",
+    },
+  ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
+    <div>
+      {/* Sticky header */}
+      <div className="sticky top-0 -mx-6 z-10 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-center gap-4">
           <Link
             href="/dashboard/communities"
-            className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <span aria-hidden>←</span> Back to communities
+            <ArrowLeft className="h-4 w-4" />
           </Link>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">{c.legal_name}</h1>
-            {formatStatusBadge(c.status)}
-          </div>
-
-          <p className="text-sm text-muted-foreground">
-            {(c.city ?? "—")}, {c.state ?? "—"} {c.zip ?? ""}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="Units" value={String(c.unit_count ?? 0)} />
-        <KpiCard label="Open Requests" value={String(openRequestsCount)} />
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</p>
-          <div className="mt-2">{formatStatusBadge(c.status)}</div>
-        </div>
-        <KpiCard label="Community Type" value={c.community_type ?? "—"} />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-1">
-        <DashboardSectionCard title="Contact Information">
-          <div className="space-y-4 sm:grid sm:grid-cols-3 sm:gap-4">
-            <div className="space-y-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Name</p>
-              <p className="text-sm text-foreground">{c.manager_name?.trim() ? c.manager_name : "Unassigned"}</p>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3">
+              <h1 className="text-lg font-semibold text-foreground truncate">{c.legal_name}</h1>
+              <span
+                className={`shrink-0 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  isActive
+                    ? "bg-havn-success/10 text-havn-success"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {isActive ? "Active" : "Archived"}
+              </span>
             </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</p>
-              <p className="text-sm text-foreground">
-                {org?.support_email ? (
-                  <a href={`mailto:${org.support_email}`} className="font-medium underline underline-offset-4 hover:opacity-90">
-                    {org.support_email}
-                  </a>
-                ) : (
-                  "—"
-                )}
-              </p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Phone</p>
-              <p className="text-sm text-foreground">{org?.support_phone ?? "—"}</p>
-            </div>
-          </div>
-
-          <div className="pt-2">
-            <ComingSoonButton variant="outline" size="sm" className="gap-2">
-              <Pencil className="h-4 w-4" /> Edit
-            </ComingSoonButton>
-          </div>
-        </DashboardSectionCard>
-
-        <DashboardSectionCard title="Location">
-          <div className="space-y-2">
-            <p className="text-sm text-foreground">
-              {c.city ?? "—"},{` `}{c.state ?? "—"} {c.zip ?? ""}
-            </p>
-            <p className="text-sm text-muted-foreground">{c.community_type ?? "—"}</p>
-          </div>
-          <div className="pt-2">
-            <ComingSoonButton variant="outline" size="sm" className="gap-2">
-              <Pencil className="h-4 w-4" /> Edit
-            </ComingSoonButton>
-          </div>
-        </DashboardSectionCard>
-
-        <DashboardSectionCard title="Manager">
-          <div className="space-y-2">
-            <p className="text-sm text-foreground">{c.manager_name?.trim() ? c.manager_name : "Unassigned"}</p>
-          </div>
-          <div className="pt-2">
-            <ComingSoonButton variant="outline" size="sm" className="gap-2">
-              <Pencil className="h-4 w-4" /> Edit
-            </ComingSoonButton>
-          </div>
-        </DashboardSectionCard>
-
-        <DashboardSectionCard title="Units & Addresses">
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Unit count</p>
-              <p className="mt-1 text-sm text-foreground">{c.unit_count ?? 0}</p>
-            </div>
-            <ComingSoonButton variant="outline" size="sm" className="w-full gap-2">
-              <span aria-hidden>+</span> Upload Addresses
-            </ComingSoonButton>
             <p className="text-sm text-muted-foreground">
-              Property addresses enable auto-assignment of incoming requests
+              {c.city ?? "—"}, {c.state ?? "—"} {c.zip ?? ""}
             </p>
           </div>
-        </DashboardSectionCard>
+        </div>
+      </div>
 
-        <DashboardSectionCard title="Document Completion">
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-4">
-              <div className="rounded-lg border border-border bg-havn-surface/30 px-3 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Uploaded</p>
-                <p className="mt-1 text-lg font-semibold text-foreground">{docsUploaded}</p>
+      <div className="mt-6 space-y-6">
+        {/* Zero-units banner */}
+        {(!c.unit_count || c.unit_count === 0) && (
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-havn-amber/40 bg-havn-amber/10 px-5 py-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Property addresses required</p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  Upload property addresses so future inbound requests are auto-assigned to the community manager.
+                </p>
               </div>
-              <div className="rounded-lg border border-havn-success/30 bg-havn-success/10 px-3 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Complete</p>
-                <p className="mt-1 text-lg font-semibold text-foreground">{docsComplete}</p>
+            </div>
+            <ComingSoonButton
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5 text-xs"
+            >
+              Upload Addresses
+            </ComingSoonButton>
+          </div>
+        )}
+
+        {/* KPI cards */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {kpiCards.map((card) => (
+            <div
+              key={card.label}
+              className="group rounded-xl border border-border bg-card p-5 transition-shadow hover:shadow-sm"
+            >
+              <div
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-110 ${card.iconBg}`}
+              >
+                <card.Icon className={`h-4 w-4 ${card.accent}`} />
               </div>
-              <div className="rounded-lg border border-havn-amber/30 bg-havn-amber/10 px-3 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pending</p>
-                <p className="mt-1 text-lg font-semibold text-foreground">{docsPending}</p>
+              <p className="mt-3 text-2xl font-bold tracking-tight text-foreground tabular-nums">
+                {card.value}
+              </p>
+              <p className="mt-1 text-xs font-medium text-foreground/80">{card.label}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{card.subtext}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Map + details row */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_2fr]">
+          {/* Map placeholder */}
+          <div className="flex min-h-[220px] items-center justify-center overflow-hidden rounded-xl border border-border bg-muted/30">
+            <div className="p-6 text-center">
+              <MapPin className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+              <p className="text-sm font-medium text-muted-foreground">Map</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Mapbox integration pending</p>
+            </div>
+          </div>
+
+          {/* Detail mini-cards */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {/* Contact */}
+            <div className="space-y-3 rounded-xl border border-border bg-card p-5">
+              <div className="mb-1 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+                    <Users className="h-3.5 w-3.5 text-primary" />
+                  </div>
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Contact
+                  </h4>
+                </div>
+                <ComingSoonButton
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto w-auto rounded-md p-1.5 text-muted-foreground hover:text-foreground"
+                >
+                  <Pencil className="h-3 w-3" />
+                </ComingSoonButton>
               </div>
-              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Failed</p>
-                <p className="mt-1 text-lg font-semibold text-foreground">{docsFailed}</p>
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {c.manager_name?.trim() ? c.manager_name : "Unassigned"}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {org?.support_email ?? "—"}
+                </p>
+                <p className="text-xs text-muted-foreground">{org?.support_phone ?? "—"}</p>
               </div>
+            </div>
+
+            {/* Location */}
+            <div className="space-y-3 rounded-xl border border-border bg-card p-5">
+              <div className="mb-1 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+                    <MapPin className="h-3.5 w-3.5 text-primary" />
+                  </div>
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Location
+                  </h4>
+                </div>
+                <ComingSoonButton
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto w-auto rounded-md p-1.5 text-muted-foreground hover:text-foreground"
+                >
+                  <Pencil className="h-3 w-3" />
+                </ComingSoonButton>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {c.city ?? "—"}, {c.state ?? "—"} {c.zip ?? ""}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{c.community_type ?? "—"}</p>
+              </div>
+            </div>
+
+            {/* Manager */}
+            <div className="space-y-3 rounded-xl border border-border bg-card p-5">
+              <div className="mb-1 flex items-center gap-2">
+                <div className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+                  <Users className="h-3.5 w-3.5 text-primary" />
+                </div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Manager
+                </h4>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {c.manager_name?.trim() ? c.manager_name : "Unassigned"}
+                </p>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  To change the manager, contact an admin.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Document Completion */}
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="flex items-center justify-between border-b border-border px-6 py-4">
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-semibold text-foreground">Document Completion</h3>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${
+                  docPercent === 100
+                    ? "bg-havn-success/10 text-havn-success"
+                    : docPercent >= 50
+                    ? "bg-havn-amber/10 text-havn-amber"
+                    : "bg-destructive/10 text-destructive"
+                }`}
+              >
+                {completedCount}/{REQUIRED_CATEGORIES.length}
+              </span>
             </div>
             <Link
               href={`/dashboard/communities/${id}/documents`}
-              className="inline-flex rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
-              Manage Documents
+              View Documents
             </Link>
           </div>
-        </DashboardSectionCard>
+          <div className="px-6 py-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {REQUIRED_CATEGORIES.map((cat) => {
+                const isPresent = presentCategories.has(cat);
+                return (
+                  <div
+                    key={cat}
+                    className={`group flex flex-col items-center gap-2.5 rounded-xl border p-4 text-center transition-all ${
+                      isPresent
+                        ? "border-havn-success/20 bg-havn-success/5 hover:border-havn-success/40"
+                        : "border-destructive/20 bg-destructive/5 hover:border-destructive/40"
+                    }`}
+                  >
+                    <div
+                      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-110 ${
+                        isPresent ? "bg-havn-success/10" : "bg-destructive/10"
+                      }`}
+                    >
+                      {isPresent ? (
+                        <CheckCircle2 className="h-4 w-4 text-havn-success" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-destructive" />
+                      )}
+                    </div>
+                    <p
+                      className={`text-[11px] font-medium leading-tight ${
+                        isPresent ? "text-foreground" : "text-destructive"
+                      }`}
+                    >
+                      {cat}
+                    </p>
+                    <span
+                      className={`text-[10px] font-medium ${
+                        isPresent ? "text-havn-success/80" : "text-destructive/70"
+                      }`}
+                    >
+                      {isPresent ? "Complete" : "Missing"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
 
-        <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-5">
+        {/* Danger Zone */}
+        <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold text-destructive">Danger Zone</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {isActive ? "Archive this community to hide it from active listings." : "Restore this community to make it active again."}
+                {isActive
+                  ? "Archive this community to hide it from active listings."
+                  : "Restore this community to make it active again."}
               </p>
             </div>
           </div>
           <div className="mt-4">
-            <ArchiveRestoreCommunityButton communityId={c.id} currentStatus={isActive ? "active" : "archived"} />
+            <ArchiveRestoreCommunityButton
+              communityId={c.id}
+              currentStatus={isActive ? "active" : "archived"}
+            />
           </div>
         </div>
       </div>
     </div>
   );
 }
-

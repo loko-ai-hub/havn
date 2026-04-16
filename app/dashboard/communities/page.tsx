@@ -1,34 +1,43 @@
 "use client";
 
-import { Archive, Pencil, Plus, Undo2, Upload, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Archive,
+  Building2,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Search,
+  Upload,
+  X,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { US_STATES } from "@/lib/us-states";
 
 import { addCommunity, archiveCommunity } from "./actions";
 
+// ─── Config ───────────────────────────────────────────────────────────────────
+
 const REQUIRED_CATEGORIES = [
   "CC&Rs / Declaration",
   "Bylaws",
+  "Amendments",
   "Financial Reports",
   "Insurance Certificate",
   "Reserve Study",
   "Budget",
+  "Meeting Minutes",
+  "Rules & Regulations",
 ];
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Tab = "active" | "archived";
 
@@ -45,17 +54,18 @@ type CommunityRow = {
   status: "active" | "archived" | string | null;
 };
 
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export default function DashboardCommunitiesPage() {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("active");
   const [search, setSearch] = useState("");
 
   const [orgId, setOrgId] = useState<string | null>(null);
-  const [openRequestsCount, setOpenRequestsCount] = useState(0);
   const [docsByCommunity, setDocsByCommunity] = useState<Record<string, number>>({});
   const [missingAlerts, setMissingAlerts] = useState<Record<string, number>>({});
   const [communities, setCommunities] = useState<CommunityRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -104,82 +114,59 @@ export default function DashboardCommunitiesPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    setLoadError(null);
     const supabase = createClient();
-
     const oid = await resolveOrgId(supabase);
     setOrgId(oid);
 
     if (!oid) {
-      setLoadError("No organization linked to this account.");
       setCommunities([]);
-      setOpenRequestsCount(0);
       setLoading(false);
       return;
     }
 
-    const [paidCountRes, communitiesRes] = await Promise.all([
-      supabase
-        .from("document_orders")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", oid)
-        .eq("order_status", "paid"),
-      supabase
-        .from("communities")
-        .select("*")
-        .eq("organization_id", oid)
-        .order("legal_name", { ascending: true }),
-    ]);
+    const { data: communityData, error: commErr } = await supabase
+      .from("communities")
+      .select("*")
+      .eq("organization_id", oid)
+      .order("legal_name", { ascending: true });
 
-    if (paidCountRes.error) {
-      setLoadError(paidCountRes.error.message);
+    if (commErr) {
       setCommunities([]);
-      setOpenRequestsCount(0);
       setLoading(false);
       return;
     }
 
-    if (communitiesRes.error) {
-      setLoadError(communitiesRes.error.message);
-      setCommunities([]);
-      setOpenRequestsCount(0);
-      setLoading(false);
-      return;
-    }
-
-    const communityRows = (communitiesRes.data ?? []) as CommunityRow[];
+    const communityRows = (communityData ?? []) as CommunityRow[];
     const communityIds = communityRows.map((c) => c.id);
+
     let docMap: Record<string, number> = {};
     let alertMap: Record<string, number> = {};
+
     if (communityIds.length > 0) {
-      const { data: docsData, error: docsError } = await supabase
+      const { data: docsData } = await supabase
         .from("community_documents")
         .select("community_id, document_category")
         .in("community_id", communityIds);
-      if (docsError) {
-        setLoadError(docsError.message);
-      } else {
-        type DocRow = { community_id: string | null; document_category: string | null };
-        const categoryMap = new Map<string, Set<string>>();
-        for (const row of (docsData ?? []) as DocRow[]) {
-          if (row.community_id) {
-            if (!categoryMap.has(row.community_id)) categoryMap.set(row.community_id, new Set());
-            if (row.document_category) categoryMap.get(row.community_id)!.add(row.document_category);
-          }
+
+      type DocRow = { community_id: string | null; document_category: string | null };
+      const categoryMap = new Map<string, Set<string>>();
+      for (const row of (docsData ?? []) as DocRow[]) {
+        if (row.community_id) {
+          if (!categoryMap.has(row.community_id)) categoryMap.set(row.community_id, new Set());
+          if (row.document_category) categoryMap.get(row.community_id)!.add(row.document_category);
         }
-        docMap = Object.fromEntries(
-          communityIds.map((cid) => [cid, categoryMap.get(cid)?.size ?? 0])
-        );
-        alertMap = Object.fromEntries(
-          communityIds.map((cid) => {
-            const present = categoryMap.get(cid) ?? new Set<string>();
-            return [cid, REQUIRED_CATEGORIES.filter((c) => !present.has(c)).length];
-          })
-        );
       }
+      docMap = Object.fromEntries(
+        communityIds.map((cid) => [cid, categoryMap.get(cid)?.size ?? 0])
+      );
+      alertMap = Object.fromEntries(
+        communityIds.map((cid) => {
+          const present = categoryMap.get(cid) ?? new Set<string>();
+          return [cid, REQUIRED_CATEGORIES.filter((c) => !present.has(c)).length];
+        })
+      );
     }
 
-    setOpenRequestsCount(paidCountRes.count ?? 0);
     setDocsByCommunity(docMap);
     setMissingAlerts(alertMap);
     setCommunities(communityRows);
@@ -189,6 +176,17 @@ export default function DashboardCommunitiesPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  // ─── Derived ────────────────────────────────────────────────────────────────
+
+  const activeCount = useMemo(
+    () => communities.filter((c) => (c.status ?? "active").toString() === "active").length,
+    [communities]
+  );
+  const archivedCount = useMemo(
+    () => communities.filter((c) => (c.status ?? "active").toString() === "archived").length,
+    [communities]
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -201,6 +199,13 @@ export default function DashboardCommunitiesPage() {
     });
   }, [communities, search, tab]);
 
+  const hasZeroUnits = useMemo(
+    () => filtered.some((c) => !c.unit_count || c.unit_count === 0),
+    [filtered]
+  );
+
+  // ─── Actions ────────────────────────────────────────────────────────────────
+
   const canSubmit =
     form.legal_name.trim().length > 0 &&
     form.city.trim().length > 0 &&
@@ -209,12 +214,8 @@ export default function DashboardCommunitiesPage() {
     form.community_type.trim().length > 0;
 
   const handleSubmit = () => {
-    if (!orgId) {
-      toast.error("Organization not found.");
-      return;
-    }
+    if (!orgId) { toast.error("Organization not found."); return; }
     if (!canSubmit) return;
-
     startTransition(async () => {
       const result = await addCommunity(orgId, {
         legal_name: form.legal_name.trim(),
@@ -225,12 +226,7 @@ export default function DashboardCommunitiesPage() {
         manager_name: form.manager_name.trim(),
         unit_count: Number.isFinite(form.unit_count) ? Number(form.unit_count) : 0,
       });
-
-      if (result && "error" in result && result.error) {
-        toast.error(result.error);
-        return;
-      }
-
+      if (result && "error" in result && result.error) { toast.error(result.error); return; }
       toast.success("Community added.");
       setIsAddOpen(false);
       resetForm();
@@ -242,80 +238,227 @@ export default function DashboardCommunitiesPage() {
     const current = (community.status ?? "active").toString().toLowerCase();
     const nextStatus = current === "active" ? "archived" : "active";
     const result = await archiveCommunity(community.id, nextStatus as "active" | "archived");
-    if (result && "error" in result && result.error) {
-      toast.error(result.error);
-      return;
-    }
+    if (result && "error" in result && result.error) { toast.error(result.error); return; }
     toast.success(nextStatus === "archived" ? "Community archived." : "Community restored.");
     await loadData();
   };
 
+  // ─── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Communities</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage communities and monitor open requests.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            onClick={() => {
-              resetForm();
-              setIsAddOpen(true);
-            }}
-            className="gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Add Community
-          </Button>
-          <Button type="button" variant="outline" onClick={() => toast.info("Coming soon")}>
-            Bulk Upload
-          </Button>
+    <div>
+      {/* Sticky header */}
+      <div className="sticky top-0 -mx-6 z-10 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Building2 className="h-5 w-5 text-foreground" />
+            <h1 className="text-lg font-semibold text-foreground">Communities</h1>
+            {!loading && (
+              <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                {activeCount} active
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => toast.info("Coming soon")}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              <Upload className="h-4 w-4" />
+              Bulk Upload
+            </button>
+            <button
+              type="button"
+              onClick={() => { resetForm(); setIsAddOpen(true); }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-havn-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-havn-navy/90"
+            >
+              <Plus className="h-4 w-4" />
+              Add Community
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setTab("active")}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
-              tab === "active"
-                ? "border-havn-navy bg-havn-navy text-white"
-                : "border-border bg-card text-muted-foreground hover:bg-muted"
-            )}
-          >
-            Active
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("archived")}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
-              tab === "archived"
-                ? "border-havn-navy bg-havn-navy text-white"
-                : "border-border bg-card text-muted-foreground hover:bg-muted"
-            )}
-          >
-            Archived
-          </button>
+      <div className="mt-6 space-y-5">
+        {/* Filters row */}
+        <div className="flex items-center justify-between gap-4">
+          {/* Tab group */}
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-0.5">
+            <button
+              type="button"
+              onClick={() => setTab("active")}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                tab === "active"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Active ({activeCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("archived")}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                tab === "archived"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Archived ({archivedCount})
+            </button>
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search communities…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 w-64 rounded-lg border border-border bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
         </div>
 
-        <Input
-          type="search"
-          placeholder="Search communities…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm bg-background"
-        />
+        {/* Zero-units banner */}
+        {!loading && hasZeroUnits && (
+          <div className="flex items-start gap-3 rounded-xl border border-havn-amber/40 bg-havn-amber/10 px-5 py-4">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Property addresses required</p>
+              <p className="mt-0.5 text-xs text-amber-700">
+                Upload property addresses for communities with 0 units so all future inbound requests are auto-assigned to the community manager.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Table */}
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          {loading ? (
+            <div className="px-5 py-10 text-center text-sm text-muted-foreground">Loading…</div>
+          ) : filtered.length === 0 ? (
+            <div className="px-5 py-10 text-center text-sm text-muted-foreground">
+              {search ? "No communities match your search." : `No ${tab} communities.`}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-border bg-havn-surface/30">
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Community</th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Units</th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Manager</th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Docs Uploaded</th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Document Alerts</th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filtered.map((c) => {
+                    const status = (c.status ?? "active").toString().toLowerCase();
+                    const isActive = status === "active";
+
+                    return (
+                      <tr
+                        key={c.id}
+                        className="cursor-pointer transition-colors hover:bg-muted/20"
+                        onClick={() => router.push(`/dashboard/communities/${c.id}`)}
+                      >
+                        <td className="px-4 py-3.5">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{c.legal_name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {c.city ?? "—"}, {c.state ?? "—"} {c.zip ?? ""}
+                            </p>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          {c.unit_count && c.unit_count > 0 ? (
+                            <span className="text-sm text-foreground tabular-nums">{c.unit_count}</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); toast.info("Coming soon"); }}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                            >
+                              <Upload className="h-3.5 w-3.5" />
+                              Upload Addresses
+                            </button>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3.5 text-sm text-foreground">
+                          {c.manager_name?.trim() ? c.manager_name : (
+                            <span className="text-muted-foreground">Unassigned</span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3.5 text-sm text-foreground tabular-nums">
+                          {docsByCommunity[c.id] ?? 0}
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          {(missingAlerts[c.id] ?? 0) > 0 ? (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/communities/${c.id}/documents`); }}
+                            >
+                              <span className="inline-flex rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20">
+                                {missingAlerts[c.id]} missing
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-havn-success/10 px-2.5 py-0.5 text-xs font-medium text-havn-success">
+                              Complete
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3.5 text-right">
+                          <div
+                            className="flex items-center justify-end gap-1"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toast.info("Coming soon")}
+                              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              title="Edit"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleArchiveToggle(c)}
+                              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              title={isActive ? "Archive" : "Restore"}
+                            >
+                              {isActive ? (
+                                <Archive className="h-3.5 w-3.5" />
+                              ) : (
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
-      {isAddOpen ? (
+      {/* Add Community Modal */}
+      {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div
             className="w-full max-w-lg overflow-hidden rounded-xl border border-border bg-card shadow-lg"
@@ -339,10 +482,7 @@ export default function DashboardCommunitiesPage() {
             </div>
 
             <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSubmit();
-              }}
+              onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
               className="space-y-4 p-5"
             >
               <div className="space-y-2">
@@ -357,7 +497,7 @@ export default function DashboardCommunitiesPage() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2 space-y-2">
+                <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="city">City</Label>
                   <Input
                     id="city"
@@ -379,9 +519,7 @@ export default function DashboardCommunitiesPage() {
                   >
                     <option value="">Select…</option>
                     {US_STATES.map((s) => (
-                      <option key={s.abbr} value={s.abbr}>
-                        {s.abbr}
-                      </option>
+                      <option key={s.abbr} value={s.abbr}>{s.abbr}</option>
                     ))}
                   </select>
                 </div>
@@ -408,9 +546,7 @@ export default function DashboardCommunitiesPage() {
                 <select
                   id="community_type"
                   value={form.community_type}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, community_type: e.target.value }))
-                  }
+                  onChange={(e) => setForm((f) => ({ ...f, community_type: e.target.value }))}
                   className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   <option value="HOA">HOA</option>
@@ -442,144 +578,26 @@ export default function DashboardCommunitiesPage() {
               </div>
 
               <div className="flex items-center gap-3 pt-2">
-                <Button
+                <button
                   type="button"
-                  variant="outline"
-                  className="flex-1"
+                  className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
                   onClick={() => setIsAddOpen(false)}
                   disabled={isPending}
                 >
                   Cancel
-                </Button>
-                <Button
+                </button>
+                <button
                   type="submit"
-                  className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                  className="flex-1 rounded-lg bg-havn-navy px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-havn-navy/90 disabled:opacity-40"
                   disabled={!canSubmit || isPending}
                 >
-                  {isPending ? "Saving..." : "Create Community"}
-                </Button>
+                  {isPending ? "Saving…" : "Create Community"}
+                </button>
               </div>
             </form>
           </div>
         </div>
-      ) : null}
-
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
-        {loadError ? (
-          <div className="px-5 py-6">
-            <p className="text-sm text-destructive">{loadError}</p>
-          </div>
-        ) : null}
-
-        {loading ? (
-          <div className="px-5 py-10 text-center text-sm text-muted-foreground">Loading…</div>
-        ) : filtered.length === 0 ? (
-          <div className="px-5 py-10 text-center text-sm text-muted-foreground">
-            No communities match this filter.
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="border-0 bg-havn-surface/30 hover:bg-havn-surface/30">
-                <TableHead className="text-muted-foreground">Community</TableHead>
-                <TableHead className="text-muted-foreground">Units</TableHead>
-                <TableHead className="text-muted-foreground">Open Requests</TableHead>
-                <TableHead className="text-muted-foreground">Manager</TableHead>
-                <TableHead className="text-muted-foreground">Docs Uploaded</TableHead>
-                <TableHead className="text-muted-foreground">Document Alerts</TableHead>
-                <TableHead className="w-[120px] text-muted-foreground">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((c) => {
-                const status = (c.status ?? "active").toString().toLowerCase() as "active" | "archived";
-                const isActive = status === "active";
-
-                return (
-                  <TableRow key={c.id} className="cursor-default border-border hover:bg-muted/30">
-                    <TableCell>
-                      <div>
-                        <p className="font-medium text-foreground">{c.legal_name}</p>
-                        <p className="text-xs text-muted-foreground">{c.city ?? "—"}</p>
-                        <p className="text-xs text-muted-foreground">{c.state ?? "—"}</p>
-                      </div>
-                    </TableCell>
-
-                    <TableCell className="text-muted-foreground">
-                      {c.unit_count && c.unit_count > 0 ? (
-                        <span className="text-foreground">{c.unit_count}</span>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="gap-2"
-                          onClick={() => toast.info("Coming soon")}
-                        >
-                          <Upload className="h-3.5 w-3.5" />
-                          Upload Addresses
-                        </Button>
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      <span className="inline-flex items-center rounded-full border border-havn-amber/40 bg-havn-amber/20 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
-                        {openRequestsCount}
-                      </span>
-                    </TableCell>
-
-                    <TableCell className="text-foreground">
-                      {c.manager_name?.trim() ? c.manager_name : "Unassigned"}
-                    </TableCell>
-
-                    <TableCell className="text-foreground tabular-nums">
-                      {docsByCommunity[c.id] ?? 0}
-                    </TableCell>
-
-                    <TableCell>
-                      {(missingAlerts[c.id] ?? 0) > 0 ? (
-                        <span className="inline-flex rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-0.5 text-xs font-semibold text-destructive">
-                          {missingAlerts[c.id]} missing
-                        </span>
-                      ) : (
-                        <span className="inline-flex rounded-full border border-havn-success/40 bg-havn-success/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-950 dark:text-emerald-100">
-                          Complete
-                        </span>
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-9 w-9 px-0"
-                          onClick={() => toast.info("Coming soon")}
-                          aria-label="Edit"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className={cn("h-9 w-9 px-0", isActive ? "" : "")}
-                          onClick={() => void handleArchiveToggle(c)}
-                          aria-label={isActive ? "Archive" : "Restore"}
-                        >
-                          {isActive ? <Archive className="h-4 w-4" /> : <Undo2 className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </div>
+      )}
     </div>
   );
 }
