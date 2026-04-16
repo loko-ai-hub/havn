@@ -44,7 +44,7 @@ export default function RequesterInfoPage() {
 
   return (
     <div data-primary-color={primaryColor}>
-      <StepYourInfo slug={slug} order={portalOrder} />
+      <StepYourInfo slug={slug} order={portalOrder} primaryColor={primaryColor} />
     </div>
   );
 }

@@ -128,7 +128,8 @@ export default function StepAddons({
         </Button>
         <Button
           type="button"
-          className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light"
+          className="h-12 flex-1 text-base font-semibold text-white hover:opacity-90"
+          style={{ backgroundColor: primaryColor }}
           onClick={onContinue}
         >
           {hasSelection ? "Continue" : "Skip"}

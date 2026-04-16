@@ -13,9 +13,11 @@ import { usePortalOrder } from "@/components/requester/RequesterPortalOrgContext
 export default function StepYourInfo({
   slug,
   order,
+  primaryColor = "#1B2B4B",
 }: {
   slug: string;
   order: PortalOrder;
+  primaryColor?: string;
 }) {
   const router = useRouter();
   const { updateOrder, updateEmails } = usePortalOrder();
@@ -303,7 +305,7 @@ export default function StepYourInfo({
         <Button type="button" variant="outline" className="h-12 flex-1 text-base" onClick={() => router.push(`/r/${slug}/role`)}>
           Back
         </Button>
-        <Button type="button" onClick={handleContinue} className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light">
+        <Button type="button" onClick={handleContinue} className="h-12 flex-1 text-base font-semibold text-white hover:opacity-90" style={{ backgroundColor: primaryColor }}>
           Continue
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>

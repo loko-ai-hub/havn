@@ -187,7 +187,8 @@ export default function StepDeliveryOptions({
         <Button
           type="button"
           onClick={handleContinue}
-          className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light"
+          className="h-12 flex-1 text-base font-semibold text-white hover:opacity-90"
+          style={{ backgroundColor: primaryColor }}
         >
           Continue
           <ArrowRight className="ml-2 h-4 w-4" />

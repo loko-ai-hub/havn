@@ -107,7 +107,7 @@ function AddressCard({
   );
 }
 
-export default function StepPropertyAddress({ slug }: { slug: string }) {
+export default function StepPropertyAddress({ slug, primaryColor = "#1B2B4B" }: { slug: string; primaryColor?: string }) {
   const router = useRouter();
   const { order, updateOrder } = usePortalOrder();
   const [form, setForm] = useState<AddressForm>({
@@ -351,7 +351,7 @@ export default function StepPropertyAddress({ slug }: { slug: string }) {
         <Button type="button" variant="outline" className="h-12 flex-1 text-base" onClick={() => router.push(`/r/${slug}/info`)}>
           Back
         </Button>
-        <Button type="button" className="h-12 flex-1 bg-havn-navy text-base font-semibold text-white hover:bg-havn-navy-light" onClick={handleContinue}>
+        <Button type="button" className="h-12 flex-1 text-base font-semibold text-white hover:opacity-90" style={{ backgroundColor: primaryColor }} onClick={handleContinue}>
           Continue
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>

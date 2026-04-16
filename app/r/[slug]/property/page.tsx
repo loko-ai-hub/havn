@@ -13,7 +13,7 @@ export default function RequesterPropertyPage() {
 
   return (
     <div data-primary-color={primaryColor}>
-      <StepPropertyAddress slug={slug} />
+      <StepPropertyAddress slug={slug} primaryColor={primaryColor} />
     </div>
   );
 }
