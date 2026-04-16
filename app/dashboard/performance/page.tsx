@@ -1,83 +1,112 @@
 "use client";
 
-import { addMonths, format, parseISO, subMonths } from "date-fns";
+import { addMonths, parseISO, subMonths } from "date-fns";
 import {
   AlertTriangle,
   CheckCircle2,
-  MoreHorizontal,
   TrendingUp,
   Zap,
 } from "lucide-react";
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
-import {
-  formatCurrency,
-  formatDeliverySpeed,
-  formatMasterTypeKey,
-} from "../_lib/format";
-import { OrderStatusBadge } from "../_lib/status-badge";
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-type Period = "12m" | "24m" | "all";
+type Period = "t12" | "t24" | "all";
+type ChartView = "sales" | "orders" | "status";
 
 type OrderRow = {
   id: string;
   created_at: string | null;
-  requester_name: string | null;
-  requester_email: string | null;
-  property_address: string | null;
   master_type_key: string | null;
-  delivery_speed: string | null;
   total_fee: number | null;
   order_status: string | null;
   closing_date: string | null;
 };
 
+type CommunityDoc = {
+  document_category: string | null;
+  ocr_status: string | null;
+};
+
 type CommunityOption = { id: string; legal_name: string };
-type ProfileOption = { id: string; display: string };
+type MonthPoint = Record<string, number | string> & { label: string };
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const MONTH_ABBR = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+const DOC_TYPES = [
+  { key: "resale_certificate",   label: "Resale Certificate",   color: "hsl(160, 40%, 58%)" },
+  { key: "lender_questionnaire", label: "Lender Questionnaire", color: "hsl(44, 60%, 68%)"  },
+  { key: "certificate_update",   label: "Certificate Update",   color: "hsl(200, 50%, 60%)" },
+  { key: "demand_letter",        label: "Demand Letter",        color: "hsl(0, 55%, 68%)"   },
+  { key: "estoppel_letter",      label: "Estoppel Letter",      color: "hsl(280, 40%, 65%)" },
+  { key: "governing_documents",  label: "Governing Documents",  color: "hsl(30, 60%, 60%)"  },
+] as const;
+
+type DocTypeKey = (typeof DOC_TYPES)[number]["key"];
+
+const STATUS_TYPES = [
+  { key: "fulfilled",   label: "Fulfilled",   color: "hsl(160, 40%, 65%)" },
+  { key: "in_progress", label: "In Progress", color: "hsl(0, 0%, 65%)"    },
+  { key: "paid",        label: "Open",        color: "hsl(44, 60%, 76%)"  },
+  { key: "cancelled",   label: "Cancelled",   color: "hsl(0, 55%, 75%)"   },
+  { key: "refunded",    label: "Refunded",    color: "hsl(30, 40%, 70%)"  },
+] as const;
+
+type StatusKey = (typeof STATUS_TYPES)[number]["key"];
+
+const DOC_CATEGORIES_AUTO = [
+  "CC&Rs / Declaration",
+  "Bylaws",
+  "Financial Reports",
+  "Insurance Certificate",
+  "Reserve Study",
+  "Budget",
+  "Meeting Minutes",
+  "Rules & Regulations",
+];
+
+const PERIOD_OPTIONS: { key: Period; label: string }[] = [
+  { key: "t12", label: "Trailing 12 months" },
+  { key: "t24", label: "Trailing 24 months" },
+  { key: "all", label: "All time" },
+];
+
+const VIEW_OPTIONS: { key: ChartView; label: string }[] = [
+  { key: "sales",  label: "Sales"  },
+  { key: "orders", label: "Orders" },
+  { key: "status", label: "Status" },
+];
+
+// ─── Data helpers ──────────────────────────────────────────────────────────────
 
 async function resolveOrgId(
   supabase: ReturnType<typeof createClient>
 ): Promise<string | null> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
-  let orgId: string | null =
-    typeof user.user_metadata?.organization_id === "string"
-      ? user.user_metadata.organization_id
-      : null;
-  if (!orgId) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("organization_id")
-      .eq("id", user.id)
-      .single();
-    orgId = profile?.organization_id ?? null;
-  }
-  return orgId;
-}
-
-function isInPeriod(createdAt: string | null, period: Period): boolean {
-  if (period === "all") return true;
-  if (!createdAt) return false;
-  const date = parseISO(createdAt);
-  const edge = subMonths(new Date(), period === "12m" ? 12 : 24);
-  return date >= edge;
+  const metaOrg = user.user_metadata?.organization_id;
+  if (typeof metaOrg === "string") return metaOrg;
+  const { data: profile } = await supabase
+    .from("profiles").select("organization_id").eq("id", user.id).single();
+  return profile?.organization_id ?? null;
 }
 
 function isOverdue(order: OrderRow): boolean {
@@ -86,54 +115,189 @@ function isOverdue(order: OrderRow): boolean {
   return new Date(order.closing_date) < new Date();
 }
 
-function formatOrderDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  try {
-    return format(parseISO(iso), "MMM d, yyyy");
-  } catch {
-    return "—";
+function buildBuckets(orders: OrderRow[], period: Period): MonthPoint[] {
+  let start: Date;
+  const end = new Date();
+
+  if (period === "all") {
+    const dates = orders
+      .filter((o) => o.created_at)
+      .map((o) => parseISO(o.created_at!));
+    if (dates.length === 0) {
+      start = subMonths(new Date(end.getFullYear(), end.getMonth(), 1), 11);
+    } else {
+      const earliest = dates.reduce((a, b) => (a < b ? a : b));
+      start = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+    }
+  } else {
+    const months = period === "t12" ? 12 : 24;
+    start = subMonths(new Date(end.getFullYear(), end.getMonth(), 1), months - 1);
   }
+
+  const buckets: MonthPoint[] = [];
+  let cur = new Date(start);
+  while (cur <= end) {
+    const label = `${MONTH_ABBR[cur.getMonth()]} '${String(cur.getFullYear()).slice(2)}`;
+    buckets.push({ label });
+    cur = addMonths(cur, 1);
+  }
+  return buckets;
 }
 
-function KpiCard({
-  label,
-  value,
-  subtext,
-  icon: Icon,
-  accent,
-  iconBg,
-  loading,
+function buildSalesData(orders: OrderRow[], period: Period): MonthPoint[] {
+  const buckets = buildBuckets(orders, period);
+  for (const b of buckets) for (const dt of DOC_TYPES) b[dt.key] = 0;
+
+  const cutoff =
+    period === "all" ? null
+    : subMonths(new Date(), period === "t12" ? 12 : 24);
+
+  for (const o of orders) {
+    if (!o.created_at) continue;
+    const d = parseISO(o.created_at);
+    if (cutoff && d < cutoff) continue;
+    const lbl = `${MONTH_ABBR[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`;
+    const b = buckets.find((x) => x.label === lbl);
+    if (!b || !o.master_type_key) continue;
+    if (o.master_type_key in b) (b[o.master_type_key] as number) += Number(o.total_fee) || 0;
+  }
+  return buckets;
+}
+
+function buildOrdersData(orders: OrderRow[], period: Period): MonthPoint[] {
+  const buckets = buildBuckets(orders, period);
+  for (const b of buckets) for (const dt of DOC_TYPES) b[dt.key] = 0;
+
+  const cutoff =
+    period === "all" ? null
+    : subMonths(new Date(), period === "t12" ? 12 : 24);
+
+  for (const o of orders) {
+    if (!o.created_at) continue;
+    const d = parseISO(o.created_at);
+    if (cutoff && d < cutoff) continue;
+    const lbl = `${MONTH_ABBR[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`;
+    const b = buckets.find((x) => x.label === lbl);
+    if (!b || !o.master_type_key) continue;
+    if (o.master_type_key in b) (b[o.master_type_key] as number) += 1;
+  }
+  return buckets;
+}
+
+function buildStatusData(orders: OrderRow[], period: Period): MonthPoint[] {
+  const buckets = buildBuckets(orders, period);
+  for (const b of buckets) for (const st of STATUS_TYPES) b[st.key] = 0;
+
+  const cutoff =
+    period === "all" ? null
+    : subMonths(new Date(), period === "t12" ? 12 : 24);
+
+  for (const o of orders) {
+    if (!o.created_at || !o.order_status) continue;
+    const d = parseISO(o.created_at);
+    if (cutoff && d < cutoff) continue;
+    const lbl = `${MONTH_ABBR[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`;
+    const b = buckets.find((x) => x.label === lbl);
+    if (!b) continue;
+    if (o.order_status in b) (b[o.order_status] as number) += 1;
+  }
+  return buckets;
+}
+
+function buildAutoData(docs: CommunityDoc[]) {
+  return DOC_CATEGORIES_AUTO.map((cat) => {
+    const inCat = docs.filter((d) => d.document_category === cat);
+    const complete = inCat.filter((d) => d.ocr_status === "complete").length;
+    return { docType: cat, rate: inCat.length > 0 ? Math.round((complete / inCat.length) * 100) : 0, total: inCat.length };
+  }).filter((d) => d.total > 0);
+}
+
+function fmtCurrency(n: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function getRateColor(rate: number) {
+  if (rate >= 85) return "text-havn-success";
+  if (rate >= 75) return "text-havn-amber";
+  if (rate >= 40) return "text-foreground";
+  return "text-destructive";
+}
+
+function getBarBg(rate: number) {
+  if (rate >= 85) return "bg-havn-success";
+  if (rate >= 75) return "bg-havn-amber";
+  if (rate >= 40) return "bg-muted-foreground/50";
+  return "bg-destructive/60";
+}
+
+// ─── Recharts custom tooltip ───────────────────────────────────────────────────
+
+function SingleSegmentTooltip({
+  active, payload, label, isCurrency, categories, hoveredKey,
 }: {
-  label: string;
-  value: string;
-  subtext: string;
+  active?: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  payload?: any[];
+  label?: string;
+  isCurrency?: boolean;
+  categories: readonly { key: string; label: string; color: string }[];
+  hoveredKey: string | null;
+}) {
+  if (!active || !payload?.length || !hoveredKey) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const item = payload.find((p: any) => p.dataKey === hoveredKey);
+  if (!item || item.value === 0) return null;
+  const cat = categories.find((c) => c.key === hoveredKey);
+  const displayValue = isCurrency ? fmtCurrency(item.value as number) : String(item.value);
+
+  return (
+    <div style={{
+      fontSize: 13, borderRadius: 12,
+      border: "1px solid hsl(36, 25%, 85%)",
+      backgroundColor: "hsl(30, 12%, 12%)",
+      color: "hsl(36, 78%, 88%)",
+      boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+      padding: "10px 14px", minWidth: 120,
+    }}>
+      <div style={{ fontWeight: 700, color: "hsl(36, 78%, 92%)", marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: cat?.color ?? item.color, flexShrink: 0 }} />
+        <span style={{ fontWeight: 500 }}>{cat?.label ?? hoveredKey}</span>
+        <span style={{ marginLeft: "auto", fontWeight: 700 }}>{displayValue}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── KPI card ─────────────────────────────────────────────────────────────────
+
+function KpiCard({
+  label, value, subtext, icon: Icon, accent, iconBg, loading, delay,
+}: {
+  label: string; value: string; subtext: string;
   icon: React.ComponentType<{ className?: string }>;
-  accent: string;
-  iconBg: string;
-  loading: boolean;
+  accent: string; iconBg: string; loading: boolean; delay: number;
 }) {
   return (
-    <div className="group rounded-xl border border-border bg-card p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+    <div
+      className="group relative rounded-xl border border-border bg-card p-5 transition-all duration-200 hover:shadow-sm"
+      style={{ animationDelay: `${delay}ms`, animationFillMode: "backwards" }}
+    >
       {loading ? (
         <>
-          <Skeleton className="h-9 w-9 rounded-lg" />
-          <Skeleton className="mt-3 h-8 w-16" />
-          <Skeleton className="mt-2 h-3 w-24" />
-          <Skeleton className="mt-1.5 h-2.5 w-32" />
+          <Skeleton className="h-8 w-8 rounded-lg" />
+          <Skeleton className="mt-3 h-8 w-20 rounded" />
+          <Skeleton className="mt-2 h-3 w-24 rounded" />
+          <Skeleton className="mt-1.5 h-2.5 w-16 rounded" />
         </>
       ) : (
         <>
-          <div
-            className={cn(
-              "inline-flex h-9 w-9 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-110",
-              iconBg
-            )}
-          >
+          <div className={cn("inline-flex h-9 w-9 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-110", iconBg)}>
             <Icon className={cn("h-4 w-4", accent)} />
           </div>
-          <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-foreground">
-            {value}
-          </p>
+          <p className="mt-3 text-2xl font-bold tracking-tight text-foreground">{value}</p>
           <p className="mt-1 text-xs font-medium text-foreground/80">{label}</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">{subtext}</p>
         </>
@@ -142,17 +306,24 @@ function KpiCard({
   );
 }
 
+// ─── Main page ─────────────────────────────────────────────────────────────────
+
 export default function DashboardPerformancePage() {
-  const router = useRouter();
-  const [period, setPeriod] = useState<Period>("12m");
+  const [period, setPeriod] = useState<Period>("t12");
+  const [chartView, setChartView] = useState<ChartView>("sales");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [allOrders, setAllOrders] = useState<OrderRow[]>([]);
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
   const [selectedCommunity, setSelectedCommunity] = useState("");
-  // docs for auto-completion %
-  const [docsComplete, setDocsComplete] = useState(0);
-  const [docsTotal, setDocsTotal] = useState(0);
+  const [communityDocs, setCommunityDocs] = useState<CommunityDoc[]>([]);
+  const [activeDocTypes, setActiveDocTypes] = useState<Set<DocTypeKey>>(
+    new Set(DOC_TYPES.map((d) => d.key))
+  );
+  const [activeStatuses, setActiveStatuses] = useState<Set<StatusKey>>(
+    new Set(STATUS_TYPES.map((s) => s.key))
+  );
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -161,7 +332,6 @@ export default function DashboardPerformancePage() {
     const orgId = await resolveOrgId(supabase);
     if (!orgId) {
       setError("No organization linked to this account.");
-      setAllOrders([]);
       setLoading(false);
       return;
     }
@@ -169,14 +339,12 @@ export default function DashboardPerformancePage() {
     const [ordersRes, commRes] = await Promise.all([
       supabase
         .from("document_orders")
-        .select(
-          "id, created_at, requester_name, requester_email, property_address, master_type_key, delivery_speed, total_fee, order_status, closing_date"
-        )
+        .select("id, created_at, master_type_key, total_fee, order_status, closing_date")
         .eq("organization_id", orgId)
         .neq("order_status", "pending_payment")
         .order("created_at", { ascending: false }),
       supabase
-        .from("companies")
+        .from("communities")
         .select("id, legal_name")
         .eq("organization_id", orgId)
         .order("legal_name"),
@@ -184,7 +352,6 @@ export default function DashboardPerformancePage() {
 
     if (ordersRes.error) {
       setError(ordersRes.error.message);
-      setAllOrders([]);
       setLoading(false);
       return;
     }
@@ -193,91 +360,88 @@ export default function DashboardPerformancePage() {
     setCommunities(communityRows);
     setAllOrders((ordersRes.data ?? []) as OrderRow[]);
 
-    // Load doc completion stats
     const communityIds = communityRows.map((c) => c.id);
     if (communityIds.length > 0) {
       const { data: docs } = await supabase
         .from("community_documents")
-        .select("id, ocr_status")
+        .select("document_category, ocr_status")
         .in("community_id", communityIds);
-      const docList = docs ?? [];
-      setDocsTotal(docList.length);
-      setDocsComplete(docList.filter((d) => (d as { ocr_status: string | null }).ocr_status === "complete").length);
+      setCommunityDocs((docs ?? []) as CommunityDoc[]);
     }
 
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
-  const orders = useMemo(() => {
-    return allOrders.filter((o) => isInPeriod(o.created_at, period));
-  }, [allOrders, period]);
+  // Derived orders (community filter omitted — document_orders has no community_id)
+  const orders = useMemo(() => allOrders, [allOrders]);
+  const _ = selectedCommunity; // retained for future use when column is added
 
-  // KPIs
-  const total = orders.length;
-  const fulfilled = orders.filter((o) => o.order_status === "fulfilled").length;
-  const cancelled = orders.filter((o) => o.order_status === "cancelled" || o.order_status === "refunded").length;
-  const overdueCount = orders.filter(isOverdue).length;
-  const onTimeRate = (fulfilled + cancelled) > 0 ? Math.round((fulfilled / (fulfilled + cancelled)) * 100) : (total > 0 ? 0 : 0);
-  const autoCompletePct = docsTotal > 0 ? Math.round((docsComplete / docsTotal) * 100) : 0;
-
-  const onTimeColor = onTimeRate >= 90 ? "text-havn-success" : onTimeRate >= 70 ? "text-havn-amber" : "text-destructive";
-  const onTimeIconBg = onTimeRate >= 90 ? "bg-havn-success/10" : onTimeRate >= 70 ? "bg-havn-amber/10" : "bg-destructive/10";
-  const autoColor = autoCompletePct >= 70 ? "text-havn-success" : autoCompletePct >= 40 ? "text-havn-amber" : "text-destructive";
-  const autoIconBg = autoCompletePct >= 70 ? "bg-havn-success/10" : autoCompletePct >= 40 ? "bg-havn-amber/10" : "bg-destructive/10";
-
-  const periodSubtext = period === "12m" ? "Last 12 months" : period === "24m" ? "Last 24 months" : "All time";
-
-  const kpis = [
-    { label: "On-time rate", value: loading ? "—" : `${onTimeRate}%`, subtext: periodSubtext, icon: CheckCircle2, accent: onTimeColor, iconBg: onTimeIconBg },
-    { label: "Total orders", value: loading ? "—" : String(total), subtext: periodSubtext, icon: TrendingUp, accent: "text-primary", iconBg: "bg-primary/10" },
-    { label: "Completed", value: loading ? "—" : String(fulfilled), subtext: periodSubtext, icon: CheckCircle2, accent: "text-havn-success", iconBg: "bg-havn-success/10" },
-    { label: "Overdue", value: loading ? "—" : String(overdueCount), subtext: "Past closing date", icon: AlertTriangle, accent: overdueCount > 0 ? "text-destructive" : "text-muted-foreground", iconBg: overdueCount > 0 ? "bg-destructive/10" : "bg-muted/40" },
-    { label: "Auto-completed", value: loading ? "—" : `${autoCompletePct}%`, subtext: "Of uploaded docs", icon: Zap, accent: autoColor, iconBg: autoIconBg },
-  ];
-
-  const recent = orders.slice(0, 10);
-
-  // Revenue by month chart
-  const revenueByMonth = useMemo(() => {
-    const months = period === "all" ? 6 : period === "24m" ? 12 : 6;
-    const end = new Date();
-    const start = subMonths(new Date(end.getFullYear(), end.getMonth(), 1), months - 1);
-    const buckets = Array.from({ length: months }).map((_, idx) => {
-      const d = addMonths(start, idx);
-      return { key: `${d.getFullYear()}-${d.getMonth()}`, label: format(d, "MMM"), amount: 0 };
-    });
-    for (const o of orders) {
-      if (!o.created_at) continue;
-      const d = parseISO(o.created_at);
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      const hit = buckets.find((b) => b.key === key);
-      if (!hit) continue;
-      if (o.order_status === "paid" || o.order_status === "fulfilled") {
-        hit.amount += Number(o.total_fee) || 0;
-      }
-    }
-    return buckets;
+  // ─ KPI values ─
+  const periodSubtext = period === "t12" ? "Last 12 months" : period === "t24" ? "Last 24 months" : "All time";
+  const periodOrders = useMemo(() => {
+    if (period === "all") return orders;
+    const cutoff = subMonths(new Date(), period === "t12" ? 12 : 24);
+    return orders.filter((o) => o.created_at && parseISO(o.created_at) >= cutoff);
   }, [orders, period]);
 
-  const maxRevenue = Math.max(1, ...revenueByMonth.map((m) => m.amount));
+  const total = periodOrders.length;
+  const fulfilled = periodOrders.filter((o) => o.order_status === "fulfilled").length;
+  const cancelled = periodOrders.filter((o) => o.order_status === "cancelled" || o.order_status === "refunded").length;
+  const overdueCount = periodOrders.filter(isOverdue).length;
+  const onTimeRate = (fulfilled + cancelled) > 0 ? Math.round((fulfilled / (fulfilled + cancelled)) * 100) : 0;
 
-  // Orders by status breakdown
-  const openCount = orders.filter((o) => o.order_status === "paid").length;
-  const inProgressCount = orders.filter((o) => o.order_status === "in_progress").length;
-  const statusTotal = Math.max(1, openCount + inProgressCount + fulfilled);
+  const autoCompletionData = useMemo(() => buildAutoData(communityDocs), [communityDocs]);
+  const overallAutoRate = autoCompletionData.length > 0
+    ? Math.round(autoCompletionData.reduce((s, d) => s + d.rate, 0) / autoCompletionData.length)
+    : 0;
+
+  const rateColor = onTimeRate >= 90 ? "text-havn-success" : onTimeRate >= 70 ? "text-havn-amber" : "text-destructive";
+  const autoColor = overallAutoRate >= 85 ? "text-havn-success" : overallAutoRate >= 70 ? "text-havn-amber" : "text-destructive";
+
+  const kpis = [
+    { label: "On-time rate", value: `${onTimeRate}%`, subtext: periodSubtext, icon: CheckCircle2, accent: rateColor, iconBg: onTimeRate >= 90 ? "bg-havn-success/10" : onTimeRate >= 70 ? "bg-havn-amber/10" : "bg-destructive/10" },
+    { label: "Total orders", value: String(total), subtext: periodSubtext, icon: TrendingUp, accent: "text-primary", iconBg: "bg-primary/10" },
+    { label: "Completed", value: String(fulfilled), subtext: periodSubtext, icon: CheckCircle2, accent: "text-havn-success", iconBg: "bg-havn-success/10" },
+    { label: "Overdue", value: String(overdueCount), subtext: periodSubtext, icon: AlertTriangle, accent: overdueCount > 0 ? "text-destructive" : "text-muted-foreground", iconBg: overdueCount > 0 ? "bg-destructive/10" : "bg-muted/40" },
+    { label: "Auto-completed", value: `${overallAutoRate}%`, subtext: periodSubtext, icon: Zap, accent: autoColor, iconBg: overallAutoRate >= 85 ? "bg-havn-success/10" : overallAutoRate >= 70 ? "bg-havn-amber/10" : "bg-destructive/10" },
+  ];
+
+  // ─ Chart data ─
+  const salesData = useMemo(() => buildSalesData(orders, period), [orders, period]);
+  const ordersData = useMemo(() => buildOrdersData(orders, period), [orders, period]);
+  const statusData = useMemo(() => buildStatusData(orders, period), [orders, period]);
+
+  const chartData = chartView === "sales" ? salesData : chartView === "orders" ? ordersData : statusData;
+  const xInterval = period === "t24" ? 1 : 0;
+
+  const viewTitle = chartView === "sales" ? "Sales by Month" : chartView === "orders" ? "Items Ordered by Month" : "Status by Month";
+
+  const toggleDocType = (key: DocTypeKey) => {
+    setActiveDocTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) { if (next.size > 1) next.delete(key); } else { next.add(key); }
+      return next;
+    });
+  };
+
+  const toggleStatus = (key: StatusKey) => {
+    setActiveStatuses((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) { if (next.size > 1) next.delete(key); } else { next.add(key); }
+      return next;
+    });
+  };
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
+    <div className="space-y-10">
+
+      {/* ── Sticky header ── */}
       <div className="sticky top-0 z-20 -mx-6 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between gap-3">
           <h1 className="text-lg font-semibold text-foreground">Performance</h1>
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Community filter */}
+          <div className="flex items-center gap-3">
             <select
               value={selectedCommunity}
               onChange={(e) => setSelectedCommunity(e.target.value)}
@@ -288,185 +452,277 @@ export default function DashboardPerformancePage() {
                 <option key={c.id} value={c.id}>{c.legal_name}</option>
               ))}
             </select>
-            {/* Period selector */}
-            <div className="flex rounded-md border border-border p-0.5">
-              {(
-                [
-                  ["12m", "Last 12 Months"],
-                  ["24m", "Last 24 Months"],
-                  ["all", "All Time"],
-                ] as const
-              ).map(([id, label]) => (
+          </div>
+        </div>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {/* ── KPI cards ── */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        {kpis.map((kpi, i) => (
+          <KpiCard key={kpi.label} {...kpi} loading={loading} delay={i * 60} />
+        ))}
+      </div>
+
+      {/* ── Main chart section ── */}
+      <div className="space-y-5">
+        {/* Header row */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-4">
+            <h2 className="text-base font-semibold text-foreground">{viewTitle}</h2>
+            <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-0.5">
+              {VIEW_OPTIONS.map((opt) => (
                 <button
-                  key={id}
+                  key={opt.key}
                   type="button"
-                  onClick={() => setPeriod(id)}
+                  onClick={() => setChartView(opt.key)}
                   className={cn(
-                    "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                    id === period
-                      ? "bg-havn-navy text-white"
-                      : "text-muted-foreground hover:bg-muted"
+                    "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    chartView === opt.key
+                      ? "bg-secondary text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  {label}
+                  {opt.label}
                 </button>
               ))}
             </div>
           </div>
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-0.5">
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setPeriod(opt.key)}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  period === opt.key
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {error ? (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
-      ) : null}
-
-      {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {kpis.map((kpi) => (
-          <KpiCard key={kpi.label} {...kpi} loading={loading} />
-        ))}
-      </div>
-
-      {/* Charts */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground">Revenue by Month</h2>
-          {loading ? (
-            <Skeleton className="mt-6 h-48 w-full rounded-lg" />
-          ) : (
-            <div className="mt-6 flex h-48 items-end justify-between gap-2">
-              {revenueByMonth.map((m) => (
-                <div key={m.key} className="flex flex-1 flex-col items-center gap-1">
-                  <p className="text-[10px] tabular-nums text-muted-foreground">
-                    {m.amount > 0 ? formatCurrency(m.amount) : "—"}
-                  </p>
-                  <div
-                    className="w-full max-w-[44px] rounded-t-md bg-havn-navy"
-                    style={{ height: `${Math.max(6, (m.amount / maxRevenue) * 100)}%` }}
+        {/* Category / status toggles */}
+        {(chartView === "sales" || chartView === "orders") && (
+          <div className="flex flex-wrap gap-2">
+            {DOC_TYPES.map((cat) => {
+              const isActive = activeDocTypes.has(cat.key);
+              return (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => toggleDocType(cat.key)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
+                    isActive
+                      ? "border-border bg-card text-foreground shadow-sm"
+                      : "border-transparent bg-muted/50 text-muted-foreground"
+                  )}
+                >
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: cat.color, opacity: isActive ? 1 : 0.3 }}
                   />
-                  <p className="text-[10px] font-medium text-muted-foreground">{m.label}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-        <section className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground">Orders by Status</h2>
+        {chartView === "status" && (
+          <div className="flex flex-wrap gap-2">
+            {STATUS_TYPES.map((cat) => {
+              const isActive = activeStatuses.has(cat.key);
+              return (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => toggleStatus(cat.key)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
+                    isActive
+                      ? "border-border bg-card text-foreground shadow-sm"
+                      : "border-transparent bg-muted/50 text-muted-foreground"
+                  )}
+                >
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: cat.color, opacity: isActive ? 1 : 0.3 }}
+                  />
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Chart */}
+        <div className="h-[400px] rounded-xl border border-border bg-card p-4">
           {loading ? (
-            <Skeleton className="mt-6 h-4 w-full rounded-full" />
+            <Skeleton className="h-full w-full rounded-lg" />
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={chartData}
+                margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                onMouseLeave={() => setHoveredKey(null)}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(36, 25%, 88%)" vertical={false} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: "hsl(27, 10%, 50%)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval={xInterval}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "hsl(27, 10%, 50%)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={chartView === "sales" ? 55 : 40}
+                  tickFormatter={chartView === "sales" ? (v: number) => `$${(v / 1000).toFixed(0)}k` : undefined}
+                />
+                {chartView !== "status"
+                  ? (
+                    <Tooltip
+                      content={
+                        <SingleSegmentTooltip
+                          isCurrency={chartView === "sales"}
+                          categories={DOC_TYPES}
+                          hoveredKey={hoveredKey}
+                        />
+                      }
+                      cursor={{ fill: "rgba(0,0,0,0.05)" }}
+                    />
+                  ) : (
+                    <Tooltip
+                      content={
+                        <SingleSegmentTooltip
+                          categories={STATUS_TYPES}
+                          hoveredKey={hoveredKey}
+                        />
+                      }
+                      cursor={{ fill: "rgba(0,0,0,0.05)" }}
+                    />
+                  )
+                }
+                {chartView !== "status"
+                  ? DOC_TYPES.map((cat) => (
+                    <Bar
+                      key={cat.key}
+                      dataKey={cat.key}
+                      stackId="main"
+                      fill={activeDocTypes.has(cat.key) ? cat.color : "transparent"}
+                      hide={!activeDocTypes.has(cat.key)}
+                      onMouseEnter={() => setHoveredKey(cat.key)}
+                      onMouseLeave={() => setHoveredKey(null)}
+                    />
+                  ))
+                  : STATUS_TYPES.map((cat) => (
+                    <Bar
+                      key={cat.key}
+                      dataKey={cat.key}
+                      stackId="main"
+                      fill={activeStatuses.has(cat.key) ? cat.color : "transparent"}
+                      hide={!activeStatuses.has(cat.key)}
+                      onMouseEnter={() => setHoveredKey(cat.key)}
+                      onMouseLeave={() => setHoveredKey(null)}
+                    />
+                  ))
+                }
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* ── Auto-Completion chart ── */}
+      <div className="space-y-5">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">
+            Auto-Completion Rate by Document Type
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Based on OCR-processed community documents
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Skeleton className="h-4 w-40 rounded" />
+                  <Skeleton className="h-4 w-10 rounded" />
+                </div>
+                <Skeleton className="h-2.5 w-full rounded-full" />
+              </div>
+            ))
+          ) : autoCompletionData.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No documents uploaded yet.{" "}
+              <a href="/dashboard/communities" className="underline hover:text-foreground">
+                Upload documents
+              </a>{" "}
+              to see auto-completion rates.
+            </p>
           ) : (
             <>
-              <div className="mt-6 h-4 w-full overflow-hidden rounded-full bg-muted">
-                <div className="flex h-full w-full">
-                  <div className="bg-havn-amber" style={{ width: `${(openCount / statusTotal) * 100}%` }} />
-                  <div className="bg-blue-500" style={{ width: `${(inProgressCount / statusTotal) * 100}%` }} />
-                  <div className="bg-havn-success" style={{ width: `${(fulfilled / statusTotal) * 100}%` }} />
+              {autoCompletionData.map((dt) => (
+                <div key={dt.docType} className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-foreground">{dt.docType}</span>
+                    <span className={cn("text-sm font-semibold tabular-nums", getRateColor(dt.rate))}>
+                      {dt.rate}%
+                    </span>
+                  </div>
+                  <div className="relative h-2.5 w-full rounded-full bg-muted">
+                    <div
+                      className={cn("absolute inset-y-0 left-0 rounded-full transition-all", getBarBg(dt.rate))}
+                      style={{ width: `${dt.rate}%` }}
+                    />
+                    <div className="absolute inset-y-0 left-[40%] w-px bg-border" title="40%" />
+                    <div className="absolute inset-y-0 left-[75%] w-px bg-border" title="75%" />
+                    <div className="absolute inset-y-0 left-[85%] w-px bg-border" title="85%" />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
-                <p className="text-muted-foreground">
-                  <span className="mr-1 inline-block h-2 w-2 rounded-full bg-havn-amber" />
-                  Open ({openCount})
-                </p>
-                <p className="text-muted-foreground">
-                  <span className="mr-1 inline-block h-2 w-2 rounded-full bg-blue-500" />
-                  In Progress ({inProgressCount})
-                </p>
-                <p className="text-muted-foreground">
-                  <span className="mr-1 inline-block h-2 w-2 rounded-full bg-havn-success" />
-                  Fulfilled ({fulfilled})
-                </p>
+              ))}
+
+              {/* Legend */}
+              <div className="flex flex-wrap items-center gap-4 border-t border-border pt-3">
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 rounded-full bg-destructive/60" />
+                  <span className="text-xs text-muted-foreground">&lt; 40%</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 rounded-full bg-muted-foreground/50" />
+                  <span className="text-xs text-muted-foreground">40–74%</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 rounded-full bg-havn-amber" />
+                  <span className="text-xs text-muted-foreground">75–84%</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 rounded-full bg-havn-success" />
+                  <span className="text-xs text-muted-foreground">85%+</span>
+                </div>
               </div>
             </>
           )}
-        </section>
+        </div>
       </div>
 
-      {/* Recent Orders */}
-      <section className="rounded-xl border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h2 className="text-sm font-semibold text-foreground">Recent Orders</h2>
-          <Link href="/dashboard/requests" className="text-sm font-medium text-foreground hover:underline">
-            View all →
-          </Link>
-        </div>
-        {loading ? (
-          <div className="space-y-2 p-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : recent.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground">No orders in this period.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table className="min-w-[980px]">
-              <TableHeader>
-                <TableRow className="border-border bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="text-muted-foreground">Date</TableHead>
-                  <TableHead className="text-muted-foreground">Order #</TableHead>
-                  <TableHead className="text-muted-foreground">Requester</TableHead>
-                  <TableHead className="text-muted-foreground">Property</TableHead>
-                  <TableHead className="text-muted-foreground">Document</TableHead>
-                  <TableHead className="text-muted-foreground">Delivery</TableHead>
-                  <TableHead className="text-muted-foreground">Amount</TableHead>
-                  <TableHead className="text-muted-foreground">Status</TableHead>
-                  <TableHead className="text-muted-foreground">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recent.map((order) => {
-                  const detailHref = `/dashboard/requests/${order.id}`;
-                  return (
-                    <TableRow
-                      key={order.id}
-                      className="cursor-pointer border-border hover:bg-muted/30"
-                      onClick={() => router.push(detailHref)}
-                    >
-                      <TableCell className="text-foreground">{formatOrderDate(order.created_at)}</TableCell>
-                      <TableCell className="font-mono text-xs text-foreground">{order.id.slice(0, 8)}</TableCell>
-                      <TableCell>
-                        <span className="block font-medium text-foreground">{order.requester_name || "—"}</span>
-                        <span className="block text-xs text-muted-foreground">{order.requester_email || "—"}</span>
-                      </TableCell>
-                      <TableCell className="max-w-[220px] truncate text-muted-foreground">
-                        {order.property_address || "—"}
-                      </TableCell>
-                      <TableCell className="text-foreground">{formatMasterTypeKey(order.master_type_key)}</TableCell>
-                      <TableCell className="text-muted-foreground">{formatDeliverySpeed(order.delivery_speed)}</TableCell>
-                      <TableCell className="tabular-nums text-foreground">{formatCurrency(order.total_fee)}</TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <OrderStatusBadge status={order.order_status} />
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Popover>
-                          <PopoverTrigger
-                            type="button"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-foreground hover:bg-muted"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </PopoverTrigger>
-                          <PopoverContent align="end" className="w-32 p-1">
-                            <Link
-                              href={detailHref}
-                              className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted"
-                            >
-                              Open
-                            </Link>
-                          </PopoverContent>
-                        </Popover>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </section>
     </div>
   );
 }
