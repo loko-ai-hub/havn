@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, UserPlus } from "lucide-react";
+import { ChevronDown, Mail, Plus, Trash2, UserPlus, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -15,7 +15,14 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 import { DashboardSectionCard } from "../_lib/dashboard-section-card";
-import { updatePortalSettings } from "./actions";
+import {
+  getOrgTeam,
+  revokeTeamInvitation,
+  sendTeamInvitation,
+  updateCompanyInfo,
+  updatePortalSettings,
+} from "./actions";
+import type { PendingInvite, TeamMember } from "./actions";
 import {
   checkStripeOnboardingStatus,
   createStripeConnectLink,
@@ -98,6 +105,23 @@ function Disclosure({
   );
 }
 
+function roleLabel(role: string): string {
+  return role
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function memberInitials(fullName: string, email: string): string {
+  const name = fullName.trim();
+  if (name) {
+    const parts = name.split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  }
+  return (email[0] ?? "?").toUpperCase();
+}
+
 export default function DashboardSettingsPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -128,6 +152,17 @@ export default function DashboardSettingsPage() {
   const [stripeConnectLoading, setStripeConnectLoading] = useState(false);
   const [stripeBankLast4, setStripeBankLast4] = useState<string | null>(null);
   const stripeReturnHandled = useRef(false);
+
+  // Team & invitations
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [invites, setInvites] = useState<PendingInvite[]>([]);
+  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("admin");
+  const [inviting, setInviting] = useState(false);
+
+  const [savingPersonal, setSavingPersonal] = useState(false);
+  const [savingCompany, setSavingCompany] = useState(false);
 
   const [pendingPortal, startPortalTransition] = useTransition();
 
@@ -163,16 +198,19 @@ export default function DashboardSettingsPage() {
       return;
     }
 
-    const { data: org, error } = await supabase
-      .from("organizations")
-      .select(
-        "id, name, support_email, support_phone, city, state, zip, brand_color, portal_tagline, logo_url, stripe_account_id, stripe_onboarding_complete"
-      )
-      .eq("id", oid)
-      .single();
+    const [orgRes, teamRes] = await Promise.all([
+      supabase
+        .from("organizations")
+        .select(
+          "id, name, support_email, support_phone, city, state, zip, brand_color, portal_tagline, logo_url, stripe_account_id, stripe_onboarding_complete"
+        )
+        .eq("id", oid)
+        .single(),
+      getOrgTeam(oid),
+    ]);
 
-    if (!error && org) {
-      const o = org as OrgRow;
+    if (!orgRes.error && orgRes.data) {
+      const o = orgRes.data as OrgRow;
       setOfficePhone(o.support_phone ?? "");
       setCity(o.city ?? "");
       setStateAbbr(o.state ?? "");
@@ -184,6 +222,11 @@ export default function DashboardSettingsPage() {
     } else {
       setStripeAccountId(null);
       setStripeComplete(null);
+    }
+
+    if (teamRes && "members" in teamRes) {
+      setMembers(teamRes.members);
+      setInvites(teamRes.invites);
     }
 
     setLoading(false);
@@ -245,8 +288,45 @@ export default function DashboardSettingsPage() {
     })();
   };
 
-  const handleCompanySave = () => {
-    toast.success("Changes saved");
+  const handleCompanySave = async () => {
+    if (!orgId) return;
+    setSavingCompany(true);
+    try {
+      const result = await updateCompanyInfo(orgId, {
+        support_phone: officePhone,
+        city,
+        state: stateAbbr,
+        zip,
+      });
+      if (result && "error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Company info saved.");
+    } finally {
+      setSavingCompany(false);
+    }
+  };
+
+  const handlePersonalSave = async () => {
+    setSavingPersonal(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          first_name: metaFirst,
+          last_name: metaLast,
+          phone: metaPhone,
+          full_name: `${metaFirst} ${metaLast}`.trim(),
+        },
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Profile updated.");
+    } finally {
+      setSavingPersonal(false);
+    }
   };
 
   const handlePortalSave = () => {
@@ -268,6 +348,35 @@ export default function DashboardSettingsPage() {
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     toast.success("Password update request sent (UI preview only).");
+  };
+
+  const handleSendInvite = async () => {
+    if (!orgId || !inviteEmail.trim()) return;
+    setInviting(true);
+    try {
+      const result = await sendTeamInvitation(orgId, inviteEmail.trim(), inviteRole);
+      if (result && "error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Invitation sent.");
+      setShowInviteForm(false);
+      setInviteEmail("");
+      setInviteRole("admin");
+      await load();
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleRevokeInvite = async (inviteId: string) => {
+    const result = await revokeTeamInvitation(inviteId);
+    if (result && "error" in result) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success("Invitation revoked.");
+    await load();
   };
 
   if (loading) {
@@ -309,6 +418,14 @@ export default function DashboardSettingsPage() {
               </div>
             </div>
           </div>
+          <Button
+            type="button"
+            disabled={savingPersonal}
+            onClick={() => void handlePersonalSave()}
+            className="mt-2"
+          >
+            {savingPersonal ? "Saving…" : "Save profile"}
+          </Button>
           <div className="space-y-3 pt-2">
             <Disclosure title="Change password">
               <form onSubmit={handlePasswordSubmit} className="grid gap-3 sm:max-w-sm">
@@ -374,8 +491,8 @@ export default function DashboardSettingsPage() {
             <Checkbox checked={billingDifferent} onCheckedChange={(c) => setBillingDifferent(Boolean(c))} />
             Billing address is different
           </label>
-          <Button type="button" onClick={handleCompanySave}>
-            Save company info
+          <Button type="button" disabled={savingCompany || !orgId} onClick={() => void handleCompanySave()}>
+            {savingCompany ? "Saving…" : "Save company info"}
           </Button>
         </DashboardSectionCard>
 
@@ -445,17 +562,178 @@ export default function DashboardSettingsPage() {
         </DashboardSectionCard>
 
         <DashboardSectionCard title="Users">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
-              <p className="text-sm font-medium text-foreground">{userDisplayName}</p>
-              <p className="text-xs text-muted-foreground">{userEmail}</p>
-              <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">You</p>
-            </div>
-            <Button type="button" variant="outline" className="gap-2" onClick={() => toast.info("Coming soon")}>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {members.length} team member{members.length !== 1 ? "s" : ""}
+              {invites.length > 0 ? ` · ${invites.length} pending` : ""}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setShowInviteForm(true);
+                setInviteEmail("");
+                setInviteRole("admin");
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition-colors hover:bg-foreground/80"
+            >
               <UserPlus className="h-4 w-4" />
-              Invite User
-            </Button>
+              Add User
+            </button>
           </div>
+
+          {/* Inline invite form */}
+          {showInviteForm && (
+            <div className="rounded-xl border-2 border-dashed border-border bg-card p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Invite New User
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowInviteForm(false)}
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-email">Email</Label>
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <Input
+                    id="invite-email"
+                    type="email"
+                    placeholder="colleague@yourcompany.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-role">Role</Label>
+                <select
+                  id="invite-role"
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="admin">Admin</option>
+                  <option value="property_manager">Property Manager</option>
+                  <option value="staff">Staff</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={inviting || !inviteEmail.trim()}
+                  onClick={() => void handleSendInvite()}
+                  className="rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition-colors hover:bg-foreground/80 disabled:opacity-50"
+                >
+                  {inviting ? "Sending…" : "Send Invite"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowInviteForm(false)}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Active team members */}
+          {members.length > 0 && (
+            <div className="rounded-xl border border-border bg-card overflow-hidden divide-y divide-border">
+              {members.map((member) => {
+                const initials = memberInitials(member.full_name, member.email);
+                const isOwner = member.role === "owner";
+                return (
+                  <div key={member.id} className="flex items-center justify-between px-5 py-4 gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-havn-surface text-sm font-semibold text-foreground">
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {member.full_name || member.email}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="inline-flex rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+                        {roleLabel(member.role)}
+                      </span>
+                      {!isOwner && (
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          onClick={() => toast.info("User removal coming soon.")}
+                          aria-label="Remove user"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pending invitations */}
+          {invites.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">
+                Pending invitations
+              </p>
+              <div className="rounded-xl border border-border bg-card overflow-hidden divide-y divide-border">
+                {invites.map((invite) => {
+                  const invitedDate = invite.created_at
+                    ? new Date(invite.created_at).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : null;
+                  return (
+                    <div key={invite.id} className="flex items-center justify-between px-5 py-4 gap-4">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-sm font-semibold text-muted-foreground">
+                          <Plus className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{invite.email}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {roleLabel(invite.role)}
+                            {invitedDate ? ` · Invited ${invitedDate}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="inline-flex rounded-full border border-havn-amber/40 bg-havn-amber/15 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
+                          Pending
+                        </span>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          onClick={() => void handleRevokeInvite(invite.id)}
+                          aria-label="Revoke invitation"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {members.length === 0 && invites.length === 0 && (
+            <p className="text-sm text-muted-foreground">No team members found.</p>
+          )}
         </DashboardSectionCard>
 
         <DashboardSectionCard title="Payments">

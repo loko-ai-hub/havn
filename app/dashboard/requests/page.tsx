@@ -36,13 +36,20 @@ type OrderRow = {
   order_status: string | null;
 };
 
-type FilterTab = "all" | "paid" | "in_progress" | "fulfilled";
+type FilterTab = "all" | "open" | "in_progress" | "fulfilled" | "cancelled" | "refunded";
 
 function filterFromSearchParam(param: string | null): FilterTab {
-  if (param === "paid" || param === "in_progress" || param === "fulfilled" || param === "all") {
+  if (
+    param === "open" ||
+    param === "in_progress" ||
+    param === "fulfilled" ||
+    param === "cancelled" ||
+    param === "refunded" ||
+    param === "all"
+  ) {
     return param;
   }
-  return "all";
+  return "open";
 }
 
 function formatOrderDate(iso: string | null | undefined): string {
@@ -60,7 +67,7 @@ function DashboardRequestsPageInner() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterTab>("all");
+  const [filter, setFilter] = useState<FilterTab>("open");
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -133,7 +140,11 @@ function DashboardRequestsPageInner() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return orders.filter((row) => {
-      if (filter !== "all" && row.order_status !== filter) return false;
+      if (filter === "open") {
+        if (row.order_status !== "paid" && row.order_status !== "in_progress") return false;
+      } else if (filter !== "all") {
+        if (row.order_status !== filter) return false;
+      }
       if (!q) return true;
       const name = (row.requester_name ?? "").toLowerCase();
       const email = (row.requester_email ?? "").toLowerCase();
@@ -155,9 +166,11 @@ function DashboardRequestsPageInner() {
 
   const tabs: { id: FilterTab; label: string }[] = [
     { id: "all", label: "All" },
-    { id: "paid", label: "Paid" },
+    { id: "open", label: "Open" },
     { id: "in_progress", label: "In Progress" },
     { id: "fulfilled", label: "Fulfilled" },
+    { id: "cancelled", label: "Cancelled" },
+    { id: "refunded", label: "Refunded" },
   ];
 
   return (

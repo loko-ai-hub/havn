@@ -21,6 +21,15 @@ import { US_STATES } from "@/lib/us-states";
 
 import { addCommunity, archiveCommunity } from "./actions";
 
+const REQUIRED_CATEGORIES = [
+  "CC&Rs / Declaration",
+  "Bylaws",
+  "Financial Reports",
+  "Insurance Certificate",
+  "Reserve Study",
+  "Budget",
+];
+
 type Tab = "active" | "archived";
 
 type CommunityRow = {
@@ -43,6 +52,7 @@ export default function DashboardCommunitiesPage() {
   const [orgId, setOrgId] = useState<string | null>(null);
   const [openRequestsCount, setOpenRequestsCount] = useState(0);
   const [docsByCommunity, setDocsByCommunity] = useState<Record<string, number>>({});
+  const [missingAlerts, setMissingAlerts] = useState<Record<string, number>>({});
   const [communities, setCommunities] = useState<CommunityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -140,24 +150,38 @@ export default function DashboardCommunitiesPage() {
     const communityRows = (communitiesRes.data ?? []) as CommunityRow[];
     const communityIds = communityRows.map((c) => c.id);
     let docMap: Record<string, number> = {};
+    let alertMap: Record<string, number> = {};
     if (communityIds.length > 0) {
       const { data: docsData, error: docsError } = await supabase
         .from("community_documents")
-        .select("community_id")
+        .select("community_id, document_category")
         .in("community_id", communityIds);
       if (docsError) {
         setLoadError(docsError.message);
       } else {
-        docMap = (docsData ?? []).reduce<Record<string, number>>((acc, row) => {
-          const key = (row as { community_id: string | null }).community_id;
-          if (key) acc[key] = (acc[key] ?? 0) + 1;
-          return acc;
-        }, {});
+        type DocRow = { community_id: string | null; document_category: string | null };
+        const categoryMap = new Map<string, Set<string>>();
+        for (const row of (docsData ?? []) as DocRow[]) {
+          if (row.community_id) {
+            if (!categoryMap.has(row.community_id)) categoryMap.set(row.community_id, new Set());
+            if (row.document_category) categoryMap.get(row.community_id)!.add(row.document_category);
+          }
+        }
+        docMap = Object.fromEntries(
+          communityIds.map((cid) => [cid, categoryMap.get(cid)?.size ?? 0])
+        );
+        alertMap = Object.fromEntries(
+          communityIds.map((cid) => {
+            const present = categoryMap.get(cid) ?? new Set<string>();
+            return [cid, REQUIRED_CATEGORIES.filter((c) => !present.has(c)).length];
+          })
+        );
       }
     }
 
     setOpenRequestsCount(paidCountRes.count ?? 0);
     setDocsByCommunity(docMap);
+    setMissingAlerts(alertMap);
     setCommunities(communityRows);
     setLoading(false);
   }, [resolveOrgId]);
@@ -462,7 +486,7 @@ export default function DashboardCommunitiesPage() {
                 <TableHead className="text-muted-foreground">Open Requests</TableHead>
                 <TableHead className="text-muted-foreground">Manager</TableHead>
                 <TableHead className="text-muted-foreground">Docs Uploaded</TableHead>
-                <TableHead className="text-muted-foreground">Status</TableHead>
+                <TableHead className="text-muted-foreground">Document Alerts</TableHead>
                 <TableHead className="w-[120px] text-muted-foreground">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -508,18 +532,18 @@ export default function DashboardCommunitiesPage() {
                       {c.manager_name?.trim() ? c.manager_name : "Unassigned"}
                     </TableCell>
 
-                    <TableCell className="text-foreground">
+                    <TableCell className="text-foreground tabular-nums">
                       {docsByCommunity[c.id] ?? 0}
                     </TableCell>
 
                     <TableCell>
-                      {isActive ? (
-                        <span className="inline-flex rounded-full border border-havn-success/40 bg-havn-success/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-950 dark:text-emerald-100">
-                          Active
+                      {(missingAlerts[c.id] ?? 0) > 0 ? (
+                        <span className="inline-flex rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-0.5 text-xs font-semibold text-destructive">
+                          {missingAlerts[c.id]} missing
                         </span>
                       ) : (
-                        <span className="inline-flex rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
-                          Archived
+                        <span className="inline-flex rounded-full border border-havn-success/40 bg-havn-success/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-950 dark:text-emerald-100">
+                          Complete
                         </span>
                       )}
                     </TableCell>

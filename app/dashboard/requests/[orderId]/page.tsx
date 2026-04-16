@@ -1,5 +1,14 @@
 import type { ReactNode } from "react";
-import { FileText, Mail, MapPin, Phone, User } from "lucide-react";
+import {
+  Building2,
+  ExternalLink,
+  FileText,
+  Mail,
+  MapPin,
+  Phone,
+  Sparkles,
+  User,
+} from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -10,7 +19,7 @@ import { createAdminClient } from "../../../../lib/supabase/admin";
 import { formatCurrency, formatDeliverySpeed, formatMasterTypeKey, formatOrderDate } from "../../_lib/format";
 import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
 import { OrderStatusBadge } from "../../_lib/status-badge";
-import RequestsFulfillOrderButton from "../fulfill-order-button";
+import ApproveRejectButtons from "../approve-reject-buttons";
 
 type OrderDetail = {
   id: string;
@@ -35,6 +44,8 @@ type OrderDetail = {
   fulfilled_at: string | null;
 };
 
+const AUTOFILL_TOTAL_FIELDS = 20; // approximate max fields for a document type
+
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -44,6 +55,20 @@ function SectionCard({ title, children }: { title: string; children: ReactNode }
       <div className="space-y-4 bg-background p-5">{children}</div>
     </section>
   );
+}
+
+function getAutoFillColor(pct: number) {
+  if (pct >= 85) return "text-havn-success";
+  if (pct >= 75) return "text-havn-amber";
+  if (pct >= 40) return "text-foreground";
+  return "text-destructive";
+}
+
+function getAutoFillBg(pct: number) {
+  if (pct >= 85) return "bg-havn-success";
+  if (pct >= 75) return "bg-havn-amber";
+  if (pct >= 40) return "bg-muted-foreground";
+  return "bg-destructive";
 }
 
 export default async function DashboardRequestDetailPage({
@@ -67,7 +92,7 @@ export default async function DashboardRequestDetailPage({
   }
 
   const shortId = row.id.slice(0, 8);
-  const showFulfill = row.order_status !== "fulfilled";
+  const showActions = row.order_status !== "fulfilled" && row.order_status !== "cancelled" && row.order_status !== "refunded";
   const roleLabel = row.requester_role ? row.requester_role.split("_").join(" ") : "—";
 
   const { data: community } = await admin
@@ -86,12 +111,16 @@ export default async function DashboardRequestDetailPage({
     ? Object.values(mapped).filter((v) => v != null && String(v).trim() !== "").length
     : 0;
   const hasAutofillData = autofillFieldCount > 0;
+  const autoFillPct = Math.min(100, Math.round((autofillFieldCount / AUTOFILL_TOTAL_FIELDS) * 100));
+  const autoFillColor = getAutoFillColor(autoFillPct);
+  const autoFillBg = getAutoFillBg(autoFillPct);
   const documentsHref = communityId
     ? `/dashboard/communities/${communityId}/documents`
     : "/dashboard/communities";
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* Header */}
       <div>
         <Link
           href="/dashboard/requests"
@@ -113,180 +142,199 @@ export default async function DashboardRequestDetailPage({
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        {hasAutofillData ? (
-          <>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex rounded-full border border-havn-success/40 bg-havn-success/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-950 dark:text-emerald-100">
-                Community data available for auto-fill
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {autofillFieldCount} extracted field{autofillFieldCount === 1 ? "" : "s"} for this document
-                type
-              </span>
-            </div>
-            <Link
-              href={`/dashboard/requests/${row.id}/review`}
-              className="shrink-0 text-sm font-medium text-havn-navy underline-offset-4 hover:underline dark:text-white"
-            >
-              Open review →
-            </Link>
-          </>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex rounded-full border border-amber-500/50 bg-amber-500/15 px-2.5 py-0.5 text-xs font-semibold text-amber-950 dark:text-amber-100">
-                No community data — upload documents to enable auto-fill
-              </span>
-            </div>
-            <Link
-              href={documentsHref}
-              className="shrink-0 text-sm font-medium text-havn-navy underline-offset-4 hover:underline dark:text-white"
-            >
-              Upload documents →
-            </Link>
-          </>
+      {/* Auto-fill callout — Lovable style */}
+      <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-5">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-havn-navy">
+          <Sparkles className="h-6 w-6 text-white" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground">Auto-Filled by Havn</p>
+          {hasAutofillData ? (
+            <p className="text-xs text-muted-foreground">
+              {autofillFieldCount} field{autofillFieldCount === 1 ? "" : "s"} auto-populated from community data
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No community data available —{" "}
+              <Link href={documentsHref} className="underline hover:text-foreground">
+                upload documents
+              </Link>{" "}
+              to enable auto-fill
+            </p>
+          )}
+        </div>
+        {hasAutofillData && (
+          <div className="shrink-0 text-right">
+            <p className={`text-3xl font-bold tabular-nums ${autoFillColor}`}>{autoFillPct}%</p>
+            <p className="text-xs text-muted-foreground">auto-completed</p>
+          </div>
         )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {/* Requested By */}
         <SectionCard title="Requested By">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex gap-3">
-              <User className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <User className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Name</p>
-                <p className="text-sm text-foreground">{row.requester_name || "—"}</p>
+                <p className="text-sm font-medium text-foreground">{row.requester_name || "—"}</p>
               </div>
             </div>
             <div className="flex gap-3">
-              <Mail className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</p>
-                <p className="text-sm text-foreground">{row.requester_email || "—"}</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <Phone className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Phone</p>
-                <p className="text-sm text-foreground">{row.requester_phone || "—"}</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <User className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Role</p>
                 <p className="text-sm capitalize text-foreground">{roleLabel}</p>
               </div>
             </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard title="Property">
-          <div className="space-y-4">
             <div className="flex gap-3">
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <Phone className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Address</p>
-                <p className="text-sm text-foreground">{row.property_address || "—"}</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Phone</p>
+                <p className="text-sm text-foreground">{row.requester_phone || "—"}</p>
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex gap-3 sm:col-span-2">
+              <Mail className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Unit</p>
-                <p className="text-sm text-foreground">{row.unit_number || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Closing date</p>
-                <p className="text-sm text-foreground">{formatOrderDate(row.closing_date)}</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</p>
+                <p className="text-sm text-foreground">{row.requester_email || "—"}</p>
               </div>
             </div>
           </div>
         </SectionCard>
 
-        <SectionCard title="Document">
+        {/* Property */}
+        <SectionCard title="Property Address">
           <div className="flex gap-3">
-            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-            <div className="min-w-0 flex-1 space-y-3">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Type</p>
-                <p className="text-sm text-foreground">{formatMasterTypeKey(row.master_type_key)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Delivery</p>
-                <p className="text-sm text-foreground">{formatDeliverySpeed(row.delivery_speed)}</p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Base fee</p>
-                  <p className="text-sm tabular-nums text-foreground">{formatCurrency(row.base_fee)}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Rush fee</p>
-                  <p className="text-sm tabular-nums text-foreground">{formatCurrency(row.rush_fee)}</p>
-                </div>
-              </div>
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium text-foreground">{row.property_address || "—"}</p>
+              {row.unit_number && (
+                <p className="text-xs text-muted-foreground">Unit {row.unit_number}</p>
+              )}
             </div>
           </div>
         </SectionCard>
 
-        <SectionCard title="Payment">
-          <div className="space-y-4">
+        {/* Document */}
+        <SectionCard title="Document">
+          {/* Header row: icon + name + progress + review button */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+                <FileText className="h-5 w-5 text-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {formatMasterTypeKey(row.master_type_key)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {formatDeliverySpeed(row.delivery_speed)}
+                  {row.closing_date ? ` · Due ${formatOrderDate(row.closing_date)}` : ""}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 shrink-0">
+              {/* Progress bar */}
+              <div className="text-right">
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-24 overflow-hidden rounded-full bg-border">
+                    <div
+                      className={`h-full rounded-full ${autoFillBg}`}
+                      style={{ width: `${autoFillPct}%` }}
+                    />
+                  </div>
+                  <span className={`text-xs font-semibold tabular-nums ${autoFillColor}`}>
+                    {autoFillPct}%
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">complete</p>
+              </div>
+              <Link
+                href={`/dashboard/requests/${row.id}/review`}
+                className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Review
+              </Link>
+            </div>
+          </div>
+          {/* Fee breakdown */}
+          <div className="grid gap-3 border-t border-border pt-4 sm:grid-cols-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Base fee</p>
+              <p className="text-sm tabular-nums text-foreground">{formatCurrency(row.base_fee)}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Rush fee</p>
+              <p className="text-sm tabular-nums text-foreground">{formatCurrency(row.rush_fee)}</p>
+            </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total</p>
-              <p className="text-3xl font-bold tabular-nums tracking-tight text-foreground">
-                {formatCurrency(row.total_fee)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Stripe PaymentIntent
-              </p>
-              <p className="break-all font-mono text-sm text-foreground">
-                {row.stripe_payment_intent_id || "—"}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Paid at</p>
-              <p className="text-sm text-foreground">{row.paid_at ? formatOrderDate(row.paid_at) : "—"}</p>
+              <p className="text-sm font-bold tabular-nums text-foreground">{formatCurrency(row.total_fee)}</p>
             </div>
           </div>
         </SectionCard>
 
+        {/* Order Details */}
         <SectionCard title="Order Details">
           <div className="space-y-3 text-sm">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Order date</p>
+                <p className="text-foreground">{formatOrderDate(row.created_at)}</p>
+              </div>
+              {row.closing_date && (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Closing date</p>
+                  <p className="text-foreground">{formatOrderDate(row.closing_date)}</p>
+                </div>
+              )}
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Paid at</p>
+                <p className="text-foreground">{row.paid_at ? formatOrderDate(row.paid_at) : "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fulfilled</p>
+                <p className="text-foreground">{row.fulfilled_at ? formatOrderDate(row.fulfilled_at) : "—"}</p>
+              </div>
+            </div>
+            {row.stripe_payment_intent_id && (
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Payment intent</p>
+                <p className="break-all font-mono text-xs text-muted-foreground">{row.stripe_payment_intent_id}</p>
+              </div>
+            )}
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Full order ID</p>
-              <p className="break-all font-mono text-xs text-foreground">{row.id}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Created</p>
-              <p className="text-foreground">{formatOrderDate(row.created_at)}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fulfilled</p>
-              <p className="text-foreground">{row.fulfilled_at ? formatOrderDate(row.fulfilled_at) : "—"}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</p>
-              <p className="whitespace-pre-wrap text-foreground">{row.notes || "—"}</p>
+              <p className="break-all font-mono text-xs text-muted-foreground">{row.id}</p>
             </div>
           </div>
         </SectionCard>
       </div>
 
-      {showFulfill ? (
+      {/* Notes / Add-Ons */}
+      {row.notes && (
+        <SectionCard title="Notes / Add-Ons">
+          <p className="whitespace-pre-wrap text-sm text-foreground">{row.notes}</p>
+        </SectionCard>
+      )}
+
+      {/* Actions */}
+      {showActions && (
         <div className="rounded-xl border border-border bg-card p-5">
           <h2 className="text-sm font-semibold text-foreground">Actions</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Mark this request fulfilled when documents have been delivered.
+            Approve to mark this request fulfilled and notify the requester, or reject to cancel it.
           </p>
           <div className="mt-4">
-            <RequestsFulfillOrderButton orderId={row.id} />
+            <ApproveRejectButtons orderId={row.id} alreadyFulfilled={row.order_status === "fulfilled"} />
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
