@@ -1,11 +1,14 @@
 import type { ReactNode } from "react";
 import {
+  ArrowLeft,
   Building2,
   ExternalLink,
   FileText,
   Mail,
   MapPin,
+  Package,
   Phone,
+  ShieldCheck,
   Sparkles,
   User,
 } from "lucide-react";
@@ -16,9 +19,14 @@ import { mapFieldsToDocument } from "@/lib/autofill";
 import { getCommunityFields } from "@/lib/community-data";
 import { createAdminClient } from "../../../../lib/supabase/admin";
 
-import { formatCurrency, formatDeliverySpeed, formatMasterTypeKey, formatOrderDate } from "../../_lib/format";
+import {
+  formatCurrency,
+  formatDeliverySpeed,
+  formatMasterTypeKey,
+  formatOrderDate,
+} from "../../_lib/format";
 import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
-import { OrderStatusBadge } from "../../_lib/status-badge";
+import { getStatusCfg } from "../../_lib/status-badge";
 import ApproveRejectButtons from "../approve-reject-buttons";
 
 type OrderDetail = {
@@ -44,16 +52,16 @@ type OrderDetail = {
   fulfilled_at: string | null;
 };
 
-const AUTOFILL_TOTAL_FIELDS = 20; // approximate max fields for a document type
+const AUTOFILL_TOTAL_FIELDS = 20;
 
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-      <div className="bg-havn-navy rounded-t-xl px-5 py-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-white">{title}</h2>
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="rounded-t-xl bg-havn-navy px-5 py-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-white">{title}</h3>
       </div>
-      <div className="space-y-4 bg-background p-5">{children}</div>
-    </section>
+      <div className="space-y-4 p-5">{children}</div>
+    </div>
   );
 }
 
@@ -71,6 +79,19 @@ function getAutoFillBg(pct: number) {
   return "bg-destructive";
 }
 
+function getDaysRemaining(closingDate: string | null): number | null {
+  if (!closingDate) return null;
+  try {
+    const due = new Date(closingDate);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    due.setHours(0, 0, 0, 0);
+    return Math.round((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  } catch {
+    return null;
+  }
+}
+
 export default async function DashboardRequestDetailPage({
   params,
 }: {
@@ -80,21 +101,31 @@ export default async function DashboardRequestDetailPage({
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();
 
-  const { data: order, error } = await admin.from("document_orders").select("*").eq("id", orderId).single();
+  const { data: order, error } = await admin
+    .from("document_orders")
+    .select("*")
+    .eq("id", orderId)
+    .single();
 
-  if (error || !order) {
-    notFound();
-  }
+  if (error || !order) notFound();
 
   const row = order as OrderDetail;
-  if (row.organization_id !== organizationId) {
-    notFound();
-  }
+  if (row.organization_id !== organizationId) notFound();
 
   const shortId = row.id.slice(0, 8);
-  const showActions = row.order_status !== "fulfilled" && row.order_status !== "cancelled" && row.order_status !== "refunded";
-  const roleLabel = row.requester_role ? row.requester_role.split("_").join(" ") : "—";
+  const showActions =
+    row.order_status !== "fulfilled" &&
+    row.order_status !== "cancelled" &&
+    row.order_status !== "refunded";
+  const roleLabel = row.requester_role
+    ? row.requester_role.split("_").join(" ")
+    : "—";
 
+  const days = getDaysRemaining(row.closing_date);
+  const statusCfg = getStatusCfg(row.order_status);
+  const StatusIcon = statusCfg.Icon;
+
+  // Auto-fill
   const { data: community } = await admin
     .from("communities")
     .select("id")
@@ -111,107 +142,165 @@ export default async function DashboardRequestDetailPage({
     ? Object.values(mapped).filter((v) => v != null && String(v).trim() !== "").length
     : 0;
   const hasAutofillData = autofillFieldCount > 0;
-  const autoFillPct = Math.min(100, Math.round((autofillFieldCount / AUTOFILL_TOTAL_FIELDS) * 100));
+  const autoFillPct = Math.min(
+    100,
+    Math.round((autofillFieldCount / AUTOFILL_TOTAL_FIELDS) * 100)
+  );
   const autoFillColor = getAutoFillColor(autoFillPct);
   const autoFillBg = getAutoFillBg(autoFillPct);
   const documentsHref = communityId
     ? `/dashboard/communities/${communityId}/documents`
     : "/dashboard/communities";
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <Link
-          href="/dashboard/requests"
-          className="text-sm font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-        >
-          ← Back to requests
-        </Link>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Request detail</h1>
-            <p className="mt-1 font-mono text-sm text-muted-foreground">
-              Order ID: <span className="text-foreground">{shortId}</span>
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Created {formatOrderDate(row.created_at)}
-            </p>
-          </div>
-          <OrderStatusBadge status={row.order_status} />
-        </div>
-      </div>
+  // Add-ons: notes is a comma-joined string from the portal
+  const addOns = row.notes
+    ? row.notes
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
 
-      {/* Auto-fill callout — Lovable style */}
-      <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-5">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-havn-navy">
-          <Sparkles className="h-6 w-6 text-white" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">Auto-Filled by Havn</p>
-          {hasAutofillData ? (
-            <p className="text-xs text-muted-foreground">
-              {autofillFieldCount} field{autofillFieldCount === 1 ? "" : "s"} auto-populated from community data
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              No community data available —{" "}
-              <Link href={documentsHref} className="underline hover:text-foreground">
-                upload documents
-              </Link>{" "}
-              to enable auto-fill
-            </p>
+  return (
+    <div>
+      {/* Sticky header */}
+      <div className="sticky top-0 -mx-6 z-10 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/dashboard/requests"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Link>
+          <div className="h-4 w-px bg-border" />
+          <h1 className="text-lg font-semibold text-foreground">{shortId}</h1>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusCfg.className}`}
+          >
+            <StatusIcon className="h-3 w-3" />
+            {statusCfg.label}
+          </span>
+          {days !== null && (
+            <div className="ml-auto">
+              <span
+                className={`text-sm font-semibold tabular-nums ${
+                  days < 0
+                    ? "text-destructive"
+                    : days <= 3
+                    ? "text-havn-amber"
+                    : "text-havn-success"
+                }`}
+              >
+                {days < 0
+                  ? `${Math.abs(days)}d overdue`
+                  : `${days}d remaining`}
+              </span>
+            </div>
           )}
         </div>
-        {hasAutofillData && (
-          <div className="shrink-0 text-right">
-            <p className={`text-3xl font-bold tabular-nums ${autoFillColor}`}>{autoFillPct}%</p>
-            <p className="text-xs text-muted-foreground">auto-completed</p>
-          </div>
-        )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="mt-6 space-y-5">
+        {/* Auto-fill callout */}
+        <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-5">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-havn-navy">
+            <Sparkles className="h-6 w-6 text-white" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground">Auto-Filled by Havn</p>
+            {hasAutofillData ? (
+              <p className="text-xs text-muted-foreground">
+                {autofillFieldCount} field{autofillFieldCount === 1 ? "" : "s"} auto-populated
+                from community data
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No community data available —{" "}
+                <Link href={documentsHref} className="underline hover:text-foreground">
+                  upload documents
+                </Link>{" "}
+                to enable auto-fill
+              </p>
+            )}
+          </div>
+          {hasAutofillData && (
+            <div className="shrink-0 text-right">
+              <p className={`text-3xl font-bold tabular-nums ${autoFillColor}`}>
+                {autoFillPct}%
+              </p>
+              <p className="text-xs text-muted-foreground">auto-completed</p>
+            </div>
+          )}
+        </div>
+
         {/* Requested By */}
         <SectionCard title="Requested By">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex gap-3">
               <User className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Name</p>
-                <p className="text-sm font-medium text-foreground">{row.requester_name || "—"}</p>
+                <p className="text-xs text-muted-foreground">Name</p>
+                <p className="text-sm font-medium text-foreground">
+                  {row.requester_name || "—"}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-xs text-muted-foreground">Role</p>
+                <p className="text-sm capitalize text-foreground">{roleLabel}</p>
               </div>
             </div>
             <div className="flex gap-3">
               <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Role</p>
-                <p className="text-sm capitalize text-foreground">{roleLabel}</p>
+                <p className="text-xs text-muted-foreground">Company</p>
+                <p className="text-sm text-foreground">—</p>
               </div>
             </div>
             <div className="flex gap-3">
               <Phone className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Phone</p>
+                <p className="text-xs text-muted-foreground">Phone</p>
                 <p className="text-sm text-foreground">{row.requester_phone || "—"}</p>
               </div>
             </div>
-            <div className="flex gap-3 sm:col-span-2">
+            <div className="col-span-2 flex gap-3">
               <Mail className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</p>
+                <p className="text-xs text-muted-foreground">Email</p>
                 <p className="text-sm text-foreground">{row.requester_email || "—"}</p>
               </div>
             </div>
           </div>
         </SectionCard>
 
-        {/* Property */}
+        {/* Add-Ons */}
+        {addOns.length > 0 && (
+          <SectionCard title="Add-Ons Selected">
+            <div className="flex flex-wrap gap-2">
+              {addOns.map((addOn) => (
+                <span
+                  key={addOn}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-havn-amber/30 bg-havn-amber/10 px-3 py-1.5 text-sm font-medium text-foreground"
+                >
+                  <Package className="h-3.5 w-3.5 text-havn-amber" />
+                  {addOn}
+                </span>
+              ))}
+            </div>
+          </SectionCard>
+        )}
+
+        {/* Property Address */}
         <SectionCard title="Property Address">
           <div className="flex gap-3">
             <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <div>
-              <p className="text-sm font-medium text-foreground">{row.property_address || "—"}</p>
+              <p className="text-sm font-medium text-foreground">
+                {row.property_address || "—"}
+              </p>
               {row.unit_number && (
                 <p className="text-xs text-muted-foreground">Unit {row.unit_number}</p>
               )}
@@ -221,10 +310,9 @@ export default async function DashboardRequestDetailPage({
 
         {/* Document */}
         <SectionCard title="Document">
-          {/* Header row: icon + name + progress + review button */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-havn-surface">
                 <FileText className="h-5 w-5 text-foreground" />
               </div>
               <div>
@@ -232,13 +320,13 @@ export default async function DashboardRequestDetailPage({
                   {formatMasterTypeKey(row.master_type_key)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {formatDeliverySpeed(row.delivery_speed)}
+                  Order {shortId}
                   {row.closing_date ? ` · Due ${formatOrderDate(row.closing_date)}` : ""}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-4 shrink-0">
-              {/* Progress bar */}
+            <div className="flex shrink-0 items-center gap-4">
+              {/* Progress */}
               <div className="text-right">
                 <div className="flex items-center gap-2">
                   <div className="h-1.5 w-24 overflow-hidden rounded-full bg-border">
@@ -258,83 +346,86 @@ export default async function DashboardRequestDetailPage({
                 className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
               >
                 <ExternalLink className="h-4 w-4" />
-                Review
+                Review Document
               </Link>
             </div>
           </div>
           {/* Fee breakdown */}
           <div className="grid gap-3 border-t border-border pt-4 sm:grid-cols-3">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Base fee</p>
-              <p className="text-sm tabular-nums text-foreground">{formatCurrency(row.base_fee)}</p>
+              <p className="text-xs text-muted-foreground">Base fee</p>
+              <p className="text-sm tabular-nums text-foreground">
+                {formatCurrency(row.base_fee)}
+              </p>
             </div>
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Rush fee</p>
-              <p className="text-sm tabular-nums text-foreground">{formatCurrency(row.rush_fee)}</p>
+              <p className="text-xs text-muted-foreground">Rush fee</p>
+              <p className="text-sm tabular-nums text-foreground">
+                {formatCurrency(row.rush_fee)}
+              </p>
             </div>
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total</p>
-              <p className="text-sm font-bold tabular-nums text-foreground">{formatCurrency(row.total_fee)}</p>
+              <p className="text-xs text-muted-foreground">Total</p>
+              <p className="text-sm font-bold tabular-nums text-foreground">
+                {formatCurrency(row.total_fee)}
+              </p>
             </div>
           </div>
         </SectionCard>
 
         {/* Order Details */}
         <SectionCard title="Order Details">
-          <div className="space-y-3 text-sm">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Order date</p>
-                <p className="text-foreground">{formatOrderDate(row.created_at)}</p>
-              </div>
-              {row.closing_date && (
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Closing date</p>
-                  <p className="text-foreground">{formatOrderDate(row.closing_date)}</p>
-                </div>
-              )}
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Paid at</p>
-                <p className="text-foreground">{row.paid_at ? formatOrderDate(row.paid_at) : "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fulfilled</p>
-                <p className="text-foreground">{row.fulfilled_at ? formatOrderDate(row.fulfilled_at) : "—"}</p>
-              </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="text-xs text-muted-foreground">Order Date</p>
+              <p className="text-sm font-medium text-foreground">
+                {formatOrderDate(row.created_at)}
+              </p>
             </div>
-            {row.stripe_payment_intent_id && (
+            {row.closing_date && (
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Payment intent</p>
-                <p className="break-all font-mono text-xs text-muted-foreground">{row.stripe_payment_intent_id}</p>
+                <p className="text-xs text-muted-foreground">Due Date</p>
+                <p className="text-sm font-medium text-foreground">
+                  {formatOrderDate(row.closing_date)}
+                </p>
               </div>
             )}
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Full order ID</p>
-              <p className="break-all font-mono text-xs text-muted-foreground">{row.id}</p>
+              <p className="text-xs text-muted-foreground">Request Type</p>
+              <p className="text-sm font-medium text-foreground">
+                {formatMasterTypeKey(row.master_type_key)}
+              </p>
             </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Delivery</p>
+              <p className="text-sm font-medium text-foreground">
+                {formatDeliverySpeed(row.delivery_speed)}
+              </p>
+            </div>
+            {row.paid_at && (
+              <div>
+                <p className="text-xs text-muted-foreground">Paid</p>
+                <p className="text-sm text-foreground">{formatOrderDate(row.paid_at)}</p>
+              </div>
+            )}
+            {row.fulfilled_at && (
+              <div>
+                <p className="text-xs text-muted-foreground">Fulfilled</p>
+                <p className="text-sm text-foreground">
+                  {formatOrderDate(row.fulfilled_at)}
+                </p>
+              </div>
+            )}
           </div>
         </SectionCard>
+
+        {/* Actions */}
+        {showActions && (
+          <div className="pt-2">
+            <ApproveRejectButtons orderId={row.id} alreadyFulfilled={false} />
+          </div>
+        )}
       </div>
-
-      {/* Notes / Add-Ons */}
-      {row.notes && (
-        <SectionCard title="Notes / Add-Ons">
-          <p className="whitespace-pre-wrap text-sm text-foreground">{row.notes}</p>
-        </SectionCard>
-      )}
-
-      {/* Actions */}
-      {showActions && (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground">Actions</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Approve to mark this request fulfilled and notify the requester, or reject to cancel it.
-          </p>
-          <div className="mt-4">
-            <ApproveRejectButtons orderId={row.id} alreadyFulfilled={row.order_status === "fulfilled"} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,34 +1,66 @@
+import { CheckCircle2, Clock, Loader2, RotateCcw, XCircle } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 
-const STATUS_LABELS: Record<string, string> = {
-  pending_payment: "Unpaid",
-  paid: "Paid",
-  in_progress: "In Progress",
-  fulfilled: "Fulfilled",
-  cancelled: "Cancelled",
-  refunded: "Refunded",
+const STATUS_CONFIG: Record<
+  string,
+  { label: string; className: string; Icon: React.ElementType }
+> = {
+  paid: {
+    label: "Open",
+    className: "bg-havn-amber/10 text-havn-amber border-0",
+    Icon: Clock,
+  },
+  in_progress: {
+    label: "In Progress",
+    className: "bg-[hsl(220,50%,92%)] text-[hsl(220,50%,40%)] border-0",
+    Icon: Loader2,
+  },
+  fulfilled: {
+    label: "Completed",
+    className: "bg-havn-success/10 text-havn-success border-0",
+    Icon: CheckCircle2,
+  },
+  cancelled: {
+    label: "Cancelled",
+    className: "bg-destructive/10 text-destructive border-0",
+    Icon: XCircle,
+  },
+  refunded: {
+    label: "Refunded",
+    className: "bg-muted text-muted-foreground border-0",
+    Icon: RotateCcw,
+  },
+  pending_payment: {
+    label: "Unpaid",
+    className: "bg-havn-amber/25 text-amber-950 border-havn-amber/40",
+    Icon: Clock,
+  },
 };
 
+export function getStatusCfg(status: string | null | undefined) {
+  const s = status ?? "";
+  return (
+    STATUS_CONFIG[s] ?? {
+      label: s.split("_").join(" ") || "Unknown",
+      className: "bg-muted text-muted-foreground border-0",
+      Icon: Clock,
+    }
+  );
+}
+
 export function OrderStatusBadge({ status }: { status: string | null | undefined }) {
-  const s = status ?? "unknown";
-  const label = STATUS_LABELS[s] ?? s.split("_").join(" ");
-
-  const styles: Record<string, string> = {
-    pending_payment: "bg-havn-amber/25 text-amber-950 dark:text-amber-100 border-havn-amber/40",
-    paid: "bg-blue-500/15 text-blue-900 dark:text-blue-100 border-blue-500/30",
-    fulfilled: "bg-havn-success/20 text-emerald-950 dark:text-emerald-100 border-havn-success/40",
-  };
-
-  const fallback = "bg-muted text-muted-foreground border-border";
-
+  const cfg = getStatusCfg(status);
+  const Icon = cfg.Icon;
   return (
     <span
       className={cn(
-        "inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize",
-        styles[s] ?? fallback
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold",
+        cfg.className
       )}
     >
-      {label}
+      <Icon className="h-3 w-3" />
+      {cfg.label}
     </span>
   );
 }
