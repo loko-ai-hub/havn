@@ -122,6 +122,17 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
                         Select one
                       </span>
                     ) : null}
+                    {isLender && doc.id === "lender_questionnaire" ? (
+                      <a
+                        href="/sample-lender-questionnaire.pdf"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-havn-navy underline underline-offset-2"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        Preview
+                      </a>
+                    ) : null}
                     {isRequired && (
                       <span className="text-[10px] font-medium text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">Required</span>
                     )}

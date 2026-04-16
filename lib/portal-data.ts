@@ -136,12 +136,6 @@ export const PORTAL_ADDONS: PortalAddon[] = [];
 
 export const LENDER_ADDONS: PortalAddon[] = [
   {
-    id: "rush_processing",
-    name: "Rush Processing",
-    description: "Expedite your order to 3 business days",
-    fee: 150,
-  },
-  {
     id: "hoa_violation_search",
     name: "HOA Violation Search",
     description: "Check for any open violations on the property",
