@@ -14,16 +14,16 @@ export default async function RequesterPortalLayout({
 }) {
   const { slug } = await params;
   const supabase = createAdminClient();
-  const { data } = await supabase
+
+  const { data: org } = await supabase
     .from("organizations")
     .select(
-      "id, name, portal_slug, brand_color, logo_url, portal_tagline, portal_display_name, support_email, is_active, document_request_fees(document_type)"
+      "id, name, portal_slug, brand_color, logo_url, portal_tagline, portal_display_name, support_email, is_active"
     )
     .eq("portal_slug", slug)
     .single();
-  const org = data;
 
-  if (!org || org.is_active === false) {
+  if (!org) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-havn-surface px-6">
         <p className="text-center text-base text-muted-foreground">
@@ -33,16 +33,16 @@ export default async function RequesterPortalLayout({
     );
   }
 
-  const availableDocTypes =
-    (org.document_request_fees as { document_type: string }[] | null)?.map(
-      (f) => f.document_type
-    ) ?? [];
+  const { data: feeRows } = await supabase
+    .from("document_request_fees")
+    .select("document_type")
+    .eq("organization_id", org.id);
 
-  const { document_request_fees: _fees, ...orgData } = org;
+  const availableDocTypes = (feeRows ?? []).map((f) => f.document_type as string);
 
   return (
-    <RequesterPortalOrgProvider org={{ ...(orgData as OrgPortalData), availableDocTypes }}>
-      <RequesterPortalFrame slug={slug} org={orgData as OrgPortalData}>
+    <RequesterPortalOrgProvider org={{ ...(org as OrgPortalData), availableDocTypes }}>
+      <RequesterPortalFrame slug={slug} org={org as OrgPortalData}>
         {children}
       </RequesterPortalFrame>
     </RequesterPortalOrgProvider>
