@@ -238,7 +238,7 @@ export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
 
         <h2 className="mb-1 text-lg font-semibold text-foreground">Bulk Upload Communities</h2>
         <p className="mb-6 text-sm text-muted-foreground">
-          Download the CSV template, fill it in with your communities, then upload it here.
+          Download a template, fill it in with your communities, then upload it here.
         </p>
 
         {/* Field reference */}
@@ -246,23 +246,21 @@ export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
           <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Field Reference
           </p>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-2">
             {[
               { field: "Legal Name", req: true, note: "Full legal name of the association" },
               { field: "City", req: true, note: "City where the community is located" },
-              { field: "State", req: true, note: "2-letter abbreviation, e.g. WA" },
+              { field: "State", req: true, note: "2-letter state abbreviation, e.g. WA" },
               { field: "ZIP", req: true, note: "5-digit ZIP code" },
-              { field: "Community Type", req: false, note: "HOA · COA · Condo Association · Planned Development (default: HOA)" },
+              { field: "Community Type", req: false, note: "HOA, COA, Condo Association, or Planned Development — defaults to HOA" },
               { field: "Manager Name", req: false, note: "Assigned property manager" },
             ].map(({ field, req, note }) => (
-              <div key={field} className="flex gap-2 text-xs">
-                <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-semibold ${req ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>
+              <div key={field} className="flex items-baseline gap-2 text-xs">
+                <span className={`shrink-0 rounded px-1.5 py-0.5 font-semibold ${req ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>
                   {req ? "required" : "optional"}
                 </span>
-                <div>
-                  <span className="font-medium text-foreground">{field}</span>
-                  <span className="ml-1 text-muted-foreground">— {note}</span>
-                </div>
+                <span className="font-medium text-foreground">{field}</span>
+                <span className="text-muted-foreground">— {note}</span>
               </div>
             ))}
           </div>
