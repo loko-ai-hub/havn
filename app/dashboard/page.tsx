@@ -3,9 +3,11 @@
 import { format, parseISO } from "date-fns";
 import type { ReactNode } from "react";
 import {
+  ChevronDown,
   Clock,
   DollarSign,
   FileText,
+  Link2,
   MoreHorizontal,
   Plus,
   Timer,
@@ -255,9 +257,11 @@ export default function DashboardHomePage() {
 
   // Org state
   const [portalSlug, setPortalSlug] = useState<string | null>(null);
-  const [stripeConnected, setStripeConnected] = useState(true); // optimistic: assume connected until loaded
+  const [stripeConnected, setStripeConnected] = useState(true);
   const [communitiesCount, setCommunitiesCount] = useState(0);
   const [feesCount, setFeesCount] = useState(0);
+  const [communities, setCommunities] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCommunity, setSelectedCommunity] = useState<string>("");
 
   // Checklist dismissal
   const [checklistDismissed, setChecklistDismissed] = useState(false);
@@ -291,7 +295,7 @@ export default function DashboardHomePage() {
     setPortalSlug(slug);
     setStripeConnected(stripe);
 
-    const [openRes, fulRes, revRes, indexedRes, totalDocsRes, pagesRes, recentRes, commRes, feesRes] = await Promise.all([
+    const [openRes, fulRes, revRes, indexedRes, totalDocsRes, pagesRes, recentRes, commRes, feesRes, commListRes] = await Promise.all([
       // Open requests = paid + in_progress (not yet fulfilled)
       supabase.from("document_orders").select("id", { count: "exact", head: true }).eq("organization_id", orgId).in("order_status", ["paid", "in_progress"]),
       // Fulfilled count (for time saved estimate)
@@ -310,6 +314,8 @@ export default function DashboardHomePage() {
       supabase.from("companies").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
       // Checklist: fees count
       supabase.from("document_request_fees").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
+      // Community dropdown list
+      supabase.from("companies").select("id, name").eq("organization_id", orgId).order("name"),
     ]);
 
     if (openRes.error || fulRes.error || revRes.error || indexedRes.error || recentRes.error) {
@@ -334,6 +340,7 @@ export default function DashboardHomePage() {
     setRecent((recentRes.data ?? []) as OrderRow[]);
     setCommunitiesCount(commRes.count ?? 0);
     setFeesCount(feesRes.count ?? 0);
+    setCommunities((commListRes.data ?? []) as { id: string; name: string }[]);
     setLoading(false);
   }, []);
 
@@ -415,32 +422,42 @@ export default function DashboardHomePage() {
   return (
     <div className="space-y-6">
       {/* Top bar */}
-      <div className="sticky top-0 z-20 -mx-6 border-b border-border bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="dash-community" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Community
-            </label>
-            <select
-              id="dash-community"
-              className="h-9 max-w-xs rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-              defaultValue="all"
-            >
-              <option value="all">All communities</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
+      <div className="sticky top-0 z-20 -mx-6 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {/* Community selector */}
+            <div className="relative inline-block">
+              <select
+                value={selectedCommunity}
+                onChange={(e) => setSelectedCommunity(e.target.value)}
+                className="appearance-none cursor-pointer rounded-lg border border-border bg-card py-2.5 pl-4 pr-10 text-sm font-semibold text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-muted-foreground"
+              >
+                <option value="">All communities</option>
+                {communities.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
+            {/* Add community */}
             <Link
               href="/dashboard/communities"
-              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-havn-navy px-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
             >
               <Plus className="h-4 w-4" />
               Add community
             </Link>
-            <Button type="button" variant="outline" className="shrink-0 gap-2" disabled={!portalSlug} onClick={() => void handleSharePortal()}>
-              Share portal link
-            </Button>
           </div>
+          {/* Share portal link */}
+          <button
+            type="button"
+            disabled={!portalSlug}
+            onClick={() => void handleSharePortal()}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-havn-navy px-4 py-2.5 text-sm font-medium text-havn-sand transition-colors hover:bg-havn-navy-light disabled:opacity-50"
+          >
+            <Link2 className="h-4 w-4" />
+            Share portal link
+          </button>
         </div>
       </div>
 

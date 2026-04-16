@@ -6,16 +6,16 @@ import {
   DollarSign,
   ExternalLink,
   FileText,
+  HelpCircle,
   Inbox,
   LayoutDashboard,
+  LogOut,
   Settings,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -26,12 +26,19 @@ type NavItem = {
   match: (pathname: string) => boolean;
 };
 
+// Matches Lovable order: Dashboard → Performance → Requests → Communities → Documents → Pricing → Settings
 const navItems: NavItem[] = [
   {
     href: "/dashboard",
     label: "Dashboard",
     icon: LayoutDashboard,
     match: (p) => p === "/dashboard",
+  },
+  {
+    href: "/dashboard/performance",
+    label: "Performance",
+    icon: BarChart3,
+    match: (p) => p.startsWith("/dashboard/performance"),
   },
   {
     href: "/dashboard/requests",
@@ -58,18 +65,19 @@ const navItems: NavItem[] = [
     match: (p) => p.startsWith("/dashboard/pricing"),
   },
   {
-    href: "/dashboard/performance",
-    label: "Performance",
-    icon: BarChart3,
-    match: (p) => p.startsWith("/dashboard/performance"),
-  },
-  {
     href: "/dashboard/settings",
     label: "Settings",
     icon: Settings,
     match: (p) => p.startsWith("/dashboard/settings"),
   },
 ];
+
+const ROLE_LABELS: Record<string, string> = {
+  management_admin: "Admin",
+  property_manager: "Manager",
+  board_member: "Board Member",
+  owner: "Owner",
+};
 
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -104,14 +112,16 @@ export default function DashboardSidebar({
   };
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col bg-havn-navy text-white">
-      <div className="border-b border-white/10 px-5 py-4">
-        <Link href="/dashboard" className="text-xl font-semibold tracking-tight text-white">
+    <aside className="flex h-full w-[240px] shrink-0 flex-col bg-havn-navy">
+      {/* Logo */}
+      <div className="px-6 py-6">
+        <Link href="/dashboard" className="text-xl font-bold tracking-tight text-havn-sand">
           Havn
         </Link>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3">
+      {/* Navigation */}
+      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3">
         {navItems.map(({ href, label, icon: Icon, match }) => {
           const active = match(pathname);
           return (
@@ -121,11 +131,11 @@ export default function DashboardSidebar({
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 active
-                  ? "bg-white/10 text-white"
-                  : "text-white/60 hover:bg-white/5 hover:text-white/80"
+                  ? "bg-havn-navy-light text-havn-sand"
+                  : "text-havn-navy-muted hover:bg-havn-navy-light/50 hover:text-havn-sand/80"
               )}
             >
-              <Icon className="h-4 w-4 shrink-0 opacity-90" />
+              <Icon className="h-4 w-4 shrink-0" />
               {label}
             </Link>
           );
@@ -133,55 +143,48 @@ export default function DashboardSidebar({
 
         <button
           type="button"
-          onClick={() => toast.info("Help coming soon")}
-          className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-white/60 transition-colors hover:bg-white/5 hover:text-white/80"
+          onClick={() => {}}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-havn-navy-muted transition-colors hover:bg-havn-navy-light/50 hover:text-havn-sand/80"
         >
-          <span className="text-base leading-none">?</span>
+          <HelpCircle className="h-4 w-4 shrink-0" />
           Help
         </button>
       </nav>
 
-      <div className="border-t border-white/10 px-4 py-4">
+      {/* Bottom section */}
+      <div className="space-y-3 border-t border-havn-navy-light px-4 py-4">
         {portalSlug ? (
           <a
             href={`https://havnhq.com/r/${portalSlug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm font-medium text-white/80 transition-colors hover:text-white"
+            className="flex items-center gap-2 rounded-md px-2 py-2 text-xs font-medium text-havn-navy-muted transition-colors hover:text-havn-sand"
           >
-            <span>View resident portal</span>
             <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+            View resident portal →
           </a>
         ) : null}
 
-        <div className="mt-4 flex items-center gap-3">
-          <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-sm font-semibold text-white"
-            aria-hidden
-          >
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-havn-navy-light text-xs font-semibold text-havn-sand">
             {initials}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">{userName}</p>
-            <span className="mt-0.5 inline-block rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/90">
-              {({ management_admin: "Admin", property_manager: "Manager", board_member: "Board Member", owner: "Owner" } as Record<string, string>)[userRole] ?? userRole.replace(/_/g, " ")}
+            <p className="truncate text-sm font-medium text-havn-sand">{userName}</p>
+            <span className="mt-0.5 inline-block rounded-full bg-havn-navy-light px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-havn-navy-muted">
+              {ROLE_LABELS[userRole] ?? userRole.replace(/_/g, " ")}
             </span>
           </div>
+          <button
+            type="button"
+            disabled={signingOut}
+            onClick={() => void handleSignOut()}
+            className="shrink-0 rounded-md p-1.5 text-havn-navy-muted transition-colors hover:bg-havn-navy-light hover:text-havn-sand disabled:opacity-50"
+            title="Sign out"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
         </div>
-        <p className="mt-2 truncate text-xs text-white/50" title={email}>
-          {email}
-        </p>
-
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="mt-3 w-full border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
-          disabled={signingOut}
-          onClick={() => void handleSignOut()}
-        >
-          {signingOut ? "Signing out..." : "Sign out"}
-        </Button>
       </div>
     </aside>
   );
