@@ -11,7 +11,7 @@ import {
   Upload,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -118,6 +118,7 @@ function OcrBadge({ status }: { status: string | null | undefined }) {
 
 export default function CommunityDocumentsPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const communityId = Array.isArray(params.id) ? params.id[0] : params.id;
 
   const supabase = useMemo(() => createClient(), []);
@@ -134,7 +135,7 @@ export default function CommunityDocumentsPage() {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(CATEGORY_OPTIONS)
   );
-  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(() => searchParams.get("upload") === "true");
 
   const [modalText, setModalText] = useState<string | null>(null);
   const [modalJson, setModalJson] = useState<Record<string, unknown> | null>(null);

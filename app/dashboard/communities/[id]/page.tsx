@@ -322,12 +322,20 @@ export default async function CommunityDetailPage({
                 {completedCount}/{REQUIRED_CATEGORIES.length}
               </span>
             </div>
-            <Link
-              href={`/dashboard/communities/${id}/documents`}
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
-              View Documents
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/dashboard/communities/${id}/documents?upload=true`}
+                className="inline-flex items-center gap-2 rounded-lg bg-havn-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-havn-navy/90"
+              >
+                Upload Document
+              </Link>
+              <Link
+                href={`/dashboard/communities/${id}/documents`}
+                className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                View Documents
+              </Link>
+            </div>
           </div>
           <div className="px-6 py-5">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
