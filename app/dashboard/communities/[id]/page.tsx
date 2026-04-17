@@ -325,7 +325,7 @@ export default async function CommunityDetailPage({
             <div className="flex items-center gap-2">
               <Link
                 href={`/dashboard/communities/${id}/documents?upload=true`}
-                className="inline-flex items-center gap-2 rounded-lg bg-havn-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-havn-navy/90"
+                className="inline-flex items-center gap-2 rounded-lg bg-havn-navy px-3 py-2 text-sm font-medium text-havn-sand transition-colors hover:bg-havn-navy-light"
               >
                 Upload Document
               </Link>
