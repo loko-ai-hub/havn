@@ -9,8 +9,10 @@ import {
   HelpCircle,
   Inbox,
   LayoutDashboard,
+  Lightbulb,
   LogOut,
   Settings,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -101,6 +103,30 @@ export default function DashboardSidebar({
   const router = useRouter();
   const supabase = createClient();
   const [signingOut, setSigningOut] = useState(false);
+  const [featureOpen, setFeatureOpen] = useState(false);
+  const [featureText, setFeatureText] = useState("");
+  const [featureSubmitting, setFeatureSubmitting] = useState(false);
+  const [featureDone, setFeatureDone] = useState(false);
+
+  const handleFeatureSubmit = async () => {
+    if (!featureText.trim() || featureSubmitting) return;
+    setFeatureSubmitting(true);
+    try {
+      await fetch("/api/feature-request", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ description: featureText, userName, userEmail: email }),
+      });
+      setFeatureDone(true);
+      setFeatureText("");
+      setTimeout(() => {
+        setFeatureOpen(false);
+        setFeatureDone(false);
+      }, 2000);
+    } finally {
+      setFeatureSubmitting(false);
+    }
+  };
 
   const initials = useMemo(() => initialsFromName(userName), [userName]);
 
@@ -149,6 +175,15 @@ export default function DashboardSidebar({
           <HelpCircle className="h-4 w-4 shrink-0" />
           Help
         </button>
+
+        <button
+          type="button"
+          onClick={() => setFeatureOpen(true)}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-havn-navy-muted transition-colors hover:bg-havn-navy-light/50 hover:text-havn-sand/80"
+        >
+          <Lightbulb className="h-4 w-4 shrink-0" />
+          Request a Feature
+        </button>
       </nav>
 
       {/* Bottom section */}
@@ -186,6 +221,60 @@ export default function DashboardSidebar({
           </button>
         </div>
       </div>
+      {/* Feature request modal */}
+      {featureOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Lightbulb className="h-4 w-4 text-havn-gold" />
+                <h2 className="text-sm font-semibold text-foreground">Request a Feature</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setFeatureOpen(false); setFeatureText(""); setFeatureDone(false); }}
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {featureDone ? (
+              <p className="py-6 text-center text-sm text-havn-success font-medium">
+                Thanks! We&apos;ll review your request.
+              </p>
+            ) : (
+              <>
+                <textarea
+                  value={featureText}
+                  onChange={(e) => setFeatureText(e.target.value)}
+                  placeholder="Tell me about the feature you want…"
+                  rows={5}
+                  className="w-full rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-havn-navy/20 resize-none"
+                  autoFocus
+                />
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setFeatureOpen(false); setFeatureText(""); }}
+                    className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!featureText.trim() || featureSubmitting}
+                    onClick={() => void handleFeatureSubmit()}
+                    className="rounded-lg bg-havn-navy px-4 py-2 text-sm font-medium text-havn-sand hover:bg-havn-navy-light transition-colors disabled:opacity-50"
+                  >
+                    {featureSubmitting ? "Sending…" : "Submit"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

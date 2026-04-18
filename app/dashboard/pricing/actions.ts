@@ -7,7 +7,7 @@ import { createAdminClient } from "../../../lib/supabase/admin";
 import { requireDashboardOrg } from "../_lib/require-dashboard-org";
 
 export type FeeSaveRow = {
-  document_type: string;
+  master_type_key: string;
   base_fee: number;
   rush_same_day_fee: number | null;
   rush_next_day_fee: number | null;
@@ -34,7 +34,7 @@ export async function saveFees(orgId: string, fees: FeeSaveRow[]) {
     .from("document_request_fees")
     .delete()
     .eq("organization_id", orgId)
-    .in("document_type", [...PRICING_DOC_TYPES]);
+    .in("master_type_key", [...PRICING_DOC_TYPES]);
 
   if (delError) {
     return { error: delError.message };
@@ -42,7 +42,7 @@ export async function saveFees(orgId: string, fees: FeeSaveRow[]) {
 
   const insertRows = fees.map((f) => ({
     organization_id: orgId,
-    document_type: f.document_type,
+    master_type_key: f.master_type_key,
     base_fee: f.base_fee,
     rush_same_day_fee: f.rush_same_day_fee,
     rush_next_day_fee: f.rush_next_day_fee,
@@ -68,7 +68,7 @@ export async function configureDefaultFees(orgId: string) {
 
   const defaults: FeeSaveRow[] = [
     {
-      document_type: "resale_certificate",
+      master_type_key: "resale_certificate",
       base_fee: 250,
       rush_same_day_fee: null,
       rush_next_day_fee: null,
@@ -76,7 +76,7 @@ export async function configureDefaultFees(orgId: string) {
       standard_turnaround_days: 10,
     },
     {
-      document_type: "certificate_update",
+      master_type_key: "certificate_update",
       base_fee: 75,
       rush_same_day_fee: null,
       rush_next_day_fee: null,
@@ -84,7 +84,7 @@ export async function configureDefaultFees(orgId: string) {
       standard_turnaround_days: 10,
     },
     {
-      document_type: "lender_questionnaire",
+      master_type_key: "lender_questionnaire",
       base_fee: 150,
       rush_same_day_fee: null,
       rush_next_day_fee: null,
@@ -92,7 +92,7 @@ export async function configureDefaultFees(orgId: string) {
       standard_turnaround_days: 10,
     },
     {
-      document_type: "demand_letter",
+      master_type_key: "demand_letter",
       base_fee: 100,
       rush_same_day_fee: null,
       rush_next_day_fee: null,

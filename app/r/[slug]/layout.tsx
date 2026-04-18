@@ -35,10 +35,10 @@ export default async function RequesterPortalLayout({
 
   const { data: feeRows } = await supabase
     .from("document_request_fees")
-    .select("document_type")
+    .select("master_type_key")
     .eq("organization_id", org.id);
 
-  const availableDocTypes = (feeRows ?? []).map((f) => f.document_type as string);
+  const availableDocTypes = (feeRows ?? []).map((f) => f.master_type_key as string);
 
   return (
     <RequesterPortalOrgProvider org={{ ...(org as OrgPortalData), availableDocTypes }}>

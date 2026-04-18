@@ -311,11 +311,11 @@ export default function DashboardHomePage() {
       // Recent orders — only paid/confirmed orders visible to management
       supabase.from("document_orders").select("id, created_at, requester_name, requester_email, property_address, master_type_key, delivery_speed, total_fee, order_status").eq("organization_id", orgId).neq("order_status", "pending_payment").order("created_at", { ascending: false }).limit(5),
       // Checklist: communities count
-      supabase.from("companies").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
+      supabase.from("communities").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
       // Checklist: fees count
       supabase.from("document_request_fees").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
       // Community dropdown list
-      supabase.from("companies").select("id, name").eq("organization_id", orgId).order("name"),
+      supabase.from("communities").select("id, legal_name").eq("organization_id", orgId).order("legal_name"),
     ]);
 
     if (openRes.error || fulRes.error || revRes.error || indexedRes.error || recentRes.error) {
@@ -340,7 +340,7 @@ export default function DashboardHomePage() {
     setRecent((recentRes.data ?? []) as OrderRow[]);
     setCommunitiesCount(commRes.count ?? 0);
     setFeesCount(feesRes.count ?? 0);
-    setCommunities((commListRes.data ?? []) as { id: string; name: string }[]);
+    setCommunities((commListRes.data ?? []).map((r) => ({ id: (r as { id: string; legal_name: string }).id, name: (r as { id: string; legal_name: string }).legal_name })));
     setLoading(false);
   }, []);
 

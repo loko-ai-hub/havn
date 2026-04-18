@@ -120,10 +120,10 @@ const OnboardingPage = () => {
 
       const standardTurnaroundDays = Number.parseInt(data.turnaround, 10);
       const feesRows = [
-        { document_type: "resale_certificate", base_fee: Number(data.resaleCertificate) || 0 },
-        { document_type: "certificate_update", base_fee: Number(data.certificateUpdate) || 0 },
-        { document_type: "lender_questionnaire", base_fee: Number(data.lenderQuestionnaire) || 0 },
-        { document_type: "demand_letter", base_fee: Number(data.demandLetter) || 0 },
+        { master_type_key: "resale_certificate", base_fee: Number(data.resaleCertificate) || 0 },
+        { master_type_key: "certificate_update", base_fee: Number(data.certificateUpdate) || 0 },
+        { master_type_key: "lender_questionnaire", base_fee: Number(data.lenderQuestionnaire) || 0 },
+        { master_type_key: "demand_letter", base_fee: Number(data.demandLetter) || 0 },
       ].map((row) => ({
         ...row,
         organization_id: organizationId,
