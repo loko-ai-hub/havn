@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { DollarSign, RotateCcw, X } from "lucide-react";
+import { ChevronDown, DollarSign, MapPin, Plus, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { configureDefaultFees, loadFees, saveFees, type FeeSaveRow } from "./actions";
+import { US_STATES } from "@/lib/us-states";
+
+import {
+  configureDefaultFees,
+  DEFAULT_FEES,
+  loadFees,
+  saveFees,
+  type FeeSaveRow,
+} from "./actions";
 
 const PRICING_TIP_KEY = "havn_pricing_tip_dismissed";
 
@@ -32,10 +40,10 @@ const STATE_FEE_CAPS: Record<string, { resale?: number; update?: number; statute
 };
 
 const DOC_ROWS: { key: FeeSaveRow["master_type_key"]; label: string; description: string }[] = [
-  { key: "resale_certificate", label: "Resale Certificate", description: "Full HOA disclosure packet" },
-  { key: "certificate_update", label: "Certificate Update", description: "Update to a prior certificate" },
+  { key: "resale_certificate",   label: "Resale Certificate",   description: "Full HOA disclosure packet" },
+  { key: "certificate_update",   label: "Certificate Update",   description: "Update to a prior certificate" },
   { key: "lender_questionnaire", label: "Lender Questionnaire", description: "Lender/mortgage info package" },
-  { key: "demand_letter", label: "Demand Letter", description: "Account balance demand statement" },
+  { key: "demand_letter",        label: "Demand Letter",        description: "Account balance demand statement" },
 ];
 
 type EditableFee = {
@@ -47,16 +55,9 @@ type EditableFee = {
   standard_turnaround_days: string;
 };
 
-const DEFAULT_FEES: FeeSaveRow[] = [
-  { master_type_key: "resale_certificate",  base_fee: 250, rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
-  { master_type_key: "certificate_update",  base_fee: 75,  rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
-  { master_type_key: "lender_questionnaire",base_fee: 150, rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
-  { master_type_key: "demand_letter",       base_fee: 100, rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
-];
-
 function toEditable(row: FeeSaveRow): EditableFee {
   return {
-    master_type_key: row.master_type_key as EditableFee["master_type_key"],
+    master_type_key: row.master_type_key,
     base_fee: String(row.base_fee ?? 0),
     rush_same_day_fee: row.rush_same_day_fee == null ? null : String(row.rush_same_day_fee),
     rush_next_day_fee: row.rush_next_day_fee == null ? null : String(row.rush_next_day_fee),
@@ -81,14 +82,11 @@ function formatMoney(n: number): string {
 
 function CapBanner({ state, documentType, fee }: { state: string; documentType: string; fee: number }) {
   const st = state.trim().toUpperCase();
-  if (!st) return <p className="mt-1 text-[11px] text-muted-foreground">Set your state in Settings to see statutory guidance.</p>;
-
+  if (!st) return null;
   const caps = STATE_FEE_CAPS[st];
   if (!caps) return <p className="mt-1 text-[11px] text-muted-foreground">{st}: fees must reflect actual cost.</p>;
-
   const capAmount = documentType === "resale_certificate" ? caps.resale : documentType === "certificate_update" ? caps.update : undefined;
-  if (capAmount == null) return <p className="mt-1 text-[11px] text-muted-foreground">No fixed cap for this type in {st}.</p>;
-
+  if (capAmount == null) return null;
   const statute = caps.statute ? ` (${caps.statute})` : "";
   if (fee > capAmount) {
     return <p className="mt-1 text-[11px] font-medium text-destructive">Exceeds {st} cap of {formatMoney(capAmount)}{statute}.</p>;
@@ -143,19 +141,120 @@ function RushCell({ value, onEnable, onDisable, onChange, disabled }: {
   );
 }
 
+// State selector with add-state dropdown
+function StateSelector({
+  selectedState,
+  configuredStates,
+  onSelect,
+  onAdd,
+  disabled,
+}: {
+  selectedState: string;
+  configuredStates: string[];
+  onSelect: (state: string) => void;
+  onAdd: (state: string) => void;
+  disabled: boolean;
+}) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const stateName = (abbr: string) => US_STATES.find((s) => s.abbr === abbr)?.name ?? abbr;
+
+  const unconfiguredStates = US_STATES.filter(
+    (s) => !configuredStates.includes(s.abbr)
+  ).filter(
+    (s) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.abbr.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {/* Configured state tabs */}
+      {configuredStates.map((abbr) => (
+        <button
+          key={abbr}
+          type="button"
+          disabled={disabled}
+          onClick={() => onSelect(abbr)}
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 ${
+            selectedState === abbr
+              ? "border-havn-navy bg-havn-navy text-white"
+              : "border-border bg-background text-foreground hover:bg-muted"
+          }`}
+        >
+          <MapPin className="h-3 w-3" />
+          {abbr}
+          <span className="hidden sm:inline text-xs opacity-70">— {stateName(abbr)}</span>
+        </button>
+      ))}
+
+      {/* Add state button */}
+      <div className="relative">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => { setAddOpen((o) => !o); setSearch(""); }}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:border-foreground hover:text-foreground transition-colors disabled:opacity-40"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add state
+          <ChevronDown className="h-3 w-3" />
+        </button>
+
+        {addOpen && (
+          <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-xl border border-border bg-background shadow-lg">
+            <div className="p-2 border-b border-border">
+              <input
+                type="text"
+                placeholder="Search states…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                autoFocus
+                className="w-full rounded-md border border-border bg-muted/30 px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-havn-navy/20"
+              />
+            </div>
+            <div className="max-h-52 overflow-y-auto p-1">
+              {unconfiguredStates.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-muted-foreground">No states found</p>
+              ) : (
+                unconfiguredStates.map((s) => (
+                  <button
+                    key={s.abbr}
+                    type="button"
+                    onClick={() => {
+                      onAdd(s.abbr);
+                      setAddOpen(false);
+                      setSearch("");
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted"
+                  >
+                    <span className="w-8 font-mono text-xs font-semibold text-muted-foreground">{s.abbr}</span>
+                    {s.name}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPricingPage() {
-  const [orgId, setOrgId] = useState<string | null>(null);
-  const [orgState, setOrgState] = useState("");
+  const [selectedState, setSelectedState] = useState("");
+  const [configuredStates, setConfiguredStates] = useState<string[]>([]);
+  const [orgPrimaryState, setOrgPrimaryState] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rows, setRows] = useState<EditableFee[] | null>(null);
   const [pending, startTransition] = useTransition();
   const [showTip, setShowTip] = useState(true);
 
-  const fetchFees = useCallback(async () => {
+  const fetchFees = useCallback(async (state: string) => {
+    if (!state) return;
     setLoading(true);
     setLoadError(null);
-    const result = await loadFees();
+    const result = await loadFees(state);
 
     if ("error" in result) {
       setLoadError(result.error);
@@ -163,8 +262,8 @@ export default function DashboardPricingPage() {
       return;
     }
 
-    setOrgId("loaded");
-    setOrgState(result.orgState);
+    setConfiguredStates(result.configuredStates);
+    setOrgPrimaryState(result.orgPrimaryState);
 
     if (!result.fees) {
       setRows(null);
@@ -173,19 +272,40 @@ export default function DashboardPricingPage() {
     }
 
     const map = new Map(result.fees.map((r) => [r.master_type_key, r]));
-
     const ordered: EditableFee[] = DOC_ROWS.map(({ key }) => {
       const r = map.get(key);
       if (r) return toEditable(r);
-      const def = DEFAULT_FEES.find((d) => d.master_type_key === key)!;
-      return toEditable(def);
+      return toEditable(DEFAULT_FEES.find((d) => d.master_type_key === key)!);
     });
 
     setRows(ordered);
     setLoading(false);
   }, []);
 
-  useEffect(() => { void fetchFees(); }, [fetchFees]);
+  // On mount: load the initial state list so we know which tabs to show
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      // Load with a placeholder to get configuredStates + orgPrimaryState
+      const result = await loadFees("__init__");
+      if ("error" in result) {
+        setLoadError(result.error);
+        setLoading(false);
+        return;
+      }
+      setConfiguredStates(result.configuredStates);
+      setOrgPrimaryState(result.orgPrimaryState);
+      // Auto-select: first configured state, or org primary state
+      const autoSelect = result.configuredStates[0] ?? result.orgPrimaryState;
+      if (autoSelect) {
+        setSelectedState(autoSelect);
+        await fetchFees(autoSelect);
+      } else {
+        setLoading(false);
+      }
+    };
+    void init();
+  }, [fetchFees]);
 
   useEffect(() => {
     try {
@@ -193,23 +313,35 @@ export default function DashboardPricingPage() {
     } catch { /* ignore */ }
   }, []);
 
-  const emptyState = useMemo(() => !loading && orgId && rows === null && !loadError, [loading, orgId, rows, loadError]);
+  const handleSelectState = (state: string) => {
+    setSelectedState(state);
+    setRows(null);
+    void fetchFees(state);
+  };
+
+  const handleAddState = (state: string) => {
+    if (!configuredStates.includes(state)) {
+      setConfiguredStates((prev) => [...prev, state].sort());
+    }
+    handleSelectState(state);
+  };
 
   function updateRow(index: number, patch: Partial<EditableFee>) {
     setRows((prev) => { if (!prev) return prev; const next = [...prev]; next[index] = { ...next[index], ...patch }; return next; });
   }
 
   const handleConfigureDefaults = () => {
+    if (!selectedState) return;
     startTransition(async () => {
-      const result = await configureDefaultFees();
+      const result = await configureDefaultFees(selectedState);
       if (result && "error" in result && result.error) { toast.error(result.error); return; }
-      toast.success("Default pricing configured.");
-      await fetchFees();
+      toast.success(`Default pricing configured for ${selectedState}.`);
+      await fetchFees(selectedState);
     });
   };
 
   const handleSave = () => {
-    if (!rows) return;
+    if (!rows || !selectedState) return;
     const payload: FeeSaveRow[] = rows.map((e) => ({
       master_type_key: e.master_type_key,
       base_fee: parseRequiredMoney(e.base_fee),
@@ -219,23 +351,27 @@ export default function DashboardPricingPage() {
       standard_turnaround_days: parseDays(e.standard_turnaround_days),
     }));
     startTransition(async () => {
-      const result = await saveFees(payload);
+      const result = await saveFees(payload, selectedState);
       if (result && "error" in result && result.error) { toast.error(result.error); return; }
-      toast.success("Pricing saved.");
-      await fetchFees();
+      toast.success(`Pricing saved for ${selectedState}.`);
+      await fetchFees(selectedState);
     });
   };
+
+  const emptyState = !loading && selectedState && rows === null && !loadError;
+  const noStateSelected = !loading && !selectedState && !loadError;
+  const stateName = US_STATES.find((s) => s.abbr === selectedState)?.name ?? selectedState;
 
   return (
     <div className="space-y-6">
       {/* Sticky header */}
       <div className="sticky top-0 z-10 -mx-6 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-foreground" />
             <h1 className="text-lg font-semibold text-foreground">Pricing</h1>
           </div>
-          {rows && (
+          {rows && selectedState && (
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -252,6 +388,17 @@ export default function DashboardPricingPage() {
             </div>
           )}
         </div>
+
+        {/* State selector row */}
+        <div className="mt-3">
+          <StateSelector
+            selectedState={selectedState}
+            configuredStates={configuredStates}
+            onSelect={handleSelectState}
+            onAdd={handleAddState}
+            disabled={pending}
+          />
+        </div>
       </div>
 
       {loadError && (
@@ -262,24 +409,34 @@ export default function DashboardPricingPage() {
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading pricing…</p>
+      ) : noStateSelected ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card px-6 py-14 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-havn-navy/10 mb-4">
+            <MapPin className="h-6 w-6 text-havn-navy" />
+          </div>
+          <h2 className="text-lg font-semibold text-foreground">Select a state to start</h2>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+            Use the <span className="font-medium">Add state</span> button above to configure pricing for each state you operate in.
+          </p>
+        </div>
       ) : emptyState ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card px-6 py-14 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-havn-navy/10 mb-4">
             <DollarSign className="h-6 w-6 text-havn-navy" />
           </div>
-          <h2 className="text-lg font-semibold text-foreground">Set up your pricing</h2>
+          <h2 className="text-lg font-semibold text-foreground">No pricing set for {stateName}</h2>
           <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            You haven&apos;t configured fees yet. Start with sensible defaults, then adjust to match your management agreement and state caps.
+            Start with sensible defaults, then adjust to match your management agreement and {selectedState} statutory caps.
           </p>
-          <Button type="button" className="mt-6" disabled={pending || !orgId} onClick={handleConfigureDefaults}>
-            Configure Fees
+          <Button type="button" className="mt-6" disabled={pending} onClick={handleConfigureDefaults}>
+            Configure {selectedState} Fees
           </Button>
         </div>
       ) : rows ? (
         <div className="space-y-4">
           {showTip && (
             <div className="flex items-start justify-between gap-3 rounded-lg border border-havn-amber/40 bg-havn-amber/10 px-4 py-3 text-sm text-foreground">
-              <p>Most management companies in {orgState.trim() || "your state"} charge $200–$300 for resale certificates.</p>
+              <p>Prices shown are for <strong>{stateName}</strong>. Where state law sets a lower cap, Havn automatically enforces it at order time.</p>
               <button
                 type="button"
                 className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground transition-colors"
@@ -320,7 +477,7 @@ export default function DashboardPricingPage() {
                           disabled={pending}
                           onChange={(v) => updateRow(i, { base_fee: v })}
                         />
-                        <CapBanner state={orgState} documentType={row.master_type_key} fee={parseRequiredMoney(row.base_fee)} />
+                        <CapBanner state={selectedState} documentType={row.master_type_key} fee={parseRequiredMoney(row.base_fee)} />
                       </TableCell>
                       <TableCell className="py-4">
                         <RushCell

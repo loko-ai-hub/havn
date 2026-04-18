@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 
 import { createAdminClient } from "../../../lib/supabase/admin";
-
 import { requireDashboardOrg } from "../_lib/require-dashboard-org";
 
 export type FeeSaveRow = {
@@ -15,6 +14,12 @@ export type FeeSaveRow = {
   standard_turnaround_days: number;
 };
 
+export type FeeLoadResult = {
+  fees: FeeSaveRow[] | null;
+  configuredStates: string[];
+  orgPrimaryState: string;
+};
+
 const PRICING_DOC_TYPES = [
   "resale_certificate",
   "certificate_update",
@@ -22,33 +27,48 @@ const PRICING_DOC_TYPES = [
   "demand_letter",
 ] as const;
 
-export type FeeLoadResult = {
-  orgState: string;
-  fees: FeeSaveRow[] | null;
-};
+export const DEFAULT_FEES: FeeSaveRow[] = [
+  { master_type_key: "resale_certificate",   base_fee: 250, rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
+  { master_type_key: "certificate_update",   base_fee: 75,  rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
+  { master_type_key: "lender_questionnaire", base_fee: 150, rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
+  { master_type_key: "demand_letter",        base_fee: 100, rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
+];
 
-export async function loadFees(): Promise<FeeLoadResult | { error: string }> {
+export async function loadFees(state: string): Promise<FeeLoadResult | { error: string }> {
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();
 
-  const [orgRes, feesRes] = await Promise.all([
+  const [orgRes, allFeesRes] = await Promise.all([
     admin.from("organizations").select("state").eq("id", organizationId).single(),
     admin
       .from("document_request_fees")
-      .select("master_type_key, base_fee, rush_same_day_fee, rush_next_day_fee, rush_3day_fee, standard_turnaround_days")
+      .select("master_type_key, state, base_fee, rush_same_day_fee, rush_next_day_fee, rush_3day_fee, standard_turnaround_days")
       .eq("organization_id", organizationId)
       .in("master_type_key", [...PRICING_DOC_TYPES]),
   ]);
 
-  if (feesRes.error) return { error: feesRes.error.message };
+  if (allFeesRes.error) return { error: allFeesRes.error.message };
 
-  const orgState = typeof orgRes.data?.state === "string" ? orgRes.data.state : "";
+  const orgPrimaryState = typeof orgRes.data?.state === "string" ? orgRes.data.state.toUpperCase() : "";
 
-  if (!feesRes.data || feesRes.data.length === 0) {
-    return { orgState, fees: null };
+  // Collect distinct states that have fees configured
+  const stateSet = new Set<string>();
+  if (orgPrimaryState) stateSet.add(orgPrimaryState);
+  for (const row of allFeesRes.data ?? []) {
+    if (typeof row.state === "string" && row.state) stateSet.add(row.state.toUpperCase());
+  }
+  const configuredStates = [...stateSet].sort();
+
+  // Filter fees for the requested state
+  const stateRows = (allFeesRes.data ?? []).filter(
+    (r) => (r.state ?? "").toUpperCase() === state.toUpperCase()
+  );
+
+  if (stateRows.length === 0) {
+    return { fees: null, configuredStates, orgPrimaryState };
   }
 
-  const fees: FeeSaveRow[] = feesRes.data.map((r) => ({
+  const fees: FeeSaveRow[] = stateRows.map((r) => ({
     master_type_key: r.master_type_key as string,
     base_fee: Number(r.base_fee ?? 0),
     rush_same_day_fee: r.rush_same_day_fee as number | null,
@@ -57,10 +77,10 @@ export async function loadFees(): Promise<FeeLoadResult | { error: string }> {
     standard_turnaround_days: Number(r.standard_turnaround_days ?? 10),
   }));
 
-  return { orgState, fees };
+  return { fees, configuredStates, orgPrimaryState };
 }
 
-export async function saveFees(fees: FeeSaveRow[]) {
+export async function saveFees(fees: FeeSaveRow[], state: string) {
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();
 
@@ -68,15 +88,15 @@ export async function saveFees(fees: FeeSaveRow[]) {
     .from("document_request_fees")
     .delete()
     .eq("organization_id", organizationId)
+    .eq("state", state.toUpperCase())
     .in("master_type_key", [...PRICING_DOC_TYPES]);
 
-  if (delError) {
-    return { error: delError.message };
-  }
+  if (delError) return { error: delError.message };
 
   const insertRows = fees.map((f) => ({
     organization_id: organizationId,
     master_type_key: f.master_type_key,
+    state: state.toUpperCase(),
     base_fee: f.base_fee,
     rush_same_day_fee: f.rush_same_day_fee,
     rush_next_day_fee: f.rush_next_day_fee,
@@ -85,50 +105,12 @@ export async function saveFees(fees: FeeSaveRow[]) {
   }));
 
   const { error: insError } = await admin.from("document_request_fees").insert(insertRows);
-
-  if (insError) {
-    return { error: insError.message };
-  }
+  if (insError) return { error: insError.message };
 
   revalidatePath("/dashboard/pricing");
   return { ok: true };
 }
 
-export async function configureDefaultFees() {
-  const defaults: FeeSaveRow[] = [
-    {
-      master_type_key: "resale_certificate",
-      base_fee: 250,
-      rush_same_day_fee: null,
-      rush_next_day_fee: null,
-      rush_3day_fee: null,
-      standard_turnaround_days: 10,
-    },
-    {
-      master_type_key: "certificate_update",
-      base_fee: 75,
-      rush_same_day_fee: null,
-      rush_next_day_fee: null,
-      rush_3day_fee: null,
-      standard_turnaround_days: 10,
-    },
-    {
-      master_type_key: "lender_questionnaire",
-      base_fee: 150,
-      rush_same_day_fee: null,
-      rush_next_day_fee: null,
-      rush_3day_fee: null,
-      standard_turnaround_days: 10,
-    },
-    {
-      master_type_key: "demand_letter",
-      base_fee: 100,
-      rush_same_day_fee: null,
-      rush_next_day_fee: null,
-      rush_3day_fee: null,
-      standard_turnaround_days: 10,
-    },
-  ];
-
-  return saveFees(defaults);
+export async function configureDefaultFees(state: string) {
+  return saveFees(DEFAULT_FEES, state);
 }
