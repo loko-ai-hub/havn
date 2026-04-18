@@ -22,18 +22,52 @@ const PRICING_DOC_TYPES = [
   "demand_letter",
 ] as const;
 
-export async function saveFees(orgId: string, fees: FeeSaveRow[]) {
+export type FeeLoadResult = {
+  orgState: string;
+  fees: FeeSaveRow[] | null;
+};
+
+export async function loadFees(): Promise<FeeLoadResult | { error: string }> {
   const { organizationId } = await requireDashboardOrg();
-  if (organizationId !== orgId) {
-    return { error: "You cannot update fees for this organization." };
+  const admin = createAdminClient();
+
+  const [orgRes, feesRes] = await Promise.all([
+    admin.from("organizations").select("state").eq("id", organizationId).single(),
+    admin
+      .from("document_request_fees")
+      .select("master_type_key, base_fee, rush_same_day_fee, rush_next_day_fee, rush_3day_fee, standard_turnaround_days")
+      .eq("organization_id", organizationId)
+      .in("master_type_key", [...PRICING_DOC_TYPES]),
+  ]);
+
+  if (feesRes.error) return { error: feesRes.error.message };
+
+  const orgState = typeof orgRes.data?.state === "string" ? orgRes.data.state : "";
+
+  if (!feesRes.data || feesRes.data.length === 0) {
+    return { orgState, fees: null };
   }
 
+  const fees: FeeSaveRow[] = feesRes.data.map((r) => ({
+    master_type_key: r.master_type_key as string,
+    base_fee: Number(r.base_fee ?? 0),
+    rush_same_day_fee: r.rush_same_day_fee as number | null,
+    rush_next_day_fee: r.rush_next_day_fee as number | null,
+    rush_3day_fee: r.rush_3day_fee as number | null,
+    standard_turnaround_days: Number(r.standard_turnaround_days ?? 10),
+  }));
+
+  return { orgState, fees };
+}
+
+export async function saveFees(fees: FeeSaveRow[]) {
+  const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();
 
   const { error: delError } = await admin
     .from("document_request_fees")
     .delete()
-    .eq("organization_id", orgId)
+    .eq("organization_id", organizationId)
     .in("master_type_key", [...PRICING_DOC_TYPES]);
 
   if (delError) {
@@ -41,7 +75,7 @@ export async function saveFees(orgId: string, fees: FeeSaveRow[]) {
   }
 
   const insertRows = fees.map((f) => ({
-    organization_id: orgId,
+    organization_id: organizationId,
     master_type_key: f.master_type_key,
     base_fee: f.base_fee,
     rush_same_day_fee: f.rush_same_day_fee,
@@ -60,12 +94,7 @@ export async function saveFees(orgId: string, fees: FeeSaveRow[]) {
   return { ok: true };
 }
 
-export async function configureDefaultFees(orgId: string) {
-  const { organizationId } = await requireDashboardOrg();
-  if (organizationId !== orgId) {
-    return { error: "You cannot configure fees for this organization." };
-  }
-
+export async function configureDefaultFees() {
   const defaults: FeeSaveRow[] = [
     {
       master_type_key: "resale_certificate",
@@ -101,5 +130,5 @@ export async function configureDefaultFees(orgId: string) {
     },
   ];
 
-  return saveFees(orgId, defaults);
+  return saveFees(defaults);
 }

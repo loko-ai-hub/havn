@@ -14,9 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { createClient } from "@/lib/supabase/client";
-
-import { configureDefaultFees, saveFees, type FeeSaveRow } from "./actions";
+import { configureDefaultFees, loadFees, saveFees, type FeeSaveRow } from "./actions";
 
 const PRICING_TIP_KEY = "havn_pricing_tip_dismissed";
 
@@ -145,17 +143,6 @@ function RushCell({ value, onEnable, onDisable, onChange, disabled }: {
   );
 }
 
-async function resolveOrgId(supabase: ReturnType<typeof createClient>): Promise<string | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-  let orgId: string | null = typeof user.user_metadata?.organization_id === "string" ? user.user_metadata.organization_id : null;
-  if (!orgId) {
-    const { data: profile } = await supabase.from("profiles").select("organization_id").eq("id", user.id).single();
-    orgId = profile?.organization_id ?? null;
-  }
-  return orgId;
-}
-
 export default function DashboardPricingPage() {
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgState, setOrgState] = useState("");
@@ -165,57 +152,31 @@ export default function DashboardPricingPage() {
   const [pending, startTransition] = useTransition();
   const [showTip, setShowTip] = useState(true);
 
-  const loadFees = useCallback(async () => {
+  const fetchFees = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
-    const supabase = createClient();
-    const oid = await resolveOrgId(supabase);
-    setOrgId(oid);
-    if (!oid) {
-      setLoadError("No organization linked to this account.");
+    const result = await loadFees();
+
+    if ("error" in result) {
+      setLoadError(result.error);
       setLoading(false);
       return;
     }
 
-    const [orgRes, feesRes] = await Promise.all([
-      supabase.from("organizations").select("state").eq("id", oid).single(),
-      supabase.from("document_request_fees")
-        .select("master_type_key, base_fee, rush_same_day_fee, rush_next_day_fee, rush_3day_fee, standard_turnaround_days")
-        .eq("organization_id", oid)
-        .in("master_type_key", DOC_ROWS.map((r) => r.key)),
-    ]);
+    setOrgId("loaded");
+    setOrgState(result.orgState);
 
-    setOrgState(typeof orgRes.data?.state === "string" ? orgRes.data.state : "");
-
-    if (feesRes.error) {
-      setLoadError(feesRes.error.message);
-      setLoading(false);
-      return;
-    }
-
-    const map = new Map((feesRes.data ?? []).map((r) => [r.master_type_key as string, r]));
-
-    // If no fees at all, show empty state
-    if (map.size === 0) {
+    if (!result.fees) {
       setRows(null);
       setLoading(false);
       return;
     }
 
-    // Merge DB rows with defaults for any missing doc types
+    const map = new Map(result.fees.map((r) => [r.master_type_key, r]));
+
     const ordered: EditableFee[] = DOC_ROWS.map(({ key }) => {
       const r = map.get(key);
-      if (r) {
-        return toEditable({
-          master_type_key: key,
-          base_fee: Number(r.base_fee ?? 0),
-          rush_same_day_fee: r.rush_same_day_fee as number | null,
-          rush_next_day_fee: r.rush_next_day_fee as number | null,
-          rush_3day_fee: r.rush_3day_fee as number | null,
-          standard_turnaround_days: Number(r.standard_turnaround_days ?? 10),
-        });
-      }
-      // Fall back to defaults for missing doc types
+      if (r) return toEditable(r);
       const def = DEFAULT_FEES.find((d) => d.master_type_key === key)!;
       return toEditable(def);
     });
@@ -224,7 +185,7 @@ export default function DashboardPricingPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { void loadFees(); }, [loadFees]);
+  useEffect(() => { void fetchFees(); }, [fetchFees]);
 
   useEffect(() => {
     try {
@@ -239,17 +200,16 @@ export default function DashboardPricingPage() {
   }
 
   const handleConfigureDefaults = () => {
-    if (!orgId) return;
     startTransition(async () => {
-      const result = await configureDefaultFees(orgId!);
+      const result = await configureDefaultFees();
       if (result && "error" in result && result.error) { toast.error(result.error); return; }
       toast.success("Default pricing configured.");
-      await loadFees();
+      await fetchFees();
     });
   };
 
   const handleSave = () => {
-    if (!orgId || !rows) return;
+    if (!rows) return;
     const payload: FeeSaveRow[] = rows.map((e) => ({
       master_type_key: e.master_type_key,
       base_fee: parseRequiredMoney(e.base_fee),
@@ -259,10 +219,10 @@ export default function DashboardPricingPage() {
       standard_turnaround_days: parseDays(e.standard_turnaround_days),
     }));
     startTransition(async () => {
-      const result = await saveFees(orgId, payload);
+      const result = await saveFees(payload);
       if (result && "error" in result && result.error) { toast.error(result.error); return; }
       toast.success("Pricing saved.");
-      await loadFees();
+      await fetchFees();
     });
   };
 
@@ -279,7 +239,7 @@ export default function DashboardPricingPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                disabled={pending || !orgId}
+                disabled={pending}
                 onClick={handleConfigureDefaults}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-40"
               >
