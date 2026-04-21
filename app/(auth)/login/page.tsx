@@ -6,6 +6,13 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
 
+const GOD_MODE_EMAILS = ["loren@havnhq.com"];
+
+function destinationForEmail(email: string | undefined): string {
+  if (email && GOD_MODE_EMAILS.includes(email.toLowerCase())) return "/god-mode";
+  return "/dashboard";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -23,7 +30,7 @@ export default function LoginPage() {
       } = await supabase.auth.getSession();
 
       if (isMounted && session) {
-        router.replace("/dashboard");
+        router.replace(destinationForEmail(session.user.email));
       }
     };
 
@@ -50,7 +57,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(destinationForEmail(email));
   };
 
   return (
