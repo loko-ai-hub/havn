@@ -2256,22 +2256,6 @@ export default function GodModePage() {
                                 }}
                               />
                             </div>
-                            <div>
-                              <Label htmlFor="ai-mem">AI Agent Memory</Label>
-                              <Textarea
-                                id="ai-mem"
-                                className="mt-1.5"
-                                value={selectedService.aiMemory}
-                                onChange={(e) =>
-                                  applyStateConfigUpdate((draft) => {
-                                    const c = draft.find((x) => x.state === selectedConfigState);
-                                    if (c?.services[selectedServiceIndex])
-                                      c.services[selectedServiceIndex].aiMemory = e.target.value;
-                                    return draft;
-                                  })
-                                }
-                              />
-                            </div>
                             <div className="flex flex-wrap gap-2">
                               <Button
                                 type="button"
