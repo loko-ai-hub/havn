@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
-
-const GOD_MODE_EMAILS = ["loren@havnhq.com"];
+import { GOD_MODE_EMAILS } from "@/app/god-mode/constants";
 
 function destinationForEmail(email: string | undefined): string {
   if (email && GOD_MODE_EMAILS.includes(email.trim().toLowerCase())) return "/god-mode";

@@ -44,10 +44,13 @@ import { formatCurrency, formatDeliverySpeed, formatMasterTypeKey } from "../das
 import { OrderStatusBadge } from "../dashboard/_lib/status-badge";
 import { fulfillOrder } from "../dashboard/requests/actions";
 import {
+  loadCustomers,
   loadLatestLegalChecks,
   loadStateConfigs,
   runLegalCheckForState,
   saveStateConfig,
+  startImpersonation,
+  type CustomerRow,
   type LegalCheckResult,
   type StateConfig,
   type StateServiceRow,
@@ -452,6 +455,8 @@ export default function GodModePage() {
   const [stateConfigSaving, setStateConfigSaving] = useState(false);
   const [legalChecks, setLegalChecks] = useState<Record<string, LegalCheckResult>>({});
   const [legalCheckRunning, setLegalCheckRunning] = useState(false);
+  const [customers, setCustomers] = useState<CustomerRow[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(true);
   const [auditShowAll, setAuditShowAll] = useState(false);
 
   const scale = useMemo(
@@ -532,6 +537,11 @@ export default function GodModePage() {
   useEffect(() => {
     void loadKpis();
     void loadConfigs();
+    void (async () => {
+      const result = await loadCustomers();
+      if (!("error" in result)) setCustomers(result);
+      setCustomersLoading(false);
+    })();
   }, [loadKpis, loadConfigs]);
 
   useEffect(() => {
@@ -939,12 +949,17 @@ export default function GodModePage() {
               <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
               <p className="mt-1 text-sm text-muted-foreground">Management companies on Havn.</p>
             </div>
+            {customersLoading ? (
+              <p className="text-sm text-muted-foreground">Loading customers...</p>
+            ) : customers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No organizations found.</p>
+            ) : (
             <div className="overflow-x-auto rounded-xl border border-border bg-card">
               <Table className="min-w-[960px]">
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
                     <TableHead>Company</TableHead>
-                    <TableHead>Contact email</TableHead>
+                    <TableHead>Owner</TableHead>
                     <TableHead>Account type</TableHead>
                     <TableHead>Stripe</TableHead>
                     <TableHead>Status</TableHead>
@@ -952,48 +967,80 @@ export default function GodModePage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium text-foreground">AmLo Management</p>
-                        <p className="text-xs text-muted-foreground">Duvall, WA</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-foreground">loren@havnhq.com</span>
-                    </TableCell>
-                    <TableCell>
-                      <PillBadge className="border-border bg-muted/50 text-foreground">Management Company</PillBadge>
-                    </TableCell>
-                    <TableCell>
-                      <PillBadge className="border-havn-success/40 bg-havn-success/15 text-emerald-900 dark:text-emerald-100">
-                        Connected
-                      </PillBadge>
-                    </TableCell>
-                    <TableCell>
-                      <PillBadge className="border-havn-success/40 bg-havn-success/20 text-emerald-950 dark:text-emerald-100">
-                        Active
-                      </PillBadge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toast.info("Impersonation coming soon")}
-                        >
-                          Impersonate
-                        </Button>
-                        <Button type="button" variant="outline" size="sm" onClick={() => toast.info("Coming soon")}>
-                          View
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  {customers.map((c) => {
+                    const stripeOk = c.stripe_account_id && c.stripe_onboarding_complete;
+                    const isActive = c.is_active !== false;
+                    const acctLabel = (c.account_type ?? "")
+                      .split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+                    return (
+                      <TableRow key={c.id}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium text-foreground">{c.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {[c.city, c.state].filter(Boolean).join(", ") || "—"}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-foreground">{c.owner_email ?? "—"}</span>
+                        </TableCell>
+                        <TableCell>
+                          <PillBadge className="border-border bg-muted/50 text-foreground">
+                            {acctLabel || "—"}
+                          </PillBadge>
+                        </TableCell>
+                        <TableCell>
+                          {stripeOk ? (
+                            <PillBadge className="border-havn-success/40 bg-havn-success/15 text-emerald-900 dark:text-emerald-100">
+                              Connected
+                            </PillBadge>
+                          ) : (
+                            <PillBadge className="border-havn-amber/40 bg-havn-amber/15 text-amber-900 dark:text-amber-100">
+                              Not connected
+                            </PillBadge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isActive ? (
+                            <PillBadge className="border-havn-success/40 bg-havn-success/20 text-emerald-950 dark:text-emerald-100">
+                              Active
+                            </PillBadge>
+                          ) : (
+                            <PillBadge className="border-border bg-muted/50 text-muted-foreground">
+                              Inactive
+                            </PillBadge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                void (async () => {
+                                  const result = await startImpersonation(c.id, c.name);
+                                  if ("error" in result) {
+                                    toast.error(result.error);
+                                    return;
+                                  }
+                                  window.open("/dashboard", "_blank");
+                                  toast.success(`Impersonating ${c.name} in new tab`);
+                                })();
+                              }}
+                            >
+                              Impersonate
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
+            )}
           </div>
         ) : null}
 

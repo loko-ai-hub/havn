@@ -1,7 +1,9 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { GOD_MODE_EMAILS, IMPERSONATE_COOKIE } from "../../god-mode/constants";
 
 export type DashboardSession = {
   userId: string;
@@ -41,6 +43,33 @@ export async function requireDashboardOrg(): Promise<DashboardSession> {
   }
 
   const adminClient = createAdminClient();
+  const userEmail = (user.email ?? "").trim().toLowerCase();
+
+  // God-mode impersonation: if the logged-in user is a god-mode admin
+  // and the impersonation cookie is set, act as the impersonated org.
+  if (GOD_MODE_EMAILS.includes(userEmail)) {
+    const cookieStore = await cookies();
+    const impersonateOrgId = cookieStore.get(IMPERSONATE_COOKIE)?.value;
+    if (impersonateOrgId) {
+      const { data: org } = await adminClient
+        .from("organizations")
+        .select("id, portal_slug")
+        .eq("id", impersonateOrgId)
+        .single();
+
+      if (org) {
+        return {
+          userId: user.id,
+          email: user.email ?? "",
+          organizationId: org.id as string,
+          userName: displayNameFromUser(user),
+          userRole: "owner",
+          portalSlug: (org.portal_slug as string) ?? null,
+        };
+      }
+    }
+  }
+
   const { data: profile, error: profileError } = await adminClient
     .from("profiles")
     .select("organization_id, role")

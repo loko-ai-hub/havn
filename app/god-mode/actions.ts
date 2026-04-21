@@ -1,7 +1,10 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { US_STATES } from "@/lib/us-states";
+
+import { IMPERSONATE_COOKIE, IMPERSONATE_NAME_COOKIE } from "./constants";
 
 /* ── Types ────────────────────────────────────────────────────────────── */
 
@@ -254,4 +257,104 @@ export async function runLegalCheckForState(
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Request failed" };
   }
+}
+
+/* ── Customers ────────────────────────────────────────────────────────── */
+
+export type CustomerRow = {
+  id: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  account_type: string | null;
+  support_email: string | null;
+  stripe_account_id: string | null;
+  stripe_onboarding_complete: boolean | null;
+  is_active: boolean | null;
+  owner_email: string | null;
+};
+
+export async function loadCustomers(): Promise<CustomerRow[] | { error: string }> {
+  const admin = createAdminClient();
+
+  const { data: orgs, error } = await admin
+    .from("organizations")
+    .select("id, name, city, state, account_type, support_email, stripe_account_id, stripe_onboarding_complete, is_active")
+    .order("name");
+
+  if (error) return { error: error.message };
+
+  // Find owner email per org
+  const orgIds = (orgs ?? []).map((o) => o.id as string);
+  const { data: owners } = await admin
+    .from("profiles")
+    .select("organization_id, id, role")
+    .in("organization_id", orgIds)
+    .eq("role", "owner");
+
+  const ownerMap = new Map<string, string>();
+  if (owners) {
+    const userResults = await Promise.all(
+      owners.map((p) => admin.auth.admin.getUserById(p.id as string))
+    );
+    for (let i = 0; i < owners.length; i++) {
+      const u = userResults[i];
+      if (!u.error && u.data.user) {
+        ownerMap.set(owners[i].organization_id as string, u.data.user.email ?? "");
+      }
+    }
+  }
+
+  return (orgs ?? []).map((o) => ({
+    id: o.id as string,
+    name: (o.name as string) ?? "Unnamed",
+    city: o.city as string | null,
+    state: o.state as string | null,
+    account_type: o.account_type as string | null,
+    support_email: o.support_email as string | null,
+    stripe_account_id: o.stripe_account_id as string | null,
+    stripe_onboarding_complete: o.stripe_onboarding_complete as boolean | null,
+    is_active: o.is_active as boolean | null,
+    owner_email: ownerMap.get(o.id as string) ?? null,
+  }));
+}
+
+/* ── Impersonation ────────────────────────────────────────────────────── */
+
+export async function startImpersonation(
+  orgId: string,
+  orgName: string
+): Promise<{ ok: true } | { error: string }> {
+  const cookieStore = await cookies();
+  cookieStore.set(IMPERSONATE_COOKIE, orgId, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 60 * 60 * 4, // 4 hours
+  });
+  cookieStore.set(IMPERSONATE_NAME_COOKIE, orgName, {
+    path: "/",
+    httpOnly: false, // readable by client for banner
+    sameSite: "lax",
+    maxAge: 60 * 60 * 4,
+  });
+  return { ok: true };
+}
+
+export async function stopImpersonation(): Promise<{ ok: true }> {
+  const cookieStore = await cookies();
+  cookieStore.delete(IMPERSONATE_COOKIE);
+  cookieStore.delete(IMPERSONATE_NAME_COOKIE);
+  return { ok: true };
+}
+
+export async function getImpersonationState(): Promise<{
+  impersonating: boolean;
+  orgId: string | null;
+  orgName: string | null;
+}> {
+  const cookieStore = await cookies();
+  const orgId = cookieStore.get(IMPERSONATE_COOKIE)?.value ?? null;
+  const orgName = cookieStore.get(IMPERSONATE_NAME_COOKIE)?.value ?? null;
+  return { impersonating: !!orgId, orgId, orgName };
 }
