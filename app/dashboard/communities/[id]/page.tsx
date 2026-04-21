@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   FileText,
   MapPin,
-  Pencil,
   Users,
   XCircle,
 } from "lucide-react";
@@ -16,7 +15,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
 import ArchiveRestoreCommunityButton from "../archive-restore-button";
-import ComingSoonButton from "../coming-soon-button";
 import CommunityContactCard from "./contact-card";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -193,13 +191,12 @@ export default async function CommunityDetailPage({
                 </p>
               </div>
             </div>
-            <ComingSoonButton
-              variant="outline"
-              size="sm"
-              className="shrink-0 gap-1.5 text-xs"
+            <Link
+              href={`/dashboard/communities/${c.id}/documents`}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
             >
-              Upload Addresses
-            </ComingSoonButton>
+              Upload Documents
+            </Link>
           </div>
         )}
 
@@ -248,13 +245,6 @@ export default async function CommunityDetailPage({
                     Contact
                   </h4>
                 </div>
-                <ComingSoonButton
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto w-auto rounded-md p-1.5 text-muted-foreground hover:text-foreground"
-                >
-                  <Pencil className="h-3 w-3" />
-                </ComingSoonButton>
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">
@@ -278,13 +268,6 @@ export default async function CommunityDetailPage({
                     Location
                   </h4>
                 </div>
-                <ComingSoonButton
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto w-auto rounded-md p-1.5 text-muted-foreground hover:text-foreground"
-                >
-                  <Pencil className="h-3 w-3" />
-                </ComingSoonButton>
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">

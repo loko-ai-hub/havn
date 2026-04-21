@@ -1393,7 +1393,7 @@ export default function GodModePage() {
                   onChange={(e) => setTemplateSearch(e.target.value)}
                   className="w-full sm:w-64"
                 />
-                <Button type="button" onClick={() => toast.info("Template wizard coming soon")}>
+                <Button type="button" disabled>
                   Create Template
                 </Button>
               </div>
@@ -1644,10 +1644,7 @@ export default function GodModePage() {
                                   <Button
                                     type="button"
                                     variant="outline"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toast.info("Coming soon");
-                                    }}
+                                    disabled
                                   >
                                     View Template
                                   </Button>

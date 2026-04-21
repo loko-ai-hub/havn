@@ -132,8 +132,6 @@ export default function DashboardSettingsPage() {
   const [metaFirst, setMetaFirst] = useState("");
   const [metaLast, setMetaLast] = useState("");
   const [metaPhone, setMetaPhone] = useState("");
-  const [notifEmail, setNotifEmail] = useState(true);
-  const [notifSms, setNotifSms] = useState(false);
 
   const [website, setWebsite] = useState("");
   const [officePhone, setOfficePhone] = useState("");
@@ -146,7 +144,6 @@ export default function DashboardSettingsPage() {
   const [brandColor, setBrandColor] = useState("#0f172a");
   const [portalTagline, setPortalTagline] = useState("");
 
-  const [userDisplayName, setUserDisplayName] = useState("");
 
   const [stripeAccountId, setStripeAccountId] = useState<string | null>(null);
   const [stripeComplete, setStripeComplete] = useState<boolean | null>(null);
@@ -183,13 +180,6 @@ export default function DashboardSettingsPage() {
     setMetaFirst(first);
     setMetaLast(last);
     setMetaPhone(typeof meta.phone === "string" ? meta.phone : "");
-    const dn =
-      (typeof meta.full_name === "string" && meta.full_name) ||
-      (typeof meta.name === "string" && meta.name) ||
-      user.email?.split("@")[0] ||
-      "Team member";
-    setUserDisplayName(dn);
-
     const oid = await resolveOrgId(supabase);
     setOrgId(oid);
     if (!oid) {
@@ -465,16 +455,9 @@ export default function DashboardSettingsPage() {
               </form>
             </Disclosure>
             <Disclosure title="Notification preferences">
-              <div className="space-y-4">
-                <label className="flex items-center gap-3 text-sm text-foreground">
-                  <Checkbox checked={notifEmail} onCheckedChange={(c) => setNotifEmail(Boolean(c))} />
-                  Email notifications for new requests
-                </label>
-                <label className="flex items-center gap-3 text-sm text-foreground">
-                  <Checkbox checked={notifSms} onCheckedChange={(c) => setNotifSms(Boolean(c))} />
-                  SMS alerts for urgent updates
-                </label>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                Email notifications are sent automatically when new orders are received. Additional notification options (SMS, digest frequency) are coming soon.
+              </p>
             </Disclosure>
           </div>
         </DashboardSectionCard>
