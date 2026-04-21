@@ -3,6 +3,10 @@
     {
       "path": "/api/reminders/stripe-nudge",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/legal-check",
+      "schedule": "0 9 1 * *"
     }
   ]
 }

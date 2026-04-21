@@ -23,21 +23,11 @@ import {
   type FeeSaveRow,
 } from "./actions";
 import { DEFAULT_FEES, DOC_ROWS } from "./pricing-constants";
+import { loadStateCaps } from "../../god-mode/actions";
 
 const PRICING_TIP_KEY = "havn_pricing_tip_dismissed";
 
-const STATE_FEE_CAPS: Record<string, { resale?: number; update?: number; statute?: string }> = {
-  WA: { resale: 275, update: 100, statute: "RCW 64.90.640" },
-  CA: { resale: 300, statute: "Civil Code §5600" },
-  TX: { resale: 375, statute: "Tex. Prop. Code §207.006" },
-  FL: { resale: 250, statute: "Fla. Stat. §720.30851" },
-  CO: { resale: 300, statute: "C.R.S. §38-33.3-209.5" },
-  VA: { resale: 350, statute: "Va. Code §55.1-1810" },
-  AZ: { resale: 400, statute: "A.R.S. §33-1806" },
-  NV: { resale: 250, statute: "NRS §116.4109" },
-  NC: { resale: 250, statute: "N.C.G.S. §47F-3-102" },
-  GA: { resale: 250, statute: "O.C.G.A. §44-3-101" },
-};
+type CapInfo = { pricing_cap: number | null; cap_type: string; statute: string };
 
 
 type EditableFee = {
@@ -74,18 +64,16 @@ function formatMoney(n: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 }
 
-function CapBanner({ state, documentType, fee }: { state: string; documentType: string; fee: number }) {
-  const st = state.trim().toUpperCase();
-  if (!st) return null;
-  const caps = STATE_FEE_CAPS[st];
-  if (!caps) return <p className="mt-1 text-[11px] text-muted-foreground">{st}: fees must reflect actual cost.</p>;
-  const capAmount = documentType === "resale_certificate" ? caps.resale : documentType === "certificate_update" ? caps.update : undefined;
-  if (capAmount == null) return null;
-  const statute = caps.statute ? ` (${caps.statute})` : "";
-  if (fee > capAmount) {
-    return <p className="mt-1 text-[11px] font-medium text-destructive">Exceeds {st} cap of {formatMoney(capAmount)}{statute}.</p>;
+function CapBanner({ documentType, fee, capInfo }: { documentType: string; fee: number; capInfo: CapInfo | undefined }) {
+  if (!capInfo) return null;
+  if (capInfo.pricing_cap == null) {
+    return <p className="mt-1 text-[11px] text-muted-foreground">Actual cost — no fixed cap.</p>;
   }
-  return <p className="mt-1 text-[11px] font-medium text-havn-success">Within {st} cap of {formatMoney(capAmount)}{statute}.</p>;
+  const statute = capInfo.statute ? ` (${capInfo.statute})` : "";
+  if (fee > capInfo.pricing_cap) {
+    return <p className="mt-1 text-[11px] font-medium text-destructive">Exceeds cap of {formatMoney(capInfo.pricing_cap)}{statute}.</p>;
+  }
+  return <p className="mt-1 text-[11px] font-medium text-havn-success">Within cap of {formatMoney(capInfo.pricing_cap)}{statute}.</p>;
 }
 
 function MoneyInput({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled: boolean }) {
@@ -243,17 +231,26 @@ export default function DashboardPricingPage() {
   const [rows, setRows] = useState<EditableFee[] | null>(null);
   const [pending, startTransition] = useTransition();
   const [showTip, setShowTip] = useState(true);
+  const [stateCaps, setStateCaps] = useState<Record<string, CapInfo>>({});
 
   const fetchFees = useCallback(async (state: string) => {
     if (!state) return;
     setLoading(true);
     setLoadError(null);
     try {
-      const result = await loadFees(state);
+      const [result, capsResult] = await Promise.all([
+        loadFees(state),
+        loadStateCaps(state),
+      ]);
       if ("error" in result) {
         setLoadError(result.error);
         setLoading(false);
         return;
+      }
+      if (!("error" in capsResult)) {
+        setStateCaps(capsResult.caps);
+      } else {
+        setStateCaps({});
       }
       setConfiguredStates(result.configuredStates);
       setOrgPrimaryState(result.orgPrimaryState);
@@ -474,7 +471,7 @@ export default function DashboardPricingPage() {
                           disabled={pending}
                           onChange={(v) => updateRow(i, { base_fee: v })}
                         />
-                        <CapBanner state={selectedState} documentType={row.master_type_key} fee={parseRequiredMoney(row.base_fee)} />
+                        <CapBanner documentType={row.master_type_key} fee={parseRequiredMoney(row.base_fee)} capInfo={stateCaps[row.master_type_key]} />
                       </TableCell>
                       <TableCell className="py-4">
                         <RushCell

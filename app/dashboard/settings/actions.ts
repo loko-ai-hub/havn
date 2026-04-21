@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 
 import resend, { RESEND_FROM_EMAIL } from "../../../lib/resend";
@@ -136,14 +137,22 @@ export async function sendTeamInvitation(orgId: string, email: string, role: str
 
   if (existing) return { error: "An invitation for this email already exists." };
 
+  const token = randomUUID();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
   const { error: insertError } = await admin.from("invitations").insert({
     organization_id: orgId,
     email: email.toLowerCase(),
     role,
     invited_by: userId,
+    token,
+    expires_at: expiresAt,
   });
 
   if (insertError) return { error: insertError.message };
+
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://havnhq.com";
+  const acceptUrl = `${baseUrl}/accept-invite?token=${token}`;
 
   if (process.env.RESEND_API_KEY) {
     try {
@@ -153,7 +162,11 @@ export async function sendTeamInvitation(orgId: string, email: string, role: str
         subject: "You've been invited to join Havn",
         html: `
           <p>You've been invited to join your organization on Havn as a <strong>${role.replace(/_/g, " ")}</strong>.</p>
-          <p>Sign up at <a href="https://havnhq.com/signup">havnhq.com/signup</a> to get started.</p>
+          <p style="margin:24px 0;">
+            <a href="${acceptUrl}" style="display:inline-block;background:#0f172a;color:#f8f5f0;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Accept Invitation</a>
+          </p>
+          <p style="color:#888;font-size:12px;">Or copy this link: ${acceptUrl}</p>
+          <p style="color:#888;font-size:12px;">This invitation expires in 7 days.</p>
           <p>— Havn</p>
         `,
       });

@@ -43,6 +43,15 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatDeliverySpeed, formatMasterTypeKey } from "../dashboard/_lib/format";
 import { OrderStatusBadge } from "../dashboard/_lib/status-badge";
 import { fulfillOrder } from "../dashboard/requests/actions";
+import {
+  loadLatestLegalChecks,
+  loadStateConfigs,
+  runLegalCheckForState,
+  saveStateConfig,
+  type LegalCheckResult,
+  type StateConfig,
+  type StateServiceRow,
+} from "./actions";
 
 const MOCK_ANALYTICS = {
   totalLifetimeOrders: 1247,
@@ -188,7 +197,8 @@ const MOCK_UPLOADED = [
   },
 ];
 
-type MockStateService = {
+type GodModeService = {
+  master_type_key: string;
   serviceType: string;
   formalName: string;
   pricingCap: number | null;
@@ -203,52 +213,65 @@ type MockStateService = {
   aiMemory: string;
 };
 
-type MockStateConfig = {
+type GodModeStateConfig = {
   state: string;
   stateName: string;
   enabled: boolean;
   notes: string;
-  services: MockStateService[];
+  services: GodModeService[];
 };
 
-const MOCK_STATE_CONFIGS: MockStateConfig[] = [
-  {
-    state: "WA",
-    stateName: "Washington",
-    enabled: true,
-    notes: "",
-    services: [
-      {
-        serviceType: "Resale Certificate",
-        formalName: "Resale Certificate",
-        pricingCap: 275,
-        capType: "fixed",
-        rushCap: null,
-        noRush: false,
-        standardTurnaround: 5,
-        autoRefundOnMiss: true,
-        autoRefundNote: "Auto-refund if not delivered within rush window",
-        statute: "RCW 64.90.640",
-        recommendedDefault: 275,
-        aiMemory: "",
-      },
-      {
-        serviceType: "Lender Questionnaire",
-        formalName: "Lender Questionnaire",
-        pricingCap: null,
-        capType: "actual",
-        rushCap: null,
-        noRush: false,
-        standardTurnaround: 5,
-        autoRefundOnMiss: false,
-        autoRefundNote: "",
-        statute: "",
-        recommendedDefault: 200,
-        aiMemory: "",
-      },
-    ],
-  },
-];
+const SERVICE_TYPE_OPTIONS = [
+  "resale_certificate",
+  "certificate_update",
+  "lender_questionnaire",
+  "demand_letter",
+  "estoppel_letter",
+  "governing_documents",
+] as const;
+
+function stateConfigFromDb(cfg: StateConfig): GodModeStateConfig {
+  return {
+    state: cfg.state,
+    stateName: cfg.stateName,
+    enabled: cfg.enabled,
+    notes: cfg.notes,
+    services: cfg.services.map((svc) => ({
+      master_type_key: svc.master_type_key,
+      serviceType: formatMasterTypeKey(svc.master_type_key),
+      formalName: svc.formal_name,
+      pricingCap: svc.pricing_cap,
+      capType: svc.cap_type,
+      rushCap: svc.rush_cap,
+      noRush: svc.no_rush,
+      standardTurnaround: svc.standard_turnaround,
+      autoRefundOnMiss: svc.auto_refund_on_miss,
+      autoRefundNote: svc.auto_refund_note,
+      statute: svc.statute,
+      recommendedDefault: svc.recommended_default,
+      aiMemory: svc.ai_memory,
+    })),
+  };
+}
+
+function serviceToDbRow(svc: GodModeService): StateServiceRow {
+  return {
+    master_type_key: svc.master_type_key,
+    formal_name: svc.formalName,
+    pricing_cap: svc.pricingCap,
+    cap_type: svc.capType,
+    rush_cap: svc.rushCap,
+    no_rush: svc.noRush,
+    standard_turnaround: svc.standardTurnaround,
+    auto_refund_on_miss: svc.autoRefundOnMiss,
+    auto_refund_note: svc.autoRefundNote ?? "",
+    statute: svc.statute,
+    recommended_default: svc.recommendedDefault,
+    ai_memory: svc.aiMemory,
+  };
+}
+
+const FALLBACK_STATE_CONFIGS: GodModeStateConfig[] = [];
 
 const MOCK_AUDIT_LOG: { id: string; at: string; actor: string; summary: string }[] = [
   {
@@ -423,10 +446,14 @@ export default function GodModePage() {
   const [reviewDomains, setReviewDomains] = useState<string[]>([]);
   const [reviewStates, setReviewStates] = useState<Set<string>>(() => new Set(["WA"]));
 
-  const [stateConfigDraft, setStateConfigDraft] = useState<MockStateConfig[]>(() => deepClone(MOCK_STATE_CONFIGS));
-  const [stateConfigBaseline, setStateConfigBaseline] = useState<MockStateConfig[]>(() => deepClone(MOCK_STATE_CONFIGS));
-  const [selectedConfigState, setSelectedConfigState] = useState("WA");
+  const [stateConfigDraft, setStateConfigDraft] = useState<GodModeStateConfig[]>([]);
+  const [stateConfigBaseline, setStateConfigBaseline] = useState<GodModeStateConfig[]>([]);
+  const [stateConfigsLoading, setStateConfigsLoading] = useState(true);
+  const [selectedConfigState, setSelectedConfigState] = useState("");
   const [selectedServiceIndex, setSelectedServiceIndex] = useState(0);
+  const [stateConfigSaving, setStateConfigSaving] = useState(false);
+  const [legalChecks, setLegalChecks] = useState<Record<string, LegalCheckResult>>({});
+  const [legalCheckRunning, setLegalCheckRunning] = useState(false);
   const [auditShowAll, setAuditShowAll] = useState(false);
 
   const scale = useMemo(
@@ -481,9 +508,33 @@ export default function GodModePage() {
     setOrdersLoading(false);
   }, []);
 
+  const loadConfigs = useCallback(async () => {
+    setStateConfigsLoading(true);
+    const [result, checksResult] = await Promise.all([
+      loadStateConfigs(),
+      loadLatestLegalChecks(),
+    ]);
+    if ("error" in result) {
+      toast.error(result.error);
+      setStateConfigsLoading(false);
+      return;
+    }
+    if (!("error" in checksResult)) {
+      setLegalChecks(checksResult);
+    }
+    const mapped = result.map(stateConfigFromDb);
+    setStateConfigDraft(mapped);
+    setStateConfigBaseline(deepClone(mapped));
+    if (mapped.length > 0 && !selectedConfigState) {
+      setSelectedConfigState(mapped[0].state);
+    }
+    setStateConfigsLoading(false);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     void loadKpis();
-  }, [loadKpis]);
+    void loadConfigs();
+  }, [loadKpis, loadConfigs]);
 
   useEffect(() => {
     if (tab === "order-lookup") void loadAllOrders();
@@ -562,7 +613,7 @@ export default function GodModePage() {
 
   const unconfiguredStates = US_STATES.filter((s) => !stateConfigDraft.some((c) => c.state === s.abbr));
 
-  const applyStateConfigUpdate = (updater: (draft: MockStateConfig[]) => MockStateConfig[]) => {
+  const applyStateConfigUpdate = (updater: (draft: GodModeStateConfig[]) => GodModeStateConfig[]) => {
     setStateConfigDraft((prev) => updater(deepClone(prev)));
   };
 
@@ -1545,8 +1596,11 @@ export default function GodModePage() {
           <div className="space-y-6">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">State Config</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Statutory caps and service defaults (local mock).</p>
+              <p className="mt-1 text-sm text-muted-foreground">Statutory caps, rules, and service defaults per state.</p>
             </div>
+            {stateConfigsLoading ? (
+              <p className="text-sm text-muted-foreground">Loading state configurations…</p>
+            ) : (
             <div className="flex flex-col gap-6 lg:flex-row">
               <aside className="w-full shrink-0 space-y-3 lg:w-64">
                 <div className="rounded-xl border border-border bg-card p-2">
@@ -1648,18 +1702,19 @@ export default function GodModePage() {
                           ))}
                         </ul>
                         <div className="mt-3 flex flex-col gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            onClick={() =>
+                          <select
+                            className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                            value=""
+                            onChange={(e) => {
+                              const key = e.target.value;
+                              if (!key) return;
                               applyStateConfigUpdate((draft) => {
                                 const idx = draft.findIndex((x) => x.state === selectedConfigState);
                                 if (idx < 0) return draft;
                                 draft[idx].services.push({
-                                  serviceType: "New Service",
-                                  formalName: "",
+                                  master_type_key: key,
+                                  serviceType: formatMasterTypeKey(key),
+                                  formalName: formatMasterTypeKey(key),
                                   pricingCap: null,
                                   capType: "actual",
                                   rushCap: null,
@@ -1672,11 +1727,16 @@ export default function GodModePage() {
                                 });
                                 setSelectedServiceIndex(draft[idx].services.length - 1);
                                 return draft;
-                              })
-                            }
+                              });
+                            }}
                           >
-                            Add Service
-                          </Button>
+                            <option value="">Add service…</option>
+                            {SERVICE_TYPE_OPTIONS
+                              .filter((k) => !selectedStateConfig.services.some((s) => s.master_type_key === k))
+                              .map((k) => (
+                                <option key={k} value={k}>{formatMasterTypeKey(k)}</option>
+                              ))}
+                          </select>
                           <Button
                             type="button"
                             variant="ghost"
@@ -1872,15 +1932,32 @@ export default function GodModePage() {
                             <div className="flex flex-wrap gap-2">
                               <Button
                                 type="button"
+                                disabled={stateConfigSaving}
                                 onClick={() => {
-                                  setStateConfigDraft((d) => {
-                                    setStateConfigBaseline(deepClone(d));
-                                    return d;
-                                  });
-                                  toast.success("Configuration saved");
+                                  const cfg = stateConfigDraft.find((x) => x.state === selectedConfigState);
+                                  if (!cfg) return;
+                                  setStateConfigSaving(true);
+                                  void (async () => {
+                                    try {
+                                      const result = await saveStateConfig(
+                                        cfg.state,
+                                        cfg.enabled,
+                                        cfg.notes,
+                                        cfg.services.map(serviceToDbRow)
+                                      );
+                                      if ("error" in result) {
+                                        toast.error(result.error);
+                                        return;
+                                      }
+                                      setStateConfigBaseline(deepClone(stateConfigDraft));
+                                      toast.success(`${cfg.stateName} configuration saved`);
+                                    } finally {
+                                      setStateConfigSaving(false);
+                                    }
+                                  })();
                                 }}
                               >
-                                Save Changes
+                                {stateConfigSaving ? "Saving…" : "Save Changes"}
                               </Button>
                               <Button
                                 type="button"
@@ -1917,12 +1994,129 @@ export default function GodModePage() {
                         ))}
                       </ul>
                     </section>
+
+                    {/* ── AI Legal Check ── */}
+                    <section className="rounded-xl border border-border bg-card shadow-sm">
+                      <div className="flex items-center justify-between border-b border-border px-5 py-3">
+                        <div>
+                          <h2 className="text-sm font-semibold text-foreground">AI Legal Compliance Check</h2>
+                          <p className="text-[11px] text-muted-foreground">
+                            Runs automatically on the 1st of each month via Claude Sonnet
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={legalCheckRunning}
+                          onClick={() => {
+                            setLegalCheckRunning(true);
+                            void (async () => {
+                              try {
+                                const result = await runLegalCheckForState(selectedConfigState);
+                                if ("error" in result) {
+                                  toast.error(result.error);
+                                  return;
+                                }
+                                toast.success(`Legal check complete for ${selectedConfigState}`);
+                                // Reload checks
+                                const updated = await loadLatestLegalChecks();
+                                if (!("error" in updated)) setLegalChecks(updated);
+                              } finally {
+                                setLegalCheckRunning(false);
+                              }
+                            })();
+                          }}
+                        >
+                          {legalCheckRunning ? "Checking…" : "Run Check Now"}
+                        </Button>
+                      </div>
+                      <div className="p-5">
+                        {(() => {
+                          const check = legalChecks[selectedConfigState];
+                          if (!check) {
+                            return (
+                              <p className="text-sm text-muted-foreground">
+                                No legal check has been run for {selectedConfigState} yet. Click "Run Check Now" to analyze current regulations.
+                              </p>
+                            );
+                          }
+                          const checkedDate = new Date(check.checked_at).toLocaleDateString("en-US", {
+                            month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
+                          });
+                          return (
+                            <div className="space-y-4">
+                              {/* Summary header */}
+                              <div className="flex items-start gap-3">
+                                <div className={cn(
+                                  "mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full",
+                                  check.changes_detected ? "bg-havn-amber" : "bg-havn-success"
+                                )} />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium text-foreground">{check.summary}</p>
+                                  <p className="mt-1 text-[11px] text-muted-foreground">
+                                    Checked {checkedDate} · {check.model_used}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Items */}
+                              {check.details.length > 0 && (
+                                <div className="space-y-3">
+                                  {check.details.map((item, i) => (
+                                    <div
+                                      key={i}
+                                      className={cn(
+                                        "rounded-lg border px-4 py-3",
+                                        item.severity === "critical"
+                                          ? "border-destructive/30 bg-destructive/5"
+                                          : item.severity === "warning"
+                                          ? "border-havn-amber/30 bg-havn-amber/5"
+                                          : "border-border bg-muted/30"
+                                      )}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <span className={cn(
+                                          "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+                                          item.type === "action_needed"
+                                            ? "bg-destructive/10 text-destructive"
+                                            : item.type === "recent_change"
+                                            ? "bg-havn-amber/10 text-havn-amber"
+                                            : item.type === "pending_legislation"
+                                            ? "bg-primary/10 text-primary"
+                                            : "bg-muted text-muted-foreground"
+                                        )}>
+                                          {item.type.replace(/_/g, " ")}
+                                        </span>
+                                        {item.statute_reference && (
+                                          <span className="text-[10px] font-mono text-muted-foreground">
+                                            {item.statute_reference}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="mt-1.5 text-sm font-medium text-foreground">{item.title}</p>
+                                      <p className="mt-0.5 text-xs text-muted-foreground">{item.description}</p>
+                                      {item.effective_date && (
+                                        <p className="mt-1 text-[10px] text-muted-foreground">
+                                          Effective: {item.effective_date}
+                                        </p>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </section>
                   </>
                 ) : (
                   <p className="text-sm text-muted-foreground">Select or add a state.</p>
                 )}
               </div>
             </div>
+            )}
           </div>
         ) : null}
       </main>
