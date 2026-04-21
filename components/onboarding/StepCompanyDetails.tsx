@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import type { AccountType } from "./StepAccountType";
 import { US_STATES } from "@/lib/us-states";
 import { createClient } from "@/lib/supabase/client";
+import { loadEnabledStates } from "@/lib/enabled-states-action";
 
 export interface CompanyDetailsData {
   companyName: string;
@@ -131,6 +132,11 @@ const StepCompanyDetails = ({
   const [managementSoftware, setManagementSoftware] = useState("");
   const [otherSoftware, setOtherSoftware] = useState("");
   const [slugStatus, setSlugStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [enabledStates, setEnabledStates] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    void loadEnabledStates().then((states) => setEnabledStates(new Set(states)));
+  }, []);
 
   useEffect(() => {
     if (!portalSlug || portalSlug.length < 2) {
@@ -182,12 +188,13 @@ const StepCompanyDetails = ({
     () =>
       US_STATES.filter(
         (s) =>
+          (!enabledStates || enabledStates.has(s.abbr)) &&
           s.abbr !== state &&
           !additionalStates.includes(s.abbr) &&
           (s.name.toLowerCase().includes(stateSearch.toLowerCase()) ||
             s.abbr.toLowerCase().includes(stateSearch.toLowerCase()))
       ),
-    [state, stateSearch, additionalStates]
+    [state, stateSearch, additionalStates, enabledStates]
   );
 
   const isCompany = accountType === "management_company";
@@ -358,12 +365,17 @@ const StepCompanyDetails = ({
                   className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
                 >
                   <option value="">-</option>
-                  {US_STATES.map((s) => (
+                  {US_STATES.filter((s) => !enabledStates || enabledStates.has(s.abbr)).map((s) => (
                     <option key={s.abbr} value={s.abbr}>
                       {s.abbr}
                     </option>
                   ))}
                 </select>
+                {enabledStates && enabledStates.size > 0 && enabledStates.size < 50 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Havn is currently available in {enabledStates.size} state{enabledStates.size === 1 ? "" : "s"}. More coming soon.
+                  </p>
+                )}
               </div>
               <div className="min-w-0 flex-1 space-y-2">
                 <FieldLabel htmlFor="zip" optional>

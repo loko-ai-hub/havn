@@ -24,6 +24,7 @@ import {
 } from "./actions";
 import { DEFAULT_FEES, DOC_ROWS } from "./pricing-constants";
 import { loadStateCaps } from "../../god-mode/actions";
+import { loadEnabledStates } from "@/lib/enabled-states-action";
 
 const PRICING_TIP_KEY = "havn_pricing_tip_dismissed";
 
@@ -127,12 +128,14 @@ function RushCell({ value, onEnable, onDisable, onChange, disabled }: {
 function StateSelector({
   selectedState,
   configuredStates,
+  enabledStates,
   onSelect,
   onAdd,
   disabled,
 }: {
   selectedState: string;
   configuredStates: string[];
+  enabledStates: Set<string>;
   onSelect: (state: string) => void;
   onAdd: (state: string) => void;
   disabled: boolean;
@@ -143,7 +146,7 @@ function StateSelector({
   const stateName = (abbr: string) => US_STATES.find((s) => s.abbr === abbr)?.name ?? abbr;
 
   const unconfiguredStates = US_STATES.filter(
-    (s) => !configuredStates.includes(s.abbr)
+    (s) => !configuredStates.includes(s.abbr) && enabledStates.has(s.abbr)
   ).filter(
     (s) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.abbr.toLowerCase().includes(search.toLowerCase())
   );
@@ -232,6 +235,7 @@ export default function DashboardPricingPage() {
   const [pending, startTransition] = useTransition();
   const [showTip, setShowTip] = useState(true);
   const [stateCaps, setStateCaps] = useState<Record<string, CapInfo>>({});
+  const [enabledStates, setEnabledStates] = useState<Set<string>>(new Set());
 
   const fetchFees = useCallback(async (state: string) => {
     if (!state) return;
@@ -273,12 +277,16 @@ export default function DashboardPricingPage() {
     }
   }, []);
 
-  // On mount: load state list from communities, then auto-select first state
+  // On mount: load state list from communities + enabled states, then auto-select first state
   useEffect(() => {
     const init = async () => {
       setLoading(true);
       try {
-        const result = await loadFees("");
+        const [result, enabled] = await Promise.all([
+          loadFees(""),
+          loadEnabledStates(),
+        ]);
+        setEnabledStates(new Set(enabled));
         if ("error" in result) {
           setLoadError(result.error);
           setLoading(false);
@@ -388,6 +396,7 @@ export default function DashboardPricingPage() {
           <StateSelector
             selectedState={selectedState}
             configuredStates={configuredStates}
+            enabledStates={enabledStates}
             onSelect={handleSelectState}
             onAdd={handleAddState}
             disabled={pending}

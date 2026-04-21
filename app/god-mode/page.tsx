@@ -51,6 +51,7 @@ import {
   runLegalCheckForState,
   saveStateConfig,
   startImpersonation,
+  toggleStateEnabled,
   unblockOrganization,
   type CustomerRow,
   type LegalCheckResult,
@@ -456,6 +457,7 @@ export default function GodModePage() {
   const [selectedServiceIndex, setSelectedServiceIndex] = useState(0);
   const [stateConfigSaving, setStateConfigSaving] = useState(false);
   const [stateSearchQuery, setStateSearchQuery] = useState("");
+  const [stateEnableSaving, setStateEnableSaving] = useState(false);
   const [legalChecks, setLegalChecks] = useState<Record<string, LegalCheckResult>>({});
   const [legalCheckRunning, setLegalCheckRunning] = useState(false);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
@@ -1858,26 +1860,64 @@ export default function GodModePage() {
               <div className="min-w-0 flex-1 space-y-6">
                 {selectedStateConfig ? (
                   <>
-                    <div className="rounded-xl border border-border bg-card p-5">
+                    <div className={cn(
+                      "rounded-xl border bg-card p-5",
+                      selectedStateConfig.enabled ? "border-havn-success/40" : "border-destructive/30"
+                    )}>
                       <div className="flex flex-wrap items-center justify-between gap-4">
                         <div>
                           <h2 className="text-lg font-semibold">{selectedStateConfig.stateName}</h2>
                           <p className="text-xs text-muted-foreground">{selectedStateConfig.state}</p>
                         </div>
-                        <label className="flex items-center gap-2 text-sm">
-                          <Checkbox
-                            checked={selectedStateConfig.enabled}
-                            onCheckedChange={(v) =>
-                              applyStateConfigUpdate((draft) => {
-                                const idx = draft.findIndex((x) => x.state === selectedConfigState);
-                                if (idx >= 0) draft[idx].enabled = v;
-                                return draft;
-                              })
-                            }
-                          />
-                          Enabled
-                        </label>
+                        <div className="flex items-center gap-3">
+                          <span className={cn(
+                            "text-xs font-semibold",
+                            selectedStateConfig.enabled ? "text-havn-success" : "text-destructive"
+                          )}>
+                            {selectedStateConfig.enabled ? "Enabled" : "Disabled"}
+                          </span>
+                          <Button
+                            type="button"
+                            variant={selectedStateConfig.enabled ? "destructive" : "default"}
+                            size="sm"
+                            disabled={stateEnableSaving}
+                            onClick={() => {
+                              const newEnabled = !selectedStateConfig.enabled;
+                              setStateEnableSaving(true);
+                              void (async () => {
+                                try {
+                                  const result = await toggleStateEnabled(selectedConfigState, newEnabled);
+                                  if ("error" in result) {
+                                    toast.error(result.error);
+                                    return;
+                                  }
+                                  applyStateConfigUpdate((draft) => {
+                                    const idx = draft.findIndex((x) => x.state === selectedConfigState);
+                                    if (idx >= 0) draft[idx].enabled = newEnabled;
+                                    return draft;
+                                  });
+                                  setStateConfigBaseline((prev) => {
+                                    const next = deepClone(prev);
+                                    const idx = next.findIndex((x: GodModeStateConfig) => x.state === selectedConfigState);
+                                    if (idx >= 0) next[idx].enabled = newEnabled;
+                                    return next;
+                                  });
+                                  toast.success(`${selectedStateConfig.stateName} ${newEnabled ? "enabled" : "disabled"}`);
+                                } finally {
+                                  setStateEnableSaving(false);
+                                }
+                              })();
+                            }}
+                          >
+                            {stateEnableSaving ? "Saving…" : selectedStateConfig.enabled ? "Disable State" : "Enable State"}
+                          </Button>
+                        </div>
                       </div>
+                      {!selectedStateConfig.enabled && (
+                        <p className="mt-3 text-sm text-destructive">
+                          This state is disabled. Management companies and associations cannot select it during onboarding or configure pricing for it.
+                        </p>
+                      )}
                     </div>
                     <div className="grid gap-6 lg:grid-cols-3">
                       <div className="rounded-xl border border-border bg-card p-4 lg:col-span-1">

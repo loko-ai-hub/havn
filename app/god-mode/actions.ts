@@ -87,6 +87,60 @@ export async function loadStateConfigs(): Promise<
   return configs;
 }
 
+/* ── Toggle state enabled/disabled ─────────────────────────────────── */
+
+export async function toggleStateEnabled(
+  state: string,
+  enabled: boolean
+): Promise<{ ok: true } | { error: string }> {
+  const admin = createAdminClient();
+  const st = state.toUpperCase();
+
+  // Check if this state has any rows
+  const { data: existing } = await admin
+    .from("state_fee_limits")
+    .select("id")
+    .eq("state", st)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    // Update all rows for this state
+    const { error } = await admin
+      .from("state_fee_limits")
+      .update({ state_enabled: enabled, updated_at: new Date().toISOString() })
+      .eq("state", st);
+    if (error) return { error: error.message };
+  } else {
+    // Create a placeholder row so the enabled state persists
+    const { error } = await admin.from("state_fee_limits").insert({
+      state: st,
+      state_enabled: enabled,
+      master_type_key: "_placeholder",
+      state_notes: "",
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return { error: error.message };
+  }
+
+  return { ok: true };
+}
+
+/* ── Load enabled states (used by onboarding + dashboard pricing) ──── */
+
+export async function loadEnabledStates(): Promise<string[]> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("state_fee_limits")
+    .select("state, state_enabled")
+    .eq("state_enabled", true);
+
+  const states = new Set<string>();
+  for (const row of data ?? []) {
+    states.add((row.state as string).toUpperCase());
+  }
+  return [...states].sort();
+}
+
 /* ── Save ─────────────────────────────────────────────────────────────── */
 
 export async function saveStateConfig(
