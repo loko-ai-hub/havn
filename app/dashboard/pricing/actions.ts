@@ -38,25 +38,28 @@ export async function loadFees(state: string): Promise<FeeLoadResult | { error: 
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();
 
-  const [orgRes, allFeesRes, communitiesRes] = await Promise.all([
+  // Run all three queries; fees query is non-fatal (column may not exist yet)
+  const [orgRes, communitiesRes, allFeesRes] = await Promise.all([
     admin.from("organizations").select("state").eq("id", organizationId).single(),
+    admin.from("communities").select("state").eq("organization_id", organizationId).eq("status", "active"),
     admin
       .from("document_request_fees")
       .select("master_type_key, state, base_fee, rush_same_day_fee, rush_next_day_fee, rush_3day_fee, standard_turnaround_days")
       .eq("organization_id", organizationId)
-      .in("master_type_key", [...PRICING_DOC_TYPES]),
-    admin
-      .from("communities")
-      .select("state")
-      .eq("organization_id", organizationId)
-      .eq("status", "active"),
+      .in("master_type_key", [...PRICING_DOC_TYPES])
+      .then((r) => r), // always resolves, error handled below
   ]);
 
-  if (allFeesRes.error) return { error: allFeesRes.error.message };
+  if (communitiesRes.error) {
+    console.error("[loadFees] communities query failed:", communitiesRes.error.message);
+  }
+  if (allFeesRes.error) {
+    console.error("[loadFees] fees query failed:", allFeesRes.error.message);
+  }
 
-  const orgPrimaryState = typeof orgRes.data?.state === "string" ? orgRes.data.state.toUpperCase() : "";
+  const orgPrimaryState = typeof orgRes.data?.state === "string" ? orgRes.data.state.trim().toUpperCase() : "";
 
-  // Build available states from: communities + existing fee rows + org primary state
+  // Build available states: communities are the source of truth; fees + org state fill in extras
   const stateSet = new Set<string>();
   if (orgPrimaryState) stateSet.add(orgPrimaryState);
   for (const row of communitiesRes.data ?? []) {
@@ -67,13 +70,15 @@ export async function loadFees(state: string): Promise<FeeLoadResult | { error: 
   }
   const configuredStates = [...stateSet].sort();
 
-  // Filter fees for the requested state (empty string = just return state list)
+  // Empty state param = initial load, just return the state list
   if (!state) {
     return { fees: null, configuredStates, orgPrimaryState };
   }
 
-  const stateRows = (allFeesRes.data ?? []).filter(
-    (r) => (r.state ?? "").toUpperCase() === state.toUpperCase()
+  // If fees query failed, treat as no fees configured for this state
+  const feeRows = allFeesRes.data ?? [];
+  const stateRows = feeRows.filter(
+    (r) => (r.state ?? "").trim().toUpperCase() === state.trim().toUpperCase()
   );
 
   if (stateRows.length === 0) {
