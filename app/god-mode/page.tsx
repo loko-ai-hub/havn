@@ -455,6 +455,7 @@ export default function GodModePage() {
   const [selectedConfigState, setSelectedConfigState] = useState("");
   const [selectedServiceIndex, setSelectedServiceIndex] = useState(0);
   const [stateConfigSaving, setStateConfigSaving] = useState(false);
+  const [stateSearchQuery, setStateSearchQuery] = useState("");
   const [legalChecks, setLegalChecks] = useState<Record<string, LegalCheckResult>>({});
   const [legalCheckRunning, setLegalCheckRunning] = useState(false);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
@@ -1797,58 +1798,61 @@ export default function GodModePage() {
               <p className="text-sm text-muted-foreground">Loading state configurations…</p>
             ) : (
             <div className="flex flex-col gap-6 lg:flex-row">
-              <aside className="w-full shrink-0 space-y-3 lg:w-64">
-                <div className="rounded-xl border border-border bg-card p-2">
-                  {stateConfigDraft.map((c) => (
-                    <button
-                      key={c.state}
-                      type="button"
-                      onClick={() => {
-                        setSelectedConfigState(c.state);
-                        setSelectedServiceIndex(0);
-                      }}
-                      className={cn(
-                        "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium",
-                        selectedConfigState === c.state ? "bg-havn-navy text-white" : "hover:bg-muted/60"
-                      )}
-                    >
-                      {c.stateName} ({c.state})
-                    </button>
-                  ))}
-                </div>
-                <div className="rounded-xl border border-border bg-card p-3">
-                  <Label className="text-xs text-muted-foreground">Add State</Label>
-                  <select
-                    className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
-                    value=""
-                    onChange={(e) => {
-                      const abbr = e.target.value;
-                      if (!abbr) return;
-                      const st = US_STATES.find((s) => s.abbr === abbr);
-                      if (!st) return;
-                      applyStateConfigUpdate((draft) => [
-                        ...draft,
-                        {
-                          state: st.abbr,
-                          stateName: st.name,
-                          enabled: true,
-                          notes: "",
-                          services: [],
-                        },
-                      ]);
-                      setSelectedConfigState(st.abbr);
-                      setSelectedServiceIndex(0);
-                      e.target.value = "";
-                      toast.success(`Added ${st.name}`);
-                    }}
-                  >
-                    <option value="">Choose state…</option>
-                    {unconfiguredStates.map((s) => (
-                      <option key={s.abbr} value={s.abbr}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+              <aside className="w-full shrink-0 space-y-2 lg:w-64">
+                <Input
+                  placeholder="Search states..."
+                  value={stateSearchQuery}
+                  onChange={(e) => setStateSearchQuery(e.target.value)}
+                  className="h-9 text-sm"
+                />
+                <div className="max-h-[calc(100vh-240px)] overflow-y-auto rounded-xl border border-border bg-card p-1.5">
+                  {US_STATES
+                    .filter((s) => {
+                      const q = stateSearchQuery.trim().toLowerCase();
+                      if (!q) return true;
+                      return s.name.toLowerCase().includes(q) || s.abbr.toLowerCase().includes(q);
+                    })
+                    .map((s) => {
+                      const cfg = stateConfigDraft.find((c) => c.state === s.abbr);
+                      const isEnabled = cfg?.enabled === true;
+                      const isSelected = selectedConfigState === s.abbr;
+                      return (
+                        <button
+                          key={s.abbr}
+                          type="button"
+                          onClick={() => {
+                            // If no config exists for this state, create a disabled one
+                            if (!cfg) {
+                              applyStateConfigUpdate((draft) => [
+                                ...draft,
+                                {
+                                  state: s.abbr,
+                                  stateName: s.name,
+                                  enabled: false,
+                                  notes: "",
+                                  services: [],
+                                },
+                              ]);
+                            }
+                            setSelectedConfigState(s.abbr);
+                            setSelectedServiceIndex(0);
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                            isSelected
+                              ? "bg-havn-navy text-white"
+                              : isEnabled
+                              ? "font-medium text-foreground hover:bg-muted/60"
+                              : "text-muted-foreground hover:bg-muted/40"
+                          )}
+                        >
+                          <span>{s.name} ({s.abbr})</span>
+                          {isEnabled && !isSelected && (
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-havn-success" />
+                          )}
+                        </button>
+                      );
+                    })}
                 </div>
               </aside>
               <div className="min-w-0 flex-1 space-y-6">
@@ -2307,7 +2311,7 @@ export default function GodModePage() {
                     </section>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Select or add a state.</p>
+                  <p className="text-sm text-muted-foreground">Select a state from the list to configure.</p>
                 )}
               </div>
             </div>
