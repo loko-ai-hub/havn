@@ -718,7 +718,11 @@ export default function GodModePage() {
                 value={platformRevenue == null ? "—" : formatCurrency(platformRevenue)}
                 subtext="Paid + fulfilled"
               />
-              <PlatformKpiCard label="States Active" value="1" subtext="Washington (WA)" />
+              <PlatformKpiCard
+                label="States Active"
+                value={String(stateConfigDraft.filter((c) => c.enabled).length)}
+                subtext={stateConfigDraft.filter((c) => c.enabled).map((c) => c.state).join(", ") || "None"}
+              />
             </div>
             <section className="rounded-xl border border-border bg-card shadow-sm">
               <div className="border-b border-border px-5 py-3">
@@ -751,6 +755,81 @@ export default function GodModePage() {
                 </li>
               </ul>
             </section>
+
+            {/* Recent Legal Alerts */}
+            {(() => {
+              const alertStates = Object.values(legalChecks).filter((c) => c.changes_detected);
+              const recentItems = alertStates.flatMap((c) =>
+                c.details
+                  .filter((d) => d.type === "recent_change" || d.type === "action_needed" || d.type === "pending_legislation")
+                  .map((d) => ({ ...d, state: c.state, checked_at: c.checked_at }))
+              ).sort((a, b) => {
+                const sev = { critical: 0, warning: 1, info: 2 };
+                return (sev[a.severity] ?? 2) - (sev[b.severity] ?? 2);
+              });
+              return (
+                <section className="rounded-xl border border-border bg-card shadow-sm">
+                  <div className="border-b border-border px-5 py-3">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-sm font-semibold text-foreground">Legal Alerts</h2>
+                      {alertStates.length > 0 && (
+                        <span className="rounded-full bg-havn-amber/15 px-2.5 py-0.5 text-xs font-semibold text-havn-amber">
+                          {recentItems.length} item{recentItems.length === 1 ? "" : "s"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="p-5">
+                    {recentItems.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No legal changes flagged. {Object.keys(legalChecks).length === 0 ? "Run an AI check from State Config to get started." : "All states are up to date."}
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {recentItems.slice(0, 5).map((item, i) => (
+                          <div
+                            key={i}
+                            className={cn(
+                              "rounded-lg border px-4 py-3 cursor-pointer transition-colors hover:bg-muted/30",
+                              item.severity === "critical"
+                                ? "border-destructive/30 bg-destructive/5"
+                                : item.severity === "warning"
+                                ? "border-havn-amber/30 bg-havn-amber/5"
+                                : "border-border"
+                            )}
+                            onClick={() => { setTab("state-config"); setSelectedConfigState(item.state); setSelectedServiceIndex(0); setStateEnableToggle(null); }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">{item.state}</span>
+                              <span className={cn(
+                                "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+                                item.type === "action_needed"
+                                  ? "bg-destructive/10 text-destructive"
+                                  : item.type === "recent_change"
+                                  ? "bg-havn-amber/10 text-havn-amber"
+                                  : "bg-primary/10 text-primary"
+                              )}>
+                                {item.type.replace(/_/g, " ")}
+                              </span>
+                              {item.statute_reference && (
+                                <span className="text-[10px] font-mono text-muted-foreground">{item.statute_reference}</span>
+                              )}
+                            </div>
+                            <p className="mt-1.5 text-sm font-medium text-foreground">{item.title}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{item.description}</p>
+                          </div>
+                        ))}
+                        {recentItems.length > 5 && (
+                          <button type="button" onClick={() => setTab("state-config")} className="text-sm font-medium text-primary hover:underline">
+                            View all {recentItems.length} alerts in State Config
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              );
+            })()}
           </div>
         ) : null}
 
@@ -1851,9 +1930,14 @@ export default function GodModePage() {
                           )}
                         >
                           <span>{s.name} ({s.abbr})</span>
-                          {isEnabled && !isSelected && (
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-havn-success" />
-                          )}
+                          <span className="flex items-center gap-1.5">
+                            {legalChecks[s.abbr]?.changes_detected && !isSelected && (
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-havn-amber" title="Legal changes detected" />
+                            )}
+                            {isEnabled && !isSelected && (
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-havn-success" />
+                            )}
+                          </span>
                         </button>
                       );
                     })}
@@ -1864,12 +1948,12 @@ export default function GodModePage() {
                   <>
                     <div className="rounded-xl border border-border bg-card p-5">
                       <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                          <h2 className="text-lg font-semibold">{selectedStateConfig.stateName}</h2>
+                          <p className="text-xs text-muted-foreground">{selectedStateConfig.state}</p>
+                        </div>
                         <div className="flex items-center gap-3">
-                          <div>
-                            <h2 className="text-lg font-semibold">{selectedStateConfig.stateName}</h2>
-                            <p className="text-xs text-muted-foreground">{selectedStateConfig.state}</p>
-                          </div>
-                          {/* Save button appears next to title so toggle doesn't shift */}
+                          {/* Save button — to the left of toggle, only when changed */}
                           {(stateEnableToggle != null && stateEnableToggle !== selectedStateConfig.enabled) && (
                             <Button
                               type="button"
@@ -1907,9 +1991,7 @@ export default function GodModePage() {
                               {stateEnableSaving ? "Saving…" : "Save"}
                             </Button>
                           )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {/* Toggle switch — stays pinned to the right */}
+                          {/* Toggle switch */}
                           <button
                             type="button"
                             role="switch"
@@ -2324,7 +2406,11 @@ export default function GodModePage() {
                               {/* Items */}
                               {check.details.length > 0 && (
                                 <div className="space-y-3">
-                                  {check.details.map((item, i) => (
+                                  {[...check.details].sort((a, b) => {
+                                    const typePri: Record<string, number> = { action_needed: 0, recent_change: 1, pending_legislation: 2, current_law: 3 };
+                                    const sevPri: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+                                    return (typePri[a.type] ?? 9) - (typePri[b.type] ?? 9) || (sevPri[a.severity] ?? 9) - (sevPri[b.severity] ?? 9);
+                                  }).map((item, i) => (
                                     <div
                                       key={i}
                                       className={cn(
