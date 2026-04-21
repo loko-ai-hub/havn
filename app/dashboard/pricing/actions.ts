@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { createAdminClient } from "../../../lib/supabase/admin";
 import { requireDashboardOrg } from "../_lib/require-dashboard-org";
+import { DEFAULT_FEES, PRICING_DOC_TYPE_KEYS } from "./pricing-constants";
 
 export type FeeSaveRow = {
   master_type_key: string;
@@ -20,20 +21,6 @@ export type FeeLoadResult = {
   orgPrimaryState: string;
 };
 
-const PRICING_DOC_TYPES = [
-  "resale_certificate",
-  "certificate_update",
-  "lender_questionnaire",
-  "demand_letter",
-] as const;
-
-export const DEFAULT_FEES: FeeSaveRow[] = [
-  { master_type_key: "resale_certificate",   base_fee: 250, rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
-  { master_type_key: "certificate_update",   base_fee: 75,  rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
-  { master_type_key: "lender_questionnaire", base_fee: 150, rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
-  { master_type_key: "demand_letter",        base_fee: 100, rush_same_day_fee: null, rush_next_day_fee: null, rush_3day_fee: null, standard_turnaround_days: 10 },
-];
-
 export async function loadFees(state: string): Promise<FeeLoadResult | { error: string }> {
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();
@@ -46,7 +33,7 @@ export async function loadFees(state: string): Promise<FeeLoadResult | { error: 
       .from("document_request_fees")
       .select("master_type_key, state, base_fee, rush_same_day_fee, rush_next_day_fee, rush_3day_fee, standard_turnaround_days")
       .eq("organization_id", organizationId)
-      .in("master_type_key", [...PRICING_DOC_TYPES])
+      .in("master_type_key", PRICING_DOC_TYPE_KEYS)
       .then((r) => r), // always resolves, error handled below
   ]);
 
@@ -106,7 +93,7 @@ export async function saveFees(fees: FeeSaveRow[], state: string) {
     .delete()
     .eq("organization_id", organizationId)
     .eq("state", state.toUpperCase())
-    .in("master_type_key", [...PRICING_DOC_TYPES]);
+    .in("master_type_key", PRICING_DOC_TYPE_KEYS);
 
   if (delError) return { error: delError.message };
 

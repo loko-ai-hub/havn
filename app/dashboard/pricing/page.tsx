@@ -18,11 +18,11 @@ import { US_STATES } from "@/lib/us-states";
 
 import {
   configureDefaultFees,
-  DEFAULT_FEES,
   loadFees,
   saveFees,
   type FeeSaveRow,
 } from "./actions";
+import { DEFAULT_FEES, DOC_ROWS } from "./pricing-constants";
 
 const PRICING_TIP_KEY = "havn_pricing_tip_dismissed";
 
@@ -39,12 +39,6 @@ const STATE_FEE_CAPS: Record<string, { resale?: number; update?: number; statute
   GA: { resale: 250, statute: "O.C.G.A. §44-3-101" },
 };
 
-const DOC_ROWS: { key: FeeSaveRow["master_type_key"]; label: string; description: string }[] = [
-  { key: "resale_certificate",   label: "Resale Certificate",   description: "Full HOA disclosure packet" },
-  { key: "certificate_update",   label: "Certificate Update",   description: "Update to a prior certificate" },
-  { key: "lender_questionnaire", label: "Lender Questionnaire", description: "Lender/mortgage info package" },
-  { key: "demand_letter",        label: "Demand Letter",        description: "Account balance demand statement" },
-];
 
 type EditableFee = {
   master_type_key: FeeSaveRow["master_type_key"];
