@@ -51,6 +51,7 @@ import {
   runLegalCheckForState,
   saveStateConfig,
   startImpersonation,
+  unblockOrganization,
   type CustomerRow,
   type LegalCheckResult,
   type StateConfig,
@@ -464,6 +465,8 @@ export default function GodModePage() {
   const [custCityFilter, setCustCityFilter] = useState("");
   const [blockTarget, setBlockTarget] = useState<CustomerRow | null>(null);
   const [blockConfirming, setBlockConfirming] = useState(false);
+  const [unblockTarget, setUnblockTarget] = useState<CustomerRow | null>(null);
+  const [unblockConfirming, setUnblockConfirming] = useState(false);
   const [auditShowAll, setAuditShowAll] = useState(false);
 
   const scale = useMemo(
@@ -1080,21 +1083,25 @@ export default function GodModePage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-2">
-                            {isActive && (
-                              <Button type="button" variant="outline" size="sm" onClick={() => {
-                                void (async () => {
-                                  const result = await startImpersonation(c.id, c.name);
-                                  if ("error" in result) { toast.error(result.error); return; }
-                                  window.open("/dashboard", "_blank");
-                                  toast.success(`Impersonating ${c.name} in new tab`);
-                                })();
-                              }}>
-                                Impersonate
-                              </Button>
-                            )}
-                            {isActive && (
-                              <Button type="button" variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setBlockTarget(c)}>
-                                Block
+                            {isActive ? (
+                              <>
+                                <Button type="button" variant="outline" size="sm" onClick={() => {
+                                  void (async () => {
+                                    const result = await startImpersonation(c.id, c.name);
+                                    if ("error" in result) { toast.error(result.error); return; }
+                                    window.open("/dashboard", "_blank");
+                                    toast.success(`Impersonating ${c.name} in new tab`);
+                                  })();
+                                }}>
+                                  Impersonate
+                                </Button>
+                                <Button type="button" variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setBlockTarget(c)}>
+                                  Block
+                                </Button>
+                              </>
+                            ) : (
+                              <Button type="button" variant="outline" size="sm" className="text-destructive border-destructive/30" onClick={() => setUnblockTarget(c)}>
+                                Blocked
                               </Button>
                             )}
                           </div>
@@ -1140,6 +1147,43 @@ export default function GodModePage() {
                       })();
                     }}>
                       {blockConfirming ? "Blocking..." : "Confirm Block"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Unblock confirmation dialog */}
+            {unblockTarget && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-lg" role="dialog" aria-modal="true">
+                  <h2 className="text-lg font-semibold text-foreground">Unblock {unblockTarget.name}?</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    This will:
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                    <li>Reactivate the organization</li>
+                    <li>Unban all associated user accounts</li>
+                    <li>Remove email blocks so users can log in again</li>
+                  </ul>
+                  <div className="mt-5 flex justify-end gap-3">
+                    <Button variant="outline" onClick={() => setUnblockTarget(null)} disabled={unblockConfirming}>Cancel</Button>
+                    <Button disabled={unblockConfirming} onClick={() => {
+                      setUnblockConfirming(true);
+                      void (async () => {
+                        try {
+                          const result = await unblockOrganization(unblockTarget.id);
+                          if ("error" in result) { toast.error(result.error); return; }
+                          toast.success(`${unblockTarget.name} has been unblocked.`);
+                          setUnblockTarget(null);
+                          const updated = await loadCustomers();
+                          if (!("error" in updated)) setCustomers(updated);
+                        } finally {
+                          setUnblockConfirming(false);
+                        }
+                      })();
+                    }}>
+                      {unblockConfirming ? "Unblocking..." : "Confirm Unblock"}
                     </Button>
                   </div>
                 </div>

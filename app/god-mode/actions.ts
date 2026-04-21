@@ -427,6 +427,42 @@ export async function blockOrganization(
   return { ok: true, blockedEmails };
 }
 
+export async function unblockOrganization(
+  orgId: string
+): Promise<{ ok: true } | { error: string }> {
+  const admin = createAdminClient();
+
+  // 1. Reactivate the org
+  const { error: activateError } = await admin
+    .from("organizations")
+    .update({ is_active: true })
+    .eq("id", orgId);
+
+  if (activateError) return { error: activateError.message };
+
+  // 2. Remove blocked emails for this org
+  await admin
+    .from("blocked_emails")
+    .delete()
+    .eq("organization_id", orgId);
+
+  // 3. Unban all users
+  const { data: profiles } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("organization_id", orgId);
+
+  if (profiles && profiles.length > 0) {
+    await Promise.all(
+      profiles.map((p) =>
+        admin.auth.admin.updateUserById(p.id as string, { ban_duration: "none" })
+      )
+    );
+  }
+
+  return { ok: true };
+}
+
 /* ── Impersonation ────────────────────────────────────────────────────── */
 
 export async function startImpersonation(
