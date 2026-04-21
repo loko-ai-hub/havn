@@ -67,7 +67,7 @@ export default function AcceptInviteForm({
     <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-xl shadow-black/15">
       <h1 className="text-2xl font-semibold">Accept your invitation</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        You've been invited to join{" "}
+        You&apos;ve been invited to join{" "}
         <span className="font-medium text-foreground">{orgName}</span> as{" "}
         <span className="font-medium text-foreground">{roleLabel(role)}</span>.
         Create your account below.

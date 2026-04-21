@@ -271,8 +271,6 @@ function serviceToDbRow(svc: GodModeService): StateServiceRow {
   };
 }
 
-const FALLBACK_STATE_CONFIGS: GodModeStateConfig[] = [];
-
 const MOCK_AUDIT_LOG: { id: string; at: string; actor: string; summary: string }[] = [
   {
     id: "a1",
@@ -2037,7 +2035,7 @@ export default function GodModePage() {
                           if (!check) {
                             return (
                               <p className="text-sm text-muted-foreground">
-                                No legal check has been run for {selectedConfigState} yet. Click "Run Check Now" to analyze current regulations.
+                                No legal check has been run for {selectedConfigState} yet. Click &ldquo;Run Check Now&rdquo; to analyze current regulations.
                               </p>
                             );
                           }

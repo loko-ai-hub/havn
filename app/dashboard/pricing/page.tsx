@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { ChevronDown, DollarSign, MapPin, Plus, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -64,7 +64,7 @@ function formatMoney(n: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 }
 
-function CapBanner({ documentType, fee, capInfo }: { documentType: string; fee: number; capInfo: CapInfo | undefined }) {
+function CapBanner({ fee, capInfo }: { fee: number; capInfo: CapInfo | undefined }) {
   if (!capInfo) return null;
   if (capInfo.pricing_cap == null) {
     return <p className="mt-1 text-[11px] text-muted-foreground">Actual cost — no fixed cap.</p>;
@@ -471,7 +471,7 @@ export default function DashboardPricingPage() {
                           disabled={pending}
                           onChange={(v) => updateRow(i, { base_fee: v })}
                         />
-                        <CapBanner documentType={row.master_type_key} fee={parseRequiredMoney(row.base_fee)} capInfo={stateCaps[row.master_type_key]} />
+                        <CapBanner fee={parseRequiredMoney(row.base_fee)} capInfo={stateCaps[row.master_type_key]} />
                       </TableCell>
                       <TableCell className="py-4">
                         <RushCell
