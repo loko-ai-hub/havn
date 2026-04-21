@@ -1864,36 +1864,12 @@ export default function GodModePage() {
                   <>
                     <div className="rounded-xl border border-border bg-card p-5">
                       <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div>
-                          <h2 className="text-lg font-semibold">{selectedStateConfig.stateName}</h2>
-                          <p className="text-xs text-muted-foreground">{selectedStateConfig.state}</p>
-                        </div>
                         <div className="flex items-center gap-3">
-                          {/* Toggle switch */}
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={stateEnableToggle ?? selectedStateConfig.enabled}
-                            onClick={() => setStateEnableToggle((prev) => !(prev ?? selectedStateConfig.enabled))}
-                            className={cn(
-                              "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-                              (stateEnableToggle ?? selectedStateConfig.enabled)
-                                ? "bg-havn-success"
-                                : "bg-muted-foreground/30"
-                            )}
-                          >
-                            <span className={cn(
-                              "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
-                              (stateEnableToggle ?? selectedStateConfig.enabled) ? "translate-x-5" : "translate-x-0"
-                            )} />
-                          </button>
-                          <span className={cn(
-                            "text-sm font-medium",
-                            (stateEnableToggle ?? selectedStateConfig.enabled) ? "text-havn-success" : "text-muted-foreground"
-                          )}>
-                            {(stateEnableToggle ?? selectedStateConfig.enabled) ? "On" : "Off"}
-                          </span>
-                          {/* Show Save button when toggle differs from saved state */}
+                          <div>
+                            <h2 className="text-lg font-semibold">{selectedStateConfig.stateName}</h2>
+                            <p className="text-xs text-muted-foreground">{selectedStateConfig.state}</p>
+                          </div>
+                          {/* Save button appears next to title so toggle doesn't shift */}
                           {(stateEnableToggle != null && stateEnableToggle !== selectedStateConfig.enabled) && (
                             <Button
                               type="button"
@@ -1931,6 +1907,32 @@ export default function GodModePage() {
                               {stateEnableSaving ? "Saving…" : "Save"}
                             </Button>
                           )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {/* Toggle switch — stays pinned to the right */}
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={stateEnableToggle ?? selectedStateConfig.enabled}
+                            onClick={() => setStateEnableToggle((prev) => !(prev ?? selectedStateConfig.enabled))}
+                            className={cn(
+                              "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                              (stateEnableToggle ?? selectedStateConfig.enabled)
+                                ? "bg-havn-success"
+                                : "bg-muted-foreground/30"
+                            )}
+                          >
+                            <span className={cn(
+                              "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
+                              (stateEnableToggle ?? selectedStateConfig.enabled) ? "translate-x-5" : "translate-x-0"
+                            )} />
+                          </button>
+                          <span className={cn(
+                            "w-6 text-sm font-medium",
+                            (stateEnableToggle ?? selectedStateConfig.enabled) ? "text-havn-success" : "text-muted-foreground"
+                          )}>
+                            {(stateEnableToggle ?? selectedStateConfig.enabled) ? "On" : "Off"}
+                          </span>
                         </div>
                       </div>
                       {!(stateEnableToggle ?? selectedStateConfig.enabled) && (
