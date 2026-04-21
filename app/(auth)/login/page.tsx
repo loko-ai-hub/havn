@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 const GOD_MODE_EMAILS = ["loren@havnhq.com"];
 
 function destinationForEmail(email: string | undefined): string {
-  if (email && GOD_MODE_EMAILS.includes(email.toLowerCase())) return "/god-mode";
+  if (email && GOD_MODE_EMAILS.includes(email.trim().toLowerCase())) return "/god-mode";
   return "/dashboard";
 }
 
