@@ -279,7 +279,7 @@ export async function loadCustomers(): Promise<CustomerRow[] | { error: string }
 
   const { data: orgs, error } = await admin
     .from("organizations")
-    .select("id, name, account_type, support_email, stripe_account_id, stripe_onboarding_complete, is_active")
+    .select("id, name, city, state, account_type, support_email, stripe_account_id, stripe_onboarding_complete, is_active")
     .order("name");
 
   if (error) return { error: error.message };
@@ -308,8 +308,8 @@ export async function loadCustomers(): Promise<CustomerRow[] | { error: string }
   return (orgs ?? []).map((o) => ({
     id: o.id as string,
     name: (o.name as string) ?? "Unnamed",
-    city: null,
-    state: null,
+    city: o.city as string | null,
+    state: o.state as string | null,
     account_type: o.account_type as string | null,
     support_email: o.support_email as string | null,
     stripe_account_id: o.stripe_account_id as string | null,
