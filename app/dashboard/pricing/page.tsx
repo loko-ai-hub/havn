@@ -254,39 +254,8 @@ export default function DashboardPricingPage() {
     if (!state) return;
     setLoading(true);
     setLoadError(null);
-    const result = await loadFees(state);
-
-    if ("error" in result) {
-      setLoadError(result.error);
-      setLoading(false);
-      return;
-    }
-
-    setConfiguredStates(result.configuredStates);
-    setOrgPrimaryState(result.orgPrimaryState);
-
-    if (!result.fees) {
-      setRows(null);
-      setLoading(false);
-      return;
-    }
-
-    const map = new Map(result.fees.map((r) => [r.master_type_key, r]));
-    const ordered: EditableFee[] = DOC_ROWS.map(({ key }) => {
-      const r = map.get(key);
-      if (r) return toEditable(r);
-      return toEditable(DEFAULT_FEES.find((d) => d.master_type_key === key)!);
-    });
-
-    setRows(ordered);
-    setLoading(false);
-  }, []);
-
-  // On mount: load state list from communities, then auto-select first state
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      const result = await loadFees("");
+    try {
+      const result = await loadFees(state);
       if ("error" in result) {
         setLoadError(result.error);
         setLoading(false);
@@ -294,11 +263,47 @@ export default function DashboardPricingPage() {
       }
       setConfiguredStates(result.configuredStates);
       setOrgPrimaryState(result.orgPrimaryState);
-      const autoSelect = result.configuredStates[0] ?? result.orgPrimaryState;
-      if (autoSelect) {
-        setSelectedState(autoSelect);
-        await fetchFees(autoSelect);
-      } else {
+      if (!result.fees) {
+        setRows(null);
+        setLoading(false);
+        return;
+      }
+      const map = new Map(result.fees.map((r) => [r.master_type_key, r]));
+      const ordered: EditableFee[] = DOC_ROWS.map(({ key }) => {
+        const r = map.get(key);
+        if (r) return toEditable(r);
+        return toEditable(DEFAULT_FEES.find((d) => d.master_type_key === key)!);
+      });
+      setRows(ordered);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load pricing data.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // On mount: load state list from communities, then auto-select first state
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      try {
+        const result = await loadFees("");
+        if ("error" in result) {
+          setLoadError(result.error);
+          setLoading(false);
+          return;
+        }
+        setConfiguredStates(result.configuredStates);
+        setOrgPrimaryState(result.orgPrimaryState);
+        const autoSelect = result.configuredStates[0] ?? result.orgPrimaryState;
+        if (autoSelect) {
+          setSelectedState(autoSelect);
+          await fetchFees(autoSelect);
+        } else {
+          setLoading(false);
+        }
+      } catch (e) {
+        setLoadError(e instanceof Error ? e.message : "Failed to load pricing.");
         setLoading(false);
       }
     };
