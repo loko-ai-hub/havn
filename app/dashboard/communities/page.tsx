@@ -386,11 +386,11 @@ export default function DashboardCommunitiesPage() {
                           ) : (
                             <button
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); toast.info("Coming soon"); }}
+                              onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/communities/${c.id}`); }}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                             >
                               <Upload className="h-3.5 w-3.5" />
-                              Upload Addresses
+                              Add Details
                             </button>
                           )}
                         </td>
@@ -429,7 +429,7 @@ export default function DashboardCommunitiesPage() {
                           >
                             <button
                               type="button"
-                              onClick={() => toast.info("Coming soon")}
+                              onClick={() => router.push(`/dashboard/communities/${c.id}`)}
                               className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                               title="Edit"
                             >

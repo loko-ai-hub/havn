@@ -113,7 +113,7 @@ export default function MyOrdersSettingsPage() {
           </Link>
           <button
             type="button"
-            onClick={() => toast.info("Help coming soon")}
+            onClick={() => window.open("mailto:support@havnhq.com", "_blank")}
             className="mt-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-white/70 hover:bg-white/5 hover:text-white"
           >
             Help

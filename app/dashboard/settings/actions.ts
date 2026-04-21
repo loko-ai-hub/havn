@@ -199,3 +199,32 @@ export async function revokeTeamInvitation(inviteId: string) {
   revalidatePath("/dashboard/settings");
   return { ok: true };
 }
+
+export async function removeTeamMember(memberId: string) {
+  const { organizationId, userId } = await requireDashboardOrg();
+  if (memberId === userId) return { error: "You cannot remove yourself." };
+
+  const admin = createAdminClient();
+
+  const { data: profile, error: profileErr } = await admin
+    .from("profiles")
+    .select("id, organization_id, role")
+    .eq("id", memberId)
+    .single();
+
+  if (profileErr || !profile || profile.organization_id !== organizationId) {
+    return { error: "User not found or access denied." };
+  }
+  if (profile.role === "owner") {
+    return { error: "Cannot remove the account owner." };
+  }
+
+  // Unlink from org
+  await admin
+    .from("profiles")
+    .update({ organization_id: null, role: "staff" })
+    .eq("id", memberId);
+
+  revalidatePath("/dashboard/settings");
+  return { ok: true };
+}

@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { DashboardSectionCard } from "../_lib/dashboard-section-card";
 import {
   getOrgTeam,
+  removeTeamMember,
   revokeTeamInvitation,
   sendTeamInvitation,
   updateCompanyInfo,
@@ -345,9 +346,26 @@ export default function DashboardSettingsPage() {
     });
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const [newPassword, setNewPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success("Password update request sent (UI preview only).");
+    if (newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Password updated.");
+      setNewPassword("");
+    } finally {
+      setSavingPassword(false);
+    }
   };
 
   const handleSendInvite = async () => {
@@ -428,16 +446,22 @@ export default function DashboardSettingsPage() {
           </Button>
           <div className="space-y-3 pt-2">
             <Disclosure title="Change password">
-              <form onSubmit={handlePasswordSubmit} className="grid gap-3 sm:max-w-sm">
-                <div className="space-y-2">
-                  <Label htmlFor="pw-current">Current password</Label>
-                  <Input id="pw-current" type="password" autoComplete="current-password" />
-                </div>
+              <form onSubmit={(e) => void handlePasswordSubmit(e)} className="grid gap-3 sm:max-w-sm">
                 <div className="space-y-2">
                   <Label htmlFor="pw-next">New password</Label>
-                  <Input id="pw-next" type="password" autoComplete="new-password" />
+                  <Input
+                    id="pw-next"
+                    type="password"
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    minLength={6}
+                    placeholder="Minimum 6 characters"
+                  />
                 </div>
-                <Button type="submit">Update password</Button>
+                <Button type="submit" disabled={savingPassword || newPassword.length < 6}>
+                  {savingPassword ? "Updating..." : "Update password"}
+                </Button>
               </form>
             </Disclosure>
             <Disclosure title="Notification preferences">
@@ -669,7 +693,15 @@ export default function DashboardSettingsPage() {
                         <button
                           type="button"
                           className="text-muted-foreground hover:text-destructive transition-colors"
-                          onClick={() => toast.info("User removal coming soon.")}
+                          onClick={() => {
+                            if (!confirm(`Remove ${member.full_name || member.email} from the team?`)) return;
+                            void (async () => {
+                              const result = await removeTeamMember(member.id);
+                              if (result && "error" in result) { toast.error(result.error); return; }
+                              toast.success("Team member removed.");
+                              await load();
+                            })();
+                          }}
                           aria-label="Remove user"
                         >
                           <Trash2 className="h-4 w-4" />

@@ -98,7 +98,6 @@ export async function submitOrder(input: {
     };
   });
 
-  console.log("SERVICE ROLE KEY:", process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 20));
 
 
   const supabase = createAdminClient();

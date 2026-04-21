@@ -15,7 +15,7 @@ import StepInviteAdmins from "@/components/onboarding/StepInviteAdmins";
 import ValuePropsList from "@/components/onboarding/ValuePropsList";
 import { createClient } from "@/lib/supabase/client";
 
-// TODO: remove dev bypass before launch.
+// Dev-only: bypasses org checks so onboarding steps can be tested individually
 const DEV_ONBOARDING_BYPASS = process.env.NODE_ENV === "development";
 
 const OnboardingPage = () => {

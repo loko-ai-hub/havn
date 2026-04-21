@@ -172,6 +172,14 @@ export async function fulfillAndGenerate(
     return { error: `PDF upload failed: ${uploadError.message}` };
   }
 
+  // 4b. Record in order_documents table
+  await admin.from("order_documents").insert({
+    order_id: orderId,
+    storage_path: storagePath,
+    file_type: "application/pdf",
+    document_type: masterTypeKey,
+  });
+
   // 5. Update community_id on order if provided
   if (communityId) {
     await admin
