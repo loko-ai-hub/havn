@@ -539,7 +539,11 @@ export default function GodModePage() {
     void loadConfigs();
     void (async () => {
       const result = await loadCustomers();
-      if (!("error" in result)) setCustomers(result);
+      if ("error" in result) {
+        toast.error(`Customers: ${result.error}`);
+      } else {
+        setCustomers(result);
+      }
       setCustomersLoading(false);
     })();
   }, [loadKpis, loadConfigs]);
