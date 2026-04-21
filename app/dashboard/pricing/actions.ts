@@ -88,14 +88,23 @@ export async function saveFees(fees: FeeSaveRow[], state: string) {
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();
 
-  const { error: delError } = await admin
-    .from("document_request_fees")
-    .delete()
-    .eq("organization_id", organizationId)
-    .eq("state", state.toUpperCase())
-    .in("master_type_key", PRICING_DOC_TYPE_KEYS);
+  // Delete legacy NULL-state rows (from before multi-state support) and
+  // current state-specific rows so we can re-insert cleanly.
+  const [nullDel, stateDel] = await Promise.all([
+    admin.from("document_request_fees")
+      .delete()
+      .eq("organization_id", organizationId)
+      .is("state", null)
+      .in("master_type_key", PRICING_DOC_TYPE_KEYS),
+    admin.from("document_request_fees")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("state", state.toUpperCase())
+      .in("master_type_key", PRICING_DOC_TYPE_KEYS),
+  ]);
 
-  if (delError) return { error: delError.message };
+  if (nullDel.error) console.error("[saveFees] null-state delete:", nullDel.error.message);
+  if (stateDel.error) return { error: stateDel.error.message };
 
   const insertRows = fees.map((f) => ({
     organization_id: organizationId,
