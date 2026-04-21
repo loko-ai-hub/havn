@@ -239,24 +239,11 @@ export async function loadLatestLegalChecks(): Promise<
 export async function runLegalCheckForState(
   state: string
 ): Promise<{ ok: true } | { error: string }> {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
-
-  try {
-    const res = await fetch(`${baseUrl}/api/cron/legal-check?state=${state}`, {
-      headers: process.env.CRON_SECRET
-        ? { authorization: `Bearer ${process.env.CRON_SECRET}` }
-        : {},
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      return { error: body || `HTTP ${res.status}` };
-    }
-    return { ok: true };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Request failed" };
-  }
+  const { runLegalChecks } = await import("@/lib/legal-check");
+  const { results } = await runLegalChecks(state);
+  const failed = results.find((r) => !r.ok);
+  if (failed?.error) return { error: failed.error };
+  return { ok: true };
 }
 
 /* ── Customers ────────────────────────────────────────────────────────── */
