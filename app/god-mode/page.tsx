@@ -44,6 +44,7 @@ import { formatCurrency, formatDeliverySpeed, formatMasterTypeKey } from "../das
 import { OrderStatusBadge } from "../dashboard/_lib/status-badge";
 import { fulfillOrder } from "../dashboard/requests/actions";
 import {
+  blockOrganization,
   loadCustomers,
   loadLatestLegalChecks,
   loadStateConfigs,
@@ -457,6 +458,12 @@ export default function GodModePage() {
   const [legalCheckRunning, setLegalCheckRunning] = useState(false);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
+  const [custSearch, setCustSearch] = useState("");
+  const [custTypeFilter, setCustTypeFilter] = useState<"all" | "management_company" | "self_managed">("all");
+  const [custStateFilter, setCustStateFilter] = useState("");
+  const [custCityFilter, setCustCityFilter] = useState("");
+  const [blockTarget, setBlockTarget] = useState<CustomerRow | null>(null);
+  const [blockConfirming, setBlockConfirming] = useState(false);
   const [auditShowAll, setAuditShowAll] = useState(false);
 
   const scale = useMemo(
@@ -947,35 +954,92 @@ export default function GodModePage() {
           </div>
         ) : null}
 
-        {tab === "customers" ? (
+        {tab === "customers" ? (() => {
+          const q = custSearch.trim().toLowerCase();
+          const filteredCustomers = customers.filter((c) => {
+            if (custTypeFilter !== "all" && c.account_type !== custTypeFilter) return false;
+            if (custStateFilter && (c.state ?? "").toUpperCase() !== custStateFilter.toUpperCase()) return false;
+            if (custCityFilter && !(c.city ?? "").toLowerCase().includes(custCityFilter.toLowerCase())) return false;
+            if (q && !c.name.toLowerCase().includes(q) && !(c.owner_email ?? "").toLowerCase().includes(q)) return false;
+            return true;
+          });
+          const mgmtCount = customers.filter((c) => c.account_type === "management_company").length;
+          const selfCount = customers.filter((c) => c.account_type === "self_managed").length;
+          const totalCommunities = customers.reduce((s, c) => s + c.community_count, 0);
+          const uniqueStates = new Set(customers.map((c) => c.state).filter(Boolean));
+          const uniqueCities = [...new Set(customers.map((c) => c.city).filter(Boolean))].sort();
+
+          return (
           <div className="space-y-6">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Management companies on Havn.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Organizations on Havn.</p>
             </div>
+
+            {/* KPI row */}
+            {!customersLoading && (
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <PlatformKpiCard label="Total Customers" value={String(customers.length)} />
+                <PlatformKpiCard label="Management Companies" value={String(mgmtCount)} />
+                <PlatformKpiCard label="Self-Managed HOAs" value={String(selfCount)} />
+                <PlatformKpiCard label="Total Communities" value={String(totalCommunities)} />
+              </div>
+            )}
+
+            {/* Filters */}
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[200px] flex-1">
+                <Label className="mb-1.5 block text-xs text-muted-foreground">Search</Label>
+                <Input placeholder="Name or email..." value={custSearch} onChange={(e) => setCustSearch(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">Type</Label>
+                <select value={custTypeFilter} onChange={(e) => setCustTypeFilter(e.target.value as typeof custTypeFilter)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="all">All types</option>
+                  <option value="management_company">Management Company</option>
+                  <option value="self_managed">Self-Managed HOA</option>
+                </select>
+              </div>
+              <div>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">State</Label>
+                <select value={custStateFilter} onChange={(e) => setCustStateFilter(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="">All states</option>
+                  {[...uniqueStates].sort().map((s) => <option key={s} value={s!}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">City</Label>
+                <select value={custCityFilter} onChange={(e) => setCustCityFilter(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="">All cities</option>
+                  {uniqueCities.map((c) => <option key={c} value={c!}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+
             {customersLoading ? (
               <p className="text-sm text-muted-foreground">Loading customers...</p>
-            ) : customers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No organizations found.</p>
+            ) : filteredCustomers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No customers match your filters.</p>
             ) : (
             <div className="overflow-x-auto rounded-xl border border-border bg-card">
-              <Table className="min-w-[960px]">
+              <Table className="min-w-[1100px]">
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
                     <TableHead>Company</TableHead>
                     <TableHead>Owner</TableHead>
-                    <TableHead>Account type</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="text-center">Communities</TableHead>
+                    <TableHead className="text-center">States</TableHead>
                     <TableHead>Stripe</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="w-[200px]">Actions</TableHead>
+                    <TableHead className="w-[220px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {customers.map((c) => {
+                  {filteredCustomers.map((c) => {
                     const stripeOk = c.stripe_account_id && c.stripe_onboarding_complete;
                     const isActive = c.is_active !== false;
-                    const acctLabel = (c.account_type ?? "")
-                      .split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+                    const isMgmt = c.account_type === "management_company";
                     return (
                       <TableRow key={c.id}>
                         <TableCell>
@@ -987,55 +1051,52 @@ export default function GodModePage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <span className="text-foreground">{c.owner_email ?? "—"}</span>
+                          <span className="text-sm text-foreground">{c.owner_email ?? "—"}</span>
                         </TableCell>
                         <TableCell>
-                          <PillBadge className="border-border bg-muted/50 text-foreground">
-                            {acctLabel || "—"}
+                          <PillBadge className={isMgmt ? "border-primary/30 bg-primary/10 text-primary" : "border-havn-amber/30 bg-havn-amber/10 text-havn-amber"}>
+                            {isMgmt ? "Mgmt Co." : "Self-Managed"}
                           </PillBadge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="text-sm font-semibold tabular-nums text-foreground">{c.community_count}</span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="text-sm tabular-nums text-foreground">{c.configured_states}</span>
                         </TableCell>
                         <TableCell>
                           {stripeOk ? (
-                            <PillBadge className="border-havn-success/40 bg-havn-success/15 text-emerald-900 dark:text-emerald-100">
-                              Connected
-                            </PillBadge>
+                            <PillBadge className="border-havn-success/40 bg-havn-success/15 text-emerald-900 dark:text-emerald-100">Connected</PillBadge>
                           ) : (
-                            <PillBadge className="border-havn-amber/40 bg-havn-amber/15 text-amber-900 dark:text-amber-100">
-                              Not connected
-                            </PillBadge>
+                            <PillBadge className="border-havn-amber/40 bg-havn-amber/15 text-amber-900 dark:text-amber-100">Not connected</PillBadge>
                           )}
                         </TableCell>
                         <TableCell>
                           {isActive ? (
-                            <PillBadge className="border-havn-success/40 bg-havn-success/20 text-emerald-950 dark:text-emerald-100">
-                              Active
-                            </PillBadge>
+                            <PillBadge className="border-havn-success/40 bg-havn-success/20 text-emerald-950 dark:text-emerald-100">Active</PillBadge>
                           ) : (
-                            <PillBadge className="border-border bg-muted/50 text-muted-foreground">
-                              Inactive
-                            </PillBadge>
+                            <PillBadge className="border-destructive/40 bg-destructive/10 text-destructive">Blocked</PillBadge>
                           )}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
+                            {isActive && (
+                              <Button type="button" variant="outline" size="sm" onClick={() => {
                                 void (async () => {
                                   const result = await startImpersonation(c.id, c.name);
-                                  if ("error" in result) {
-                                    toast.error(result.error);
-                                    return;
-                                  }
+                                  if ("error" in result) { toast.error(result.error); return; }
                                   window.open("/dashboard", "_blank");
                                   toast.success(`Impersonating ${c.name} in new tab`);
                                 })();
-                              }}
-                            >
-                              Impersonate
-                            </Button>
+                              }}>
+                                Impersonate
+                              </Button>
+                            )}
+                            {isActive && (
+                              <Button type="button" variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setBlockTarget(c)}>
+                                Block
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1045,8 +1106,48 @@ export default function GodModePage() {
               </Table>
             </div>
             )}
+
+            {/* Block confirmation dialog */}
+            {blockTarget && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                <div className="w-full max-w-md rounded-xl border border-destructive/30 bg-card p-6 shadow-lg" role="dialog" aria-modal="true">
+                  <h2 className="text-lg font-semibold text-foreground">Block {blockTarget.name}?</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    This will immediately:
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                    <li>Deactivate the organization</li>
+                    <li>Ban all associated user accounts</li>
+                    <li>Block all associated emails from creating new accounts on Havn</li>
+                  </ul>
+                  <p className="mt-3 text-sm font-medium text-destructive">This action cannot be easily undone.</p>
+                  <div className="mt-5 flex justify-end gap-3">
+                    <Button variant="outline" onClick={() => setBlockTarget(null)} disabled={blockConfirming}>Cancel</Button>
+                    <Button variant="destructive" disabled={blockConfirming} onClick={() => {
+                      setBlockConfirming(true);
+                      void (async () => {
+                        try {
+                          const result = await blockOrganization(blockTarget.id);
+                          if ("error" in result) { toast.error(result.error); return; }
+                          toast.success(`${blockTarget.name} has been blocked. ${result.blockedEmails.length} email(s) banned.`);
+                          setBlockTarget(null);
+                          // Reload customers
+                          const updated = await loadCustomers();
+                          if (!("error" in updated)) setCustomers(updated);
+                        } finally {
+                          setBlockConfirming(false);
+                        }
+                      })();
+                    }}>
+                      {blockConfirming ? "Blocking..." : "Confirm Block"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        ) : null}
+          );
+        })() : null}
 
         {tab === "order-lookup" ? (
           <div className="space-y-6">

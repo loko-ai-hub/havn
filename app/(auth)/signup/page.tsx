@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
+import { checkBlockedEmail } from "./actions";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -38,6 +39,13 @@ export default function SignupPage() {
     event.preventDefault();
     setError(null);
     setLoading(true);
+
+    const { blocked } = await checkBlockedEmail(email);
+    if (blocked) {
+      setError("This email address is not eligible to create an account. Please contact support.");
+      setLoading(false);
+      return;
+    }
 
     const { error: signUpError } = await supabase.auth.signUp({
       email,

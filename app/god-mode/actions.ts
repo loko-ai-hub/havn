@@ -272,6 +272,8 @@ export type CustomerRow = {
   stripe_onboarding_complete: boolean | null;
   is_active: boolean | null;
   owner_email: string | null;
+  community_count: number;
+  configured_states: number;
 };
 
 export async function loadCustomers(): Promise<CustomerRow[] | { error: string }> {
@@ -284,25 +286,56 @@ export async function loadCustomers(): Promise<CustomerRow[] | { error: string }
 
   if (error) return { error: error.message };
 
-  // Find owner email per org
   const orgIds = (orgs ?? []).map((o) => o.id as string);
-  const { data: owners } = await admin
-    .from("profiles")
-    .select("organization_id, id, role")
-    .in("organization_id", orgIds)
-    .eq("role", "owner");
+  if (orgIds.length === 0) return [];
 
+  // Parallel: owners, community counts, configured state counts
+  const [ownersRes, communitiesRes, feesRes] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("organization_id, id, role")
+      .in("organization_id", orgIds)
+      .eq("role", "owner"),
+    admin
+      .from("communities")
+      .select("organization_id")
+      .in("organization_id", orgIds)
+      .eq("status", "active"),
+    admin
+      .from("document_request_fees")
+      .select("organization_id, state")
+      .in("organization_id", orgIds),
+  ]);
+
+  // Owner emails
   const ownerMap = new Map<string, string>();
-  if (owners) {
+  if (ownersRes.data) {
     const userResults = await Promise.all(
-      owners.map((p) => admin.auth.admin.getUserById(p.id as string))
+      ownersRes.data.map((p) => admin.auth.admin.getUserById(p.id as string))
     );
-    for (let i = 0; i < owners.length; i++) {
+    for (let i = 0; i < ownersRes.data.length; i++) {
       const u = userResults[i];
       if (!u.error && u.data.user) {
-        ownerMap.set(owners[i].organization_id as string, u.data.user.email ?? "");
+        ownerMap.set(ownersRes.data[i].organization_id as string, u.data.user.email ?? "");
       }
     }
+  }
+
+  // Community counts
+  const communityCountMap = new Map<string, number>();
+  for (const row of communitiesRes.data ?? []) {
+    const oid = row.organization_id as string;
+    communityCountMap.set(oid, (communityCountMap.get(oid) ?? 0) + 1);
+  }
+
+  // Configured states count (distinct states per org from fees)
+  const stateSetMap = new Map<string, Set<string>>();
+  for (const row of feesRes.data ?? []) {
+    const oid = row.organization_id as string;
+    const st = row.state as string | null;
+    if (!st) continue;
+    if (!stateSetMap.has(oid)) stateSetMap.set(oid, new Set());
+    stateSetMap.get(oid)!.add(st.toUpperCase());
   }
 
   return (orgs ?? []).map((o) => ({
@@ -316,7 +349,82 @@ export async function loadCustomers(): Promise<CustomerRow[] | { error: string }
     stripe_onboarding_complete: o.stripe_onboarding_complete as boolean | null,
     is_active: o.is_active as boolean | null,
     owner_email: ownerMap.get(o.id as string) ?? null,
+    community_count: communityCountMap.get(o.id as string) ?? 0,
+    configured_states: stateSetMap.get(o.id as string)?.size ?? 0,
   }));
+}
+
+/* ── Block organization ───────────────────────────────────────────────── */
+
+export async function blockOrganization(
+  orgId: string
+): Promise<{ ok: true; blockedEmails: string[] } | { error: string }> {
+  const admin = createAdminClient();
+
+  // 1. Deactivate the org
+  const { error: deactivateError } = await admin
+    .from("organizations")
+    .update({ is_active: false })
+    .eq("id", orgId);
+
+  if (deactivateError) return { error: deactivateError.message };
+
+  // 2. Collect all user emails associated with this org
+  const { data: profiles } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("organization_id", orgId);
+
+  const blockedEmails: string[] = [];
+  if (profiles && profiles.length > 0) {
+    const userResults = await Promise.all(
+      profiles.map((p) => admin.auth.admin.getUserById(p.id as string))
+    );
+    for (const u of userResults) {
+      if (!u.error && u.data.user?.email) {
+        blockedEmails.push(u.data.user.email.toLowerCase());
+      }
+    }
+  }
+
+  // Also block the org support email if present
+  const { data: org } = await admin
+    .from("organizations")
+    .select("support_email")
+    .eq("id", orgId)
+    .single();
+
+  if (org?.support_email) {
+    const se = (org.support_email as string).toLowerCase();
+    if (!blockedEmails.includes(se)) blockedEmails.push(se);
+  }
+
+  // 3. Insert blocked emails
+  if (blockedEmails.length > 0) {
+    const rows = blockedEmails.map((email) => ({
+      email,
+      organization_id: orgId,
+      reason: "Organization blocked by platform admin",
+    }));
+    const { error: blockError } = await admin
+      .from("blocked_emails")
+      .upsert(rows, { onConflict: "email" });
+
+    if (blockError) {
+      console.error("[blockOrganization] blocked_emails insert:", blockError.message);
+    }
+  }
+
+  // 4. Disable auth for each user (ban them)
+  if (profiles && profiles.length > 0) {
+    await Promise.all(
+      profiles.map((p) =>
+        admin.auth.admin.updateUserById(p.id as string, { ban_duration: "876000h" })
+      )
+    );
+  }
+
+  return { ok: true, blockedEmails };
 }
 
 /* ── Impersonation ────────────────────────────────────────────────────── */
