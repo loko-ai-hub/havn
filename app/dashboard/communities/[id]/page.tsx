@@ -17,6 +17,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
 import ArchiveRestoreCommunityButton from "../archive-restore-button";
 import ComingSoonButton from "../coming-soon-button";
+import CommunityContactCard from "./contact-card";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ export default async function CommunityDetailPage({
   const c = community as CommunityRow;
   if (c.organization_id !== organizationId) notFound();
 
-  const [orgRes, openRequestsRes, docsRes] = await Promise.all([
+  const [orgRes, openRequestsRes, docsRes, contactsRes] = await Promise.all([
     admin
       .from("organizations")
       .select("support_email, support_phone")
@@ -84,10 +85,20 @@ export default async function CommunityDetailPage({
       .from("community_documents")
       .select("document_category")
       .eq("community_id", id),
+    admin
+      .from("community_contacts")
+      .select("contact_type, name, role, address, phone, email")
+      .eq("community_id", id),
   ]);
 
   const org = orgRes.data as { support_email: string | null; support_phone: string | null } | null;
   const openRequestsCount = openRequestsRes.count ?? 0;
+
+  type ContactRow = { contact_type: string; name: string | null; role: string | null; address: string | null; phone: string | null; email: string | null };
+  const contacts = (contactsRes.data ?? []) as ContactRow[];
+  const emptyContact = { name: null, role: null, address: null, phone: null, email: null };
+  const insuranceContact = contacts.find((c) => c.contact_type === "insurance_agent") ?? emptyContact;
+  const mgmtContact = contacts.find((c) => c.contact_type === "management_company") ?? emptyContact;
 
   type DocRow = { document_category: string | null };
   const presentCategories = new Set(
@@ -302,6 +313,25 @@ export default async function CommunityDetailPage({
                 </p>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Key Contacts */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">Key Contacts</h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <CommunityContactCard
+              communityId={id}
+              contactType="insurance_agent"
+              label="Insurance Agent"
+              initial={insuranceContact}
+            />
+            <CommunityContactCard
+              communityId={id}
+              contactType="management_company"
+              label="Management Company Contact"
+              initial={mgmtContact}
+            />
           </div>
         </div>
 
