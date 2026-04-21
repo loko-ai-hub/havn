@@ -643,6 +643,7 @@ export default function GodModePage() {
       <aside className="fixed left-0 top-0 z-30 flex h-screen w-64 shrink-0 flex-col bg-havn-navy text-white">
         <div className="border-b border-white/10 px-5 py-4">
           <span className="text-xl font-semibold tracking-tight text-white">Havn</span>
+          <span className="ml-2 rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/70">God Mode</span>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3">
           {navItems.map(({ id, label, icon: Icon }) => (
