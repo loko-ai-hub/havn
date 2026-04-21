@@ -458,6 +458,7 @@ export default function GodModePage() {
   const [stateConfigSaving, setStateConfigSaving] = useState(false);
   const [stateSearchQuery, setStateSearchQuery] = useState("");
   const [stateEnableSaving, setStateEnableSaving] = useState(false);
+  const [stateEnableToggle, setStateEnableToggle] = useState<boolean | null>(null);
   const [legalChecks, setLegalChecks] = useState<Record<string, LegalCheckResult>>({});
   const [legalCheckRunning, setLegalCheckRunning] = useState(false);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
@@ -1838,6 +1839,7 @@ export default function GodModePage() {
                             }
                             setSelectedConfigState(s.abbr);
                             setSelectedServiceIndex(0);
+                            setStateEnableToggle(null);
                           }}
                           className={cn(
                             "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors",
@@ -1860,61 +1862,79 @@ export default function GodModePage() {
               <div className="min-w-0 flex-1 space-y-6">
                 {selectedStateConfig ? (
                   <>
-                    <div className={cn(
-                      "rounded-xl border bg-card p-5",
-                      selectedStateConfig.enabled ? "border-havn-success/40" : "border-destructive/30"
-                    )}>
+                    <div className="rounded-xl border border-border bg-card p-5">
                       <div className="flex flex-wrap items-center justify-between gap-4">
                         <div>
                           <h2 className="text-lg font-semibold">{selectedStateConfig.stateName}</h2>
                           <p className="text-xs text-muted-foreground">{selectedStateConfig.state}</p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className={cn(
-                            "text-xs font-semibold",
-                            selectedStateConfig.enabled ? "text-havn-success" : "text-destructive"
-                          )}>
-                            {selectedStateConfig.enabled ? "Enabled" : "Disabled"}
-                          </span>
-                          <Button
+                          {/* Toggle switch */}
+                          <button
                             type="button"
-                            variant={selectedStateConfig.enabled ? "destructive" : "default"}
-                            size="sm"
-                            disabled={stateEnableSaving}
-                            onClick={() => {
-                              const newEnabled = !selectedStateConfig.enabled;
-                              setStateEnableSaving(true);
-                              void (async () => {
-                                try {
-                                  const result = await toggleStateEnabled(selectedConfigState, newEnabled);
-                                  if ("error" in result) {
-                                    toast.error(result.error);
-                                    return;
-                                  }
-                                  applyStateConfigUpdate((draft) => {
-                                    const idx = draft.findIndex((x) => x.state === selectedConfigState);
-                                    if (idx >= 0) draft[idx].enabled = newEnabled;
-                                    return draft;
-                                  });
-                                  setStateConfigBaseline((prev) => {
-                                    const next = deepClone(prev);
-                                    const idx = next.findIndex((x: GodModeStateConfig) => x.state === selectedConfigState);
-                                    if (idx >= 0) next[idx].enabled = newEnabled;
-                                    return next;
-                                  });
-                                  toast.success(`${selectedStateConfig.stateName} ${newEnabled ? "enabled" : "disabled"}`);
-                                } finally {
-                                  setStateEnableSaving(false);
-                                }
-                              })();
-                            }}
+                            role="switch"
+                            aria-checked={stateEnableToggle ?? selectedStateConfig.enabled}
+                            onClick={() => setStateEnableToggle((prev) => !(prev ?? selectedStateConfig.enabled))}
+                            className={cn(
+                              "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                              (stateEnableToggle ?? selectedStateConfig.enabled)
+                                ? "bg-havn-success"
+                                : "bg-muted-foreground/30"
+                            )}
                           >
-                            {stateEnableSaving ? "Saving…" : selectedStateConfig.enabled ? "Disable State" : "Enable State"}
-                          </Button>
+                            <span className={cn(
+                              "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
+                              (stateEnableToggle ?? selectedStateConfig.enabled) ? "translate-x-5" : "translate-x-0"
+                            )} />
+                          </button>
+                          <span className={cn(
+                            "text-sm font-medium",
+                            (stateEnableToggle ?? selectedStateConfig.enabled) ? "text-havn-success" : "text-muted-foreground"
+                          )}>
+                            {(stateEnableToggle ?? selectedStateConfig.enabled) ? "On" : "Off"}
+                          </span>
+                          {/* Show Save button when toggle differs from saved state */}
+                          {(stateEnableToggle != null && stateEnableToggle !== selectedStateConfig.enabled) && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={stateEnableSaving}
+                              onClick={() => {
+                                const newEnabled = stateEnableToggle;
+                                setStateEnableSaving(true);
+                                void (async () => {
+                                  try {
+                                    const result = await toggleStateEnabled(selectedConfigState, newEnabled);
+                                    if ("error" in result) {
+                                      toast.error(result.error);
+                                      return;
+                                    }
+                                    applyStateConfigUpdate((draft) => {
+                                      const idx = draft.findIndex((x) => x.state === selectedConfigState);
+                                      if (idx >= 0) draft[idx].enabled = newEnabled;
+                                      return draft;
+                                    });
+                                    setStateConfigBaseline((prev) => {
+                                      const next = deepClone(prev);
+                                      const idx = next.findIndex((x: GodModeStateConfig) => x.state === selectedConfigState);
+                                      if (idx >= 0) next[idx].enabled = newEnabled;
+                                      return next;
+                                    });
+                                    setStateEnableToggle(null);
+                                    toast.success(`${selectedStateConfig.stateName} ${newEnabled ? "enabled" : "disabled"}`);
+                                  } finally {
+                                    setStateEnableSaving(false);
+                                  }
+                                })();
+                              }}
+                            >
+                              {stateEnableSaving ? "Saving…" : "Save"}
+                            </Button>
+                          )}
                         </div>
                       </div>
-                      {!selectedStateConfig.enabled && (
-                        <p className="mt-3 text-sm text-destructive">
+                      {!(stateEnableToggle ?? selectedStateConfig.enabled) && (
+                        <p className="mt-3 text-sm text-muted-foreground">
                           This state is disabled. Management companies and associations cannot select it during onboarding or configure pricing for it.
                         </p>
                       )}
