@@ -38,28 +38,40 @@ export async function loadFees(state: string): Promise<FeeLoadResult | { error: 
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();
 
-  const [orgRes, allFeesRes] = await Promise.all([
+  const [orgRes, allFeesRes, communitiesRes] = await Promise.all([
     admin.from("organizations").select("state").eq("id", organizationId).single(),
     admin
       .from("document_request_fees")
       .select("master_type_key, state, base_fee, rush_same_day_fee, rush_next_day_fee, rush_3day_fee, standard_turnaround_days")
       .eq("organization_id", organizationId)
       .in("master_type_key", [...PRICING_DOC_TYPES]),
+    admin
+      .from("communities")
+      .select("state")
+      .eq("organization_id", organizationId)
+      .eq("status", "active"),
   ]);
 
   if (allFeesRes.error) return { error: allFeesRes.error.message };
 
   const orgPrimaryState = typeof orgRes.data?.state === "string" ? orgRes.data.state.toUpperCase() : "";
 
-  // Collect distinct states that have fees configured
+  // Build available states from: communities + existing fee rows + org primary state
   const stateSet = new Set<string>();
   if (orgPrimaryState) stateSet.add(orgPrimaryState);
+  for (const row of communitiesRes.data ?? []) {
+    if (typeof row.state === "string" && row.state.trim()) stateSet.add(row.state.trim().toUpperCase());
+  }
   for (const row of allFeesRes.data ?? []) {
-    if (typeof row.state === "string" && row.state) stateSet.add(row.state.toUpperCase());
+    if (typeof row.state === "string" && row.state.trim()) stateSet.add(row.state.trim().toUpperCase());
   }
   const configuredStates = [...stateSet].sort();
 
-  // Filter fees for the requested state
+  // Filter fees for the requested state (empty string = just return state list)
+  if (!state) {
+    return { fees: null, configuredStates, orgPrimaryState };
+  }
+
   const stateRows = (allFeesRes.data ?? []).filter(
     (r) => (r.state ?? "").toUpperCase() === state.toUpperCase()
   );

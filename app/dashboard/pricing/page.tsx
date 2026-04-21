@@ -282,12 +282,11 @@ export default function DashboardPricingPage() {
     setLoading(false);
   }, []);
 
-  // On mount: load the initial state list so we know which tabs to show
+  // On mount: load state list from communities, then auto-select first state
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      // Load with a placeholder to get configuredStates + orgPrimaryState
-      const result = await loadFees("__init__");
+      const result = await loadFees("");
       if ("error" in result) {
         setLoadError(result.error);
         setLoading(false);
@@ -295,7 +294,6 @@ export default function DashboardPricingPage() {
       }
       setConfiguredStates(result.configuredStates);
       setOrgPrimaryState(result.orgPrimaryState);
-      // Auto-select: first configured state, or org primary state
       const autoSelect = result.configuredStates[0] ?? result.orgPrimaryState;
       if (autoSelect) {
         setSelectedState(autoSelect);
