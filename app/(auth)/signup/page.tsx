@@ -1,5 +1,6 @@
 "use client";
 
+import { Mail } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -14,6 +15,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -50,6 +52,9 @@ export default function SignupPage() {
     const { error: signUpError } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
+      },
     });
 
     if (signUpError) {
@@ -58,8 +63,55 @@ export default function SignupPage() {
       return;
     }
 
-    router.push("/onboarding");
+    setEmailSent(true);
+    setLoading(false);
   };
+
+  // Confirmation screen
+  if (emailSent) {
+    return (
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-xl shadow-black/15 text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+          <Mail className="h-7 w-7 text-primary" />
+        </div>
+        <h1 className="mt-5 text-2xl font-semibold">Check your email</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          We sent a confirmation link to{" "}
+          <span className="font-medium text-foreground">{email}</span>.
+          Click the link to verify your email and get started.
+        </p>
+        <div className="mt-6 space-y-3">
+          <button
+            type="button"
+            onClick={() => {
+              setEmailSent(false);
+              setLoading(false);
+            }}
+            className="w-full rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
+          >
+            Use a different email
+          </button>
+          <p className="text-xs text-muted-foreground">
+            Didn&apos;t receive it? Check your spam folder or{" "}
+            <button
+              type="button"
+              className="text-foreground underline underline-offset-2"
+              onClick={() => void supabase.auth.resend({ type: "signup", email })}
+            >
+              resend the email
+            </button>
+            .
+          </p>
+        </div>
+        <p className="mt-5 text-center text-sm text-muted-foreground">
+          Already confirmed?{" "}
+          <Link href="/login" className="text-foreground underline underline-offset-2">
+            Log in
+          </Link>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-xl shadow-black/15">
