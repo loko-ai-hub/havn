@@ -249,6 +249,8 @@ export type LegalCheckItem = {
   severity: "info" | "warning" | "critical";
   statute_reference: string | null;
   effective_date: string | null;
+  document_type: string | null;
+  category: "fees" | "timing" | "requirements" | "disclosure" | "other" | null;
 };
 
 export type LegalCheckResult = {

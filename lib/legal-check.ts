@@ -18,11 +18,14 @@ const LegalCheckItem = z.object({
   severity: z.enum(["info", "warning", "critical"]),
   statute_reference: z.string().nullable(),
   effective_date: z.string().nullable(),
+  document_type: z.string().nullable(),
+  category: z.enum(["fees", "timing", "requirements", "disclosure", "other"]).nullable(),
 });
 
 const LegalCheckResultSchema = z.object({
   summary: z.string(),
   changes_detected: z.boolean(),
+  risk_level: z.enum(["low", "medium", "high"]),
   items: z.array(LegalCheckItem),
 });
 
@@ -64,23 +67,24 @@ function buildPrompt(
     })
     .join("\n");
 
-  return `You are a regulatory compliance analyst specializing in HOA and COA (Homeowners Association / Condominium Owners Association) law in the United States.
+  return `You are a regulatory compliance analyst for HOA/COA document management in the United States.
 
-Analyze the current legal landscape for ${stateName} (${stateAbbr}) regarding HOA/COA document fees, requirements, and regulations.
+Analyze ${stateName} (${stateAbbr}) and produce a concise, actionable compliance report.
 
-Current configuration for ${stateAbbr}:
+Current platform configuration for ${stateAbbr}:
 ${serviceLines || "(no services configured)"}
 
-Provide:
-1. A brief 1-2 sentence summary of the regulatory status for this state
-2. Any legislative changes in the last 12 months that affect HOA/COA document pricing, fee caps, turnaround requirements, or disclosure rules
-3. Any pending or proposed legislation that could impact these areas
-4. Whether any of the current configurations shown above may need updating based on current law
-5. Specific action items if changes are needed
+INSTRUCTIONS:
+- Give a 1-2 sentence executive summary with overall risk level
+- Group findings by document type (resale_certificate, lender_questionnaire, certificate_update, demand_letter, etc.)
+- For each finding, categorize as: fees, timing, requirements, disclosure, or other
+- Focus on what MATTERS: fee cap changes, turnaround deadline changes, new disclosure requirements, pending legislation that could affect pricing
+- Keep it to 3-5 key items maximum — synthesize, don't enumerate every statute
+- Only flag action_needed if the current configuration shown above is actually wrong or at risk
+- If you are not aware of recent changes, say "No changes identified" — do not speculate
+- Set changes_detected to true ONLY if there is something the operator should review or update
 
-Focus on: resale certificates / disclosure packages, lender questionnaires, certificate updates, demand letters, estoppel letters, fee caps, statutory limits, rush delivery requirements, and auto-refund requirements.
-
-Be specific about statute references and effective dates where possible. If you are not aware of recent changes for this state, say so clearly rather than speculating.`;
+Each item must include document_type (which document it relates to, e.g. "resale_certificate") and category (fees/timing/requirements/disclosure/other).`;
 }
 
 /* ── Core check function ──────────────────────────────────────────────── */

@@ -2407,54 +2407,65 @@ export default function GodModePage() {
                               </div>
 
                               {/* Items */}
-                              {check.details.length > 0 && (
-                                <div className="space-y-3">
-                                  {[...check.details].sort((a, b) => {
-                                    const typePri: Record<string, number> = { action_needed: 0, recent_change: 1, pending_legislation: 2, current_law: 3 };
-                                    const sevPri: Record<string, number> = { critical: 0, warning: 1, info: 2 };
-                                    return (typePri[a.type] ?? 9) - (typePri[b.type] ?? 9) || (sevPri[a.severity] ?? 9) - (sevPri[b.severity] ?? 9);
-                                  }).map((item, i) => (
-                                    <div
-                                      key={i}
-                                      className={cn(
-                                        "rounded-lg border px-4 py-3",
-                                        item.severity === "critical"
-                                          ? "border-destructive/30 bg-destructive/5"
-                                          : item.severity === "warning"
-                                          ? "border-havn-amber/30 bg-havn-amber/5"
-                                          : "border-border bg-muted/30"
-                                      )}
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <span className={cn(
-                                          "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
-                                          item.type === "action_needed"
-                                            ? "bg-destructive/10 text-destructive"
-                                            : item.type === "recent_change"
-                                            ? "bg-havn-amber/10 text-havn-amber"
-                                            : item.type === "pending_legislation"
-                                            ? "bg-primary/10 text-primary"
-                                            : "bg-muted text-muted-foreground"
-                                        )}>
-                                          {item.type.replace(/_/g, " ")}
-                                        </span>
-                                        {item.statute_reference && (
-                                          <span className="text-[10px] font-mono text-muted-foreground">
-                                            {item.statute_reference}
-                                          </span>
-                                        )}
+                              {check.details.length > 0 && (() => {
+                                // Group items by document_type
+                                const grouped = new Map<string, typeof check.details>();
+                                for (const item of check.details) {
+                                  const key = item.document_type ?? "General";
+                                  if (!grouped.has(key)) grouped.set(key, []);
+                                  grouped.get(key)!.push(item);
+                                }
+                                const catBadge: Record<string, string> = {
+                                  fees: "bg-havn-amber/10 text-havn-amber",
+                                  timing: "bg-primary/10 text-primary",
+                                  requirements: "bg-muted text-foreground",
+                                  disclosure: "bg-havn-success/10 text-havn-success",
+                                  other: "bg-muted text-muted-foreground",
+                                };
+                                return (
+                                  <div className="space-y-4">
+                                    {[...grouped.entries()].map(([docType, items]) => (
+                                      <div key={docType} className="rounded-lg border border-border">
+                                        <div className="border-b border-border bg-muted/30 px-4 py-2">
+                                          <p className="text-xs font-semibold uppercase tracking-wider text-foreground">
+                                            {formatMasterTypeKey(docType)}
+                                          </p>
+                                        </div>
+                                        <div className="divide-y divide-border">
+                                          {items.map((item, i) => (
+                                            <div key={i} className="px-4 py-3">
+                                              <div className="flex items-center gap-2">
+                                                <span className={cn(
+                                                  "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+                                                  item.type === "action_needed"
+                                                    ? "bg-destructive/10 text-destructive"
+                                                    : item.type === "recent_change"
+                                                    ? "bg-havn-amber/10 text-havn-amber"
+                                                    : item.type === "pending_legislation"
+                                                    ? "bg-primary/10 text-primary"
+                                                    : "bg-muted text-muted-foreground"
+                                                )}>
+                                                  {item.type.replace(/_/g, " ")}
+                                                </span>
+                                                {item.category && (
+                                                  <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-medium", catBadge[item.category] ?? catBadge.other)}>
+                                                    {item.category}
+                                                  </span>
+                                                )}
+                                                {item.statute_reference && (
+                                                  <span className="text-[10px] font-mono text-muted-foreground">{item.statute_reference}</span>
+                                                )}
+                                              </div>
+                                              <p className="mt-1 text-sm font-medium text-foreground">{item.title}</p>
+                                              <p className="mt-0.5 text-xs text-muted-foreground">{item.description}</p>
+                                            </div>
+                                          ))}
+                                        </div>
                                       </div>
-                                      <p className="mt-1.5 text-sm font-medium text-foreground">{item.title}</p>
-                                      <p className="mt-0.5 text-xs text-muted-foreground">{item.description}</p>
-                                      {item.effective_date && (
-                                        <p className="mt-1 text-[10px] text-muted-foreground">
-                                          Effective: {item.effective_date}
-                                        </p>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                                    ))}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           );
                         })()}

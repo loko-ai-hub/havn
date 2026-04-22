@@ -30,6 +30,16 @@ const OnboardingPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isStepVisible, setIsStepVisible] = useState(false);
 
+  // Verify the user is actually signed in before onboarding
+  useEffect(() => {
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.replace("/login");
+      }
+    })();
+  }, [supabase, router]);
+
   useEffect(() => {
     setIsStepVisible(false);
     const frame = requestAnimationFrame(() => setIsStepVisible(true));
@@ -58,7 +68,7 @@ const OnboardingPage = () => {
         error: userError,
       } = await supabase.auth.getUser();
       if (userError || !user) {
-        throw new Error(userError?.message ?? "Unable to find current user.");
+        throw new Error(userError?.message ?? "Your session has expired. Please log in again.");
       }
 
       const { data: org, error: orgError } = await supabase
@@ -223,7 +233,7 @@ const OnboardingPage = () => {
         error: userError,
       } = await supabase.auth.getUser();
       if (userError || !user) {
-        throw new Error(userError?.message ?? "Unable to find current user.");
+        throw new Error(userError?.message ?? "Your session has expired. Please log in again.");
       }
 
       if (emails.length > 0) {
