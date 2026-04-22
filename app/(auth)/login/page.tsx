@@ -1,8 +1,10 @@
 "use client";
 
+import { Mail } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
 import { GOD_MODE_EMAILS } from "@/app/god-mode/constants";
@@ -19,6 +21,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -51,6 +55,11 @@ export default function LoginPage() {
     });
 
     if (signInError) {
+      if (signInError.message.toLowerCase().includes("email not confirmed")) {
+        setNeedsVerification(true);
+        setLoading(false);
+        return;
+      }
       setError(signInError.message);
       setLoading(false);
       return;
@@ -58,6 +67,48 @@ export default function LoginPage() {
 
     router.push(destinationForEmail(email));
   };
+
+  if (needsVerification) {
+    return (
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-xl shadow-black/15 text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-havn-amber/10">
+          <Mail className="h-7 w-7 text-havn-amber" />
+        </div>
+        <h1 className="mt-5 text-2xl font-semibold">Verify your email</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Your account exists but the email <span className="font-medium text-foreground">{email}</span> hasn&apos;t been verified yet.
+          Check your inbox for the confirmation link.
+        </p>
+        <div className="mt-6 space-y-3">
+          <button
+            type="button"
+            disabled={resending}
+            onClick={() => {
+              setResending(true);
+              void (async () => {
+                await supabase.auth.resend({ type: "signup", email });
+                toast.success("Verification email resent.");
+                setResending(false);
+              })();
+            }}
+            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
+          >
+            {resending ? "Sending..." : "Resend verification email"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setNeedsVerification(false);
+              setError(null);
+            }}
+            className="w-full rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
+          >
+            Back to login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-xl shadow-black/15">
