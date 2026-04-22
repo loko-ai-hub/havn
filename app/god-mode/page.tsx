@@ -3,11 +3,15 @@
 import type { DateRange } from "react-day-picker";
 import { format, parseISO, differenceInCalendarDays } from "date-fns";
 import {
+  AlertTriangle,
   BarChart3,
+  Check,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   ClipboardList,
+  DollarSign,
   FileText,
   Home,
   LayoutTemplate,
@@ -463,6 +467,7 @@ export default function GodModePage() {
   const [legalCheckRunning, setLegalCheckRunning] = useState(false);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
+  const [userName, setUserName] = useState("");
   const [custSearch, setCustSearch] = useState("");
   const [custTypeFilter, setCustTypeFilter] = useState<"all" | "management_company" | "self_managed">("all");
   const [custStateFilter, setCustStateFilter] = useState("");
@@ -553,7 +558,17 @@ export default function GodModePage() {
   useEffect(() => {
     void loadKpis();
     void loadConfigs();
+    void loadAllOrders();
     void (async () => {
+      // Load user name
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const meta = user.user_metadata ?? {};
+        const name = (meta.full_name as string) || (meta.first_name as string) || user.email?.split("@")[0] || "";
+        setUserName(name);
+      }
+      // Load customers
       const result = await loadCustomers();
       if ("error" in result) {
         toast.error(`Customers: ${result.error}`);
@@ -562,7 +577,7 @@ export default function GodModePage() {
       }
       setCustomersLoading(false);
     })();
-  }, [loadKpis, loadConfigs]);
+  }, [loadKpis, loadConfigs, loadAllOrders]);
 
   useEffect(() => {
     if (tab === "order-lookup") void loadAllOrders();
@@ -709,139 +724,235 @@ export default function GodModePage() {
       </aside>
 
       <main className="ml-64 min-h-screen flex-1 overflow-y-auto px-8 py-8">
-        {tab === "home" ? (
-          <div className="space-y-8">
+        {tab === "home" ? (() => {
+          // Compute action items from real data
+          const overdueOrders = orders.filter((o) => {
+            if (o.order_status !== "paid" && o.order_status !== "in_progress") return false;
+            if (!o.created_at) return false;
+            const closing = (o as Record<string, unknown>).closing_date as string | null;
+            if (!closing) return false;
+            return new Date(closing) < new Date();
+          }).length;
+          const payoutNotConnected = customers.filter((c) => c.is_active !== false && !c.stripe_onboarding_complete).length;
+          const blockedCustomers = customers.filter((c) => c.is_active === false).length;
+          const disabledStates = stateConfigDraft.filter((c) => !c.enabled).length;
+          const openOrders = orders.filter((o) => o.order_status === "paid" || o.order_status === "in_progress").length;
+          const monthlyRevenue = orders
+            .filter((o) => {
+              if (!o.created_at) return false;
+              const d = parseISO(o.created_at);
+              const now = new Date();
+              return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && (o.order_status === "paid" || o.order_status === "fulfilled");
+            })
+            .reduce((s, o) => s + (Number(o.total_fee) || 0), 0);
+          const activeCompanies = customers.filter((c) => c.is_active !== false).length;
+          const selfManaged = customers.filter((c) => c.account_type === "self_managed" && c.is_active !== false).length;
+          const timeSaved = (orderCount ?? 0) * 0.5;
+
+          type ActionItem = { severity: "critical" | "warning" | "info"; title: string; desc: string; action: string; targetTab: TabId };
+          const actionItems: ActionItem[] = [];
+          if (overdueOrders > 0) actionItems.push({ severity: "critical", title: `${overdueOrders} overdue order(s)`, desc: "Orders have passed their due date and need immediate attention.", action: "View Orders", targetTab: "order-lookup" });
+          if (payoutNotConnected > 0) actionItems.push({ severity: "warning", title: `${payoutNotConnected} account(s) missing payout setup`, desc: "Payments are processing but funds cannot be disbursed until bank accounts are connected.", action: "View Customers", targetTab: "customers" });
+          if (blockedCustomers > 0) actionItems.push({ severity: "info", title: `${blockedCustomers} blocked account(s)`, desc: "Customer accounts are currently blocked from accessing the platform.", action: "View Customers", targetTab: "customers" });
+          if (disabledStates > 0) actionItems.push({ severity: "info", title: `${disabledStates} state(s) disabled`, desc: "These states are configured but not live — they will not appear during onboarding.", action: "State Config", targetTab: "state-config" });
+
+          const legalItems = Object.values(legalChecks).flatMap((c) =>
+            c.details
+              .filter((d) => d.type === "recent_change" || d.type === "action_needed" || d.type === "pending_legislation")
+              .map((d) => ({ ...d, state: c.state }))
+          ).sort((a, b) => {
+            const sev = { critical: 0, warning: 1, info: 2 };
+            return (sev[a.severity] ?? 2) - (sev[b.severity] ?? 2);
+          });
+
+          return (
+          <div className="space-y-6">
+            {/* Greeting */}
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Platform overview</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Internal Havn admin (scoped to your session).</p>
+              <h2 className="text-xl font-bold text-foreground">Welcome back{userName ? `, ${userName}` : ""}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Here&apos;s what needs your attention today.</p>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <PlatformKpiCard label="Total Customers" value={String(customers.length)} subtext="Active organizations" />
-              <PlatformKpiCard
-                label="Total Orders"
-                value={orderCount == null ? "—" : String(orderCount)}
-                subtext="Across all organizations"
-              />
-              <PlatformKpiCard
-                label="Net Revenue"
-                value={platformRevenue == null ? "—" : formatCurrency(platformRevenue)}
-                subtext="Paid minus refunds"
-              />
-              <PlatformKpiCard
-                label="States Enabled"
-                value={String(stateConfigDraft.filter((c) => c.enabled).length)}
-                subtext={stateConfigDraft.filter((c) => c.enabled).map((c) => c.state).join(", ") || "None"}
-              />
+
+            {/* Quick Stats — clickable cards */}
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {[
+                { label: "OPEN ORDERS", value: String(openOrders), sub: "Current", target: "order-lookup" as TabId },
+                { label: "PENDING REVIEWS", value: "0", sub: "Current", target: "document-review" as TabId },
+                { label: "CUSTOMERS", value: String(customers.length), sub: "All time", target: "customers" as TabId },
+                { label: "MONTHLY REVENUE", value: formatCurrency(monthlyRevenue), sub: "This month", target: "analytics" as TabId },
+              ].map((card) => (
+                <button
+                  key={card.label}
+                  type="button"
+                  onClick={() => setTab(card.target)}
+                  className="rounded-xl border border-border bg-card px-5 py-4 text-left transition-colors hover:bg-muted/20"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</p>
+                  <p className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-foreground">{card.value}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{card.sub}</p>
+                </button>
+              ))}
             </div>
-            <section className="rounded-xl border border-border bg-card shadow-sm">
-              <div className="border-b border-border px-5 py-3">
-                <h2 className="text-sm font-semibold text-foreground">Platform Health</h2>
-              </div>
-              <ul className="space-y-3 p-5 text-sm text-foreground">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-havn-success" aria-hidden />
-                  <span>
-                    Resend: <strong>Verified</strong> (orders@havnhq.com)
-                  </span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-havn-success" aria-hidden />
-                  <span>
-                    Stripe Connect: <strong>Enabled</strong>
-                  </span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-havn-success" aria-hidden />
-                  <span>
-                    Domain: <strong>havnhq.com</strong>
-                  </span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-havn-success" aria-hidden />
-                  <span>
-                    Database: <strong>Supabase connected</strong>
-                  </span>
-                </li>
-              </ul>
+
+            {/* Action Items */}
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              {actionItems.length > 0 ? (
+                <>
+                  <div className="border-b border-border bg-muted/30 px-5 py-2.5">
+                    <p className="text-sm font-semibold text-foreground">Action Items</p>
+                  </div>
+                  <div className="divide-y divide-border">
+                    {actionItems.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between gap-4 px-5 py-2.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className={cn(
+                            "h-2 w-2 shrink-0 rounded-full",
+                            item.severity === "critical" ? "bg-destructive" : item.severity === "warning" ? "bg-havn-amber" : "bg-muted-foreground/40"
+                          )} />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground">{item.title}</p>
+                            <p className="hidden text-xs text-muted-foreground sm:block">{item.desc}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setTab(item.targetTab)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                        >
+                          {item.action}
+                          <ChevronRight className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center gap-3 bg-havn-success/5 border-havn-success/20 px-5 py-4">
+                  <Check className="h-5 w-5 text-havn-success" />
+                  <p className="text-sm font-medium text-foreground">All caught up! No action items right now.</p>
+                </div>
+              )}
             </section>
 
-            {/* Recent Legal Alerts */}
-            {(() => {
-              const allChecks = Object.values(legalChecks);
-              const alertStates = allChecks.filter((c) => c.changes_detected);
-              const recentItems = allChecks.flatMap((c) =>
-                c.details
-                  .filter((d) => d.type === "recent_change" || d.type === "action_needed" || d.type === "pending_legislation")
-                  .map((d) => ({ ...d, state: c.state, checked_at: c.checked_at }))
-              ).sort((a, b) => {
-                const sev = { critical: 0, warning: 1, info: 2 };
-                return (sev[a.severity] ?? 2) - (sev[b.severity] ?? 2);
-              });
-              return (
-                <section className="rounded-xl border border-border bg-card shadow-sm">
-                  <div className="border-b border-border px-5 py-3">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-sm font-semibold text-foreground">Legal Alerts</h2>
-                      {alertStates.length > 0 && (
-                        <span className="rounded-full bg-havn-amber/15 px-2.5 py-0.5 text-xs font-semibold text-havn-amber">
-                          {recentItems.length} item{recentItems.length === 1 ? "" : "s"}
-                        </span>
-                      )}
-                    </div>
+            {/* Platform Health — inline KPI row */}
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="flex items-center justify-between border-b border-border bg-muted/30 px-5 py-3">
+                <p className="text-sm font-semibold text-foreground">Platform Health</p>
+                <button type="button" onClick={() => setTab("analytics")} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+                  Details <ChevronRight className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 divide-x divide-border md:grid-cols-5">
+                {[
+                  { label: "AUTO-FILL RATE", value: "—" },
+                  { label: "LIFETIME ORDERS", value: orderCount == null ? "—" : orderCount.toLocaleString() },
+                  { label: "ACTIVE COMPANIES", value: String(activeCompanies) },
+                  { label: "SELF-MANAGED", value: String(selfManaged) },
+                  { label: "TIME SAVED", value: `${Math.round(timeSaved).toLocaleString()}h` },
+                ].map((kpi) => (
+                  <div key={kpi.label} className="px-5 py-4 text-center">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{kpi.label}</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-foreground">{kpi.value}</p>
                   </div>
-                  <div className="p-5">
-                    {recentItems.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No legal changes flagged. {Object.keys(legalChecks).length === 0 ? "Run an AI check from State Config to get started." : "All states are up to date."}
-                      </p>
-                    ) : (
-                      <div className="space-y-3">
-                        {recentItems.slice(0, 5).map((item, i) => (
-                          <div
-                            key={i}
-                            className={cn(
-                              "rounded-lg border px-4 py-3 cursor-pointer transition-colors hover:bg-muted/30",
-                              item.severity === "critical"
-                                ? "border-destructive/30 bg-destructive/5"
-                                : item.severity === "warning"
-                                ? "border-havn-amber/30 bg-havn-amber/5"
-                                : "border-border"
-                            )}
-                            onClick={() => { setTab("state-config"); setSelectedConfigState(item.state); setSelectedServiceIndex(0); setStateEnableToggle(null); }}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">{item.state}</span>
-                              <span className={cn(
-                                "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
-                                item.type === "action_needed"
-                                  ? "bg-destructive/10 text-destructive"
-                                  : item.type === "recent_change"
-                                  ? "bg-havn-amber/10 text-havn-amber"
-                                  : "bg-primary/10 text-primary"
-                              )}>
-                                {item.type.replace(/_/g, " ")}
-                              </span>
-                              {item.statute_reference && (
-                                <span className="text-[10px] font-mono text-muted-foreground">{item.statute_reference}</span>
-                              )}
-                            </div>
-                            <p className="mt-1.5 text-sm font-medium text-foreground">{item.title}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{item.description}</p>
+                ))}
+              </div>
+            </section>
+
+            {/* Latest Activity */}
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="flex items-center justify-between border-b border-border bg-muted/30 px-5 py-3">
+                <p className="text-sm font-semibold text-foreground">Latest Activity</p>
+                <button type="button" onClick={() => setTab("order-lookup")} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+                  Order Lookup <ChevronRight className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="max-h-[400px] divide-y divide-border overflow-y-auto">
+                {ordersLoading ? (
+                  <p className="px-5 py-4 text-sm text-muted-foreground">Loading...</p>
+                ) : orders.length === 0 ? (
+                  <p className="px-5 py-4 text-sm text-muted-foreground">No orders yet.</p>
+                ) : (
+                  orders.slice(0, 20).map((o) => {
+                    const statusCfg: Record<string, string> = {
+                      paid: "bg-havn-amber/10 text-havn-amber",
+                      in_progress: "bg-blue-500/10 text-blue-600",
+                      fulfilled: "bg-havn-success/10 text-havn-success",
+                      cancelled: "bg-destructive/10 text-destructive",
+                      refunded: "bg-destructive/10 text-destructive",
+                    };
+                    const statusLabel: Record<string, string> = {
+                      paid: "Open",
+                      in_progress: "In Progress",
+                      fulfilled: "Completed",
+                      cancelled: "Cancelled",
+                      refunded: "Refunded",
+                    };
+                    return (
+                      <div key={o.id} className="flex items-center justify-between gap-4 px-5 py-2.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
                           </div>
-                        ))}
-                        {recentItems.length > 5 && (
-                          <button type="button" onClick={() => setTab("state-config")} className="text-sm font-medium text-primary hover:underline">
-                            View all {recentItems.length} alerts in State Config
-                          </button>
-                        )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">
+                              {o.id.slice(0, 8)} · {formatMasterTypeKey(o.master_type_key)}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {o.requester_name ?? "—"} · {o.property_address ?? "—"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <span className={cn(
+                            "rounded-full px-2.5 py-0.5 text-[10px] font-semibold",
+                            statusCfg[o.order_status ?? ""] ?? "bg-muted/50 text-muted-foreground"
+                          )}>
+                            {statusLabel[o.order_status ?? ""] ?? o.order_status}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">{formatOrderDate(o.created_at)}</span>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </section>
-              );
-            })()}
+                    );
+                  })
+                )}
+              </div>
+            </section>
+
+            {/* Legal Alerts (Havn-specific, not in Lovable) */}
+            {legalItems.length > 0 && (
+              <section className="overflow-hidden rounded-xl border border-border bg-card">
+                <div className="flex items-center justify-between border-b border-border bg-muted/30 px-5 py-3">
+                  <p className="text-sm font-semibold text-foreground">Legal Alerts</p>
+                  <span className="rounded-full bg-havn-amber/15 px-2.5 py-0.5 text-xs font-semibold text-havn-amber">
+                    {legalItems.length} item{legalItems.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <div className="divide-y divide-border">
+                  {legalItems.slice(0, 5).map((item, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between gap-4 px-5 py-2.5 cursor-pointer transition-colors hover:bg-muted/20"
+                      onClick={() => { setTab("state-config"); setSelectedConfigState(item.state); setSelectedServiceIndex(0); setStateEnableToggle(null); }}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={cn(
+                          "h-2 w-2 shrink-0 rounded-full",
+                          item.severity === "critical" ? "bg-destructive" : item.severity === "warning" ? "bg-havn-amber" : "bg-muted-foreground/40"
+                        )} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground">{item.title}</p>
+                          <p className="text-xs text-muted-foreground truncate">{item.state} · {item.statute_reference ?? item.type.replace(/_/g, " ")}</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
-        ) : null}
+          );
+        })() : null}
 
         {tab === "analytics" ? (
           <div className="space-y-8">
