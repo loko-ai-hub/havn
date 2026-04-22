@@ -36,6 +36,7 @@ type OrderRow = {
   total_fee: number | null;
   order_status: string | null;
   closing_date: string | null;
+  community_id: string | null;
 };
 
 type CommunityDoc = {
@@ -341,7 +342,7 @@ export default function DashboardPerformancePage() {
     const [ordersRes, commRes] = await Promise.all([
       supabase
         .from("document_orders")
-        .select("id, created_at, master_type_key, total_fee, order_status, closing_date")
+        .select("id, created_at, master_type_key, total_fee, order_status, closing_date, community_id")
         .eq("organization_id", orgId)
         .neq("order_status", "pending_payment")
         .order("created_at", { ascending: false }),
@@ -376,9 +377,10 @@ export default function DashboardPerformancePage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // Derived orders (community filter omitted — document_orders has no community_id)
-  // selectedCommunity is retained in state for future use when the column is added
-  const orders = useMemo(() => allOrders, [allOrders]);
+  const orders = useMemo(() => {
+    if (!selectedCommunity) return allOrders;
+    return allOrders.filter((o) => o.community_id === selectedCommunity);
+  }, [allOrders, selectedCommunity]);
 
   // ─ KPI values ─
   const periodSubtext = period === "t12" ? "Last 12 months" : period === "t24" ? "Last 24 months" : "All time";

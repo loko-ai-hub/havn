@@ -233,30 +233,7 @@ export default async function CommunityDetailPage({
           </div>
 
           {/* Detail mini-cards */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {/* Contact */}
-            <div className="space-y-3 rounded-xl border border-border bg-card p-5">
-              <div className="mb-1 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
-                    <Users className="h-3.5 w-3.5 text-primary" />
-                  </div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Contact
-                  </h4>
-                </div>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {c.manager_name?.trim() ? c.manager_name : "Unassigned"}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {org?.support_email ?? "—"}
-                </p>
-                <p className="text-xs text-muted-foreground">{org?.support_phone ?? "—"}</p>
-              </div>
-            </div>
-
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Location */}
             <div className="space-y-3 rounded-xl border border-border bg-card p-5">
               <div className="mb-1 flex items-center justify-between">

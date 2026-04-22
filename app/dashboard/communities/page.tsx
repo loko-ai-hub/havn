@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { US_STATES } from "@/lib/us-states";
 
 import { addCommunity, archiveCommunity } from "./actions";
+import { loadEnabledStates } from "@/lib/enabled-states-action";
 import BulkUploadModal from "./bulk-upload-modal";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ export default function DashboardCommunitiesPage() {
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [enabledStates, setEnabledStates] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
 
   const [form, setForm] = useState({
@@ -177,6 +179,7 @@ export default function DashboardCommunitiesPage() {
 
   useEffect(() => {
     void loadData();
+    void loadEnabledStates().then((s) => setEnabledStates(new Set(s)));
   }, [loadData]);
 
   // ─── Derived ────────────────────────────────────────────────────────────────
@@ -536,6 +539,12 @@ export default function DashboardCommunitiesPage() {
                       <option key={s.abbr} value={s.abbr}>{s.abbr}</option>
                     ))}
                   </select>
+                  {form.state && !enabledStates.has(form.state) && (
+                    <div className="rounded-md border border-havn-amber/40 bg-havn-amber/10 px-3 py-2 text-xs text-foreground">
+                      <p className="font-semibold">Havn is not yet live in {form.state}.</p>
+                      <p className="mt-0.5 text-muted-foreground">You can add this community, but you won&apos;t be able to accept orders until this state is enabled. <a href="mailto:support@havnhq.com?subject=Request to enable {form.state}" className="underline hover:text-foreground">Notify Havn to unlock this state</a></p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">

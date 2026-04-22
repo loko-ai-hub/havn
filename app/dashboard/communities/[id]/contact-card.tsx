@@ -1,7 +1,7 @@
 "use client";
 
+import { Building2, Mail, MapPin, Pencil, Phone, Shield, User, X } from "lucide-react";
 import { useState } from "react";
-import { Mail, MapPin, Pencil, Phone, Shield, User, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { upsertCommunityContact } from "./actions";
@@ -38,23 +38,66 @@ function Field({ icon, value, placeholder }: { icon: React.ReactNode; value: str
   );
 }
 
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+// Parse combined address string into parts
+function parseAddress(addr: string | null): { street: string; city: string; state: string; zip: string } {
+  if (!addr) return { street: "", city: "", state: "", zip: "" };
+  // Try "Street, City, ST ZIP" format
+  const parts = addr.split(",").map((s) => s.trim());
+  if (parts.length >= 2) {
+    const street = parts[0];
+    const cityStateZip = parts.slice(1).join(", ").trim();
+    const match = cityStateZip.match(/^(.+?)\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    if (match) return { street, city: match[1].replace(/,\s*$/, ""), state: match[2], zip: match[3] };
+    return { street, city: cityStateZip, state: "", zip: "" };
+  }
+  return { street: addr, city: "", state: "", zip: "" };
+}
+
+function combineAddress(street: string, city: string, state: string, zip: string): string | null {
+  const parts = [street, [city, state, zip].filter(Boolean).join(" ")].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
 export default function CommunityContactCard({ communityId, contactType, label, initial }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [contact, setContact] = useState<Contact>(initial);
   const [draft, setDraft] = useState<Contact>(initial);
 
+  // Separate address fields for editing
+  const [addrParts, setAddrParts] = useState(() => parseAddress(initial.address));
+
   const isEmpty = !contact.name && !contact.role && !contact.address && !contact.phone && !contact.email;
 
+  const defaultRole = contactType === "insurance_agent" ? "Insurance Agent" : "Management Contact";
+
   const handleSave = async () => {
+    // Email validation
+    if (draft.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
     setSaving(true);
     try {
-      const result = await upsertCommunityContact(communityId, contactType, draft);
+      const finalDraft = {
+        ...draft,
+        role: draft.role || defaultRole,
+        address: combineAddress(addrParts.street, addrParts.city, addrParts.state, addrParts.zip),
+      };
+      const result = await upsertCommunityContact(communityId, contactType, finalDraft);
       if (result && "error" in result) {
         toast.error(result.error);
         return;
       }
-      setContact(draft);
+      setContact(finalDraft);
       setEditing(false);
       toast.success(`${label} contact saved.`);
     } finally {
@@ -64,12 +107,21 @@ export default function CommunityContactCard({ communityId, contactType, label, 
 
   const handleCancel = () => {
     setDraft(contact);
+    setAddrParts(parseAddress(contact.address));
     setEditing(false);
+  };
+
+  const handleStartEdit = () => {
+    setDraft({ ...contact, role: contact.role || defaultRole });
+    setAddrParts(parseAddress(contact.address));
+    setEditing(true);
   };
 
   const iconEl = contactType === "insurance_agent"
     ? <Shield className="h-3.5 w-3.5 text-primary" />
     : <User className="h-3.5 w-3.5 text-primary" />;
+
+  const inputCls = "w-full rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-havn-navy/20";
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 space-y-4">
@@ -84,11 +136,7 @@ export default function CommunityContactCard({ communityId, contactType, label, 
           </h4>
         </div>
         {!editing && (
-          <button
-            type="button"
-            onClick={() => { setDraft(contact); setEditing(true); }}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          >
+          <button type="button" onClick={handleStartEdit} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
             <Pencil className="h-3 w-3" />
           </button>
         )}
@@ -118,43 +166,58 @@ export default function CommunityContactCard({ communityId, contactType, label, 
       {/* Edit mode */}
       {editing && (
         <div className="space-y-3">
-          {(["name", "role", "address", "phone", "email"] as const).map((field) => (
-            <div key={field}>
-              <label className="mb-1 block text-xs font-medium capitalize text-muted-foreground">
-                {field}
-              </label>
-              <input
-                type={field === "email" ? "email" : field === "phone" ? "tel" : "text"}
-                value={draft[field] ?? ""}
-                onChange={(e) => setDraft((p) => ({ ...p, [field]: e.target.value || null }))}
-                placeholder={
-                  field === "name" ? "Full name" :
-                  field === "role" ? "e.g. Insurance Agent, Account Manager" :
-                  field === "address" ? "Street, City, State ZIP" :
-                  field === "phone" ? "(555) 000-0000" :
-                  "email@example.com"
-                }
-                className="w-full rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-havn-navy/20"
-              />
+          {/* Name */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
+            <input type="text" value={draft.name ?? ""} onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value || null }))} placeholder="Full name" className={inputCls} />
+          </div>
+
+          {/* Company / Brokerage */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              {contactType === "insurance_agent" ? "Insurance Company / Brokerage" : "Company"}
+            </label>
+            <input type="text" value={draft.role ?? defaultRole} onChange={(e) => setDraft((p) => ({ ...p, role: e.target.value || null }))} placeholder={contactType === "insurance_agent" ? "e.g. State Farm, Allstate" : "Company name"} className={inputCls} />
+          </div>
+
+          {/* Address — split fields */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Street Address</label>
+            <input type="text" value={addrParts.street} onChange={(e) => setAddrParts((p) => ({ ...p, street: e.target.value }))} placeholder="123 Main St" className={inputCls} />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="col-span-1">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">City</label>
+              <input type="text" value={addrParts.city} onChange={(e) => setAddrParts((p) => ({ ...p, city: e.target.value }))} placeholder="Seattle" className={inputCls} />
             </div>
-          ))}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">State</label>
+              <input type="text" value={addrParts.state} onChange={(e) => setAddrParts((p) => ({ ...p, state: e.target.value.toUpperCase().slice(0, 2) }))} placeholder="WA" maxLength={2} className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">ZIP</label>
+              <input type="text" value={addrParts.zip} onChange={(e) => setAddrParts((p) => ({ ...p, zip: e.target.value.replace(/[^0-9-]/g, "").slice(0, 10) }))} placeholder="98101" className={inputCls} />
+            </div>
+          </div>
+
+          {/* Phone */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Phone</label>
+            <input type="tel" value={draft.phone ?? ""} onChange={(e) => setDraft((p) => ({ ...p, phone: formatPhone(e.target.value) || null }))} placeholder="(555) 000-0000" className={inputCls} />
+          </div>
+
+          {/* Email */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Email</label>
+            <input type="email" value={draft.email ?? ""} onChange={(e) => setDraft((p) => ({ ...p, email: e.target.value || null }))} placeholder="email@example.com" className={inputCls} />
+          </div>
 
           <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={saving}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors disabled:opacity-40"
-            >
+            <button type="button" onClick={handleCancel} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors disabled:opacity-40">
               <X className="h-3.5 w-3.5" />
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={saving}
-              className="inline-flex items-center rounded-lg bg-havn-navy px-3 py-1.5 text-sm font-medium text-havn-sand hover:bg-havn-navy-light transition-colors disabled:opacity-40"
-            >
+            <button type="button" onClick={() => void handleSave()} disabled={saving} className="inline-flex items-center rounded-lg bg-havn-navy px-3 py-1.5 text-sm font-medium text-havn-sand hover:bg-havn-navy-light transition-colors disabled:opacity-40">
               {saving ? "Saving…" : "Save"}
             </button>
           </div>

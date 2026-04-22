@@ -340,22 +340,37 @@ export default function DashboardSettingsPage() {
     });
   };
 
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentPassword) {
+      toast.error("Please enter your current password.");
+      return;
+    }
     if (newPassword.length < 6) {
-      toast.error("Password must be at least 6 characters.");
+      toast.error("New password must be at least 6 characters.");
       return;
     }
     setSavingPassword(true);
     try {
+      // Verify current password by attempting sign-in
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: userEmail,
+        password: currentPassword,
+      });
+      if (verifyError) {
+        toast.error("Current password is incorrect.");
+        return;
+      }
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) {
         toast.error(error.message);
         return;
       }
       toast.success("Password updated.");
+      setCurrentPassword("");
       setNewPassword("");
     } finally {
       setSavingPassword(false);
@@ -448,6 +463,17 @@ export default function DashboardSettingsPage() {
             <Disclosure title="Change password">
               <form onSubmit={(e) => void handlePasswordSubmit(e)} className="grid gap-3 sm:max-w-sm">
                 <div className="space-y-2">
+                  <Label htmlFor="pw-current">Current password</Label>
+                  <Input
+                    id="pw-current"
+                    type="password"
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="pw-next">New password</Label>
                   <Input
                     id="pw-next"
@@ -459,7 +485,7 @@ export default function DashboardSettingsPage() {
                     placeholder="Minimum 6 characters"
                   />
                 </div>
-                <Button type="submit" disabled={savingPassword || newPassword.length < 6}>
+                <Button type="submit" disabled={savingPassword || !currentPassword || newPassword.length < 6}>
                   {savingPassword ? "Updating..." : "Update password"}
                 </Button>
               </form>
