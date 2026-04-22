@@ -67,7 +67,7 @@ export async function rejectOrder(orderId: string, reason: string) {
   }
 
   const requesterEmail = row.requester_email as string | null;
-  if (requesterEmail && process.env.RESEND_API_KEY) {
+  if (requesterEmail) {
     try {
       await resend.emails.send({
         from: RESEND_FROM_EMAIL,
@@ -247,25 +247,21 @@ export async function fulfillAndGenerate(
       downloadUrl = signedUrlData.signedUrl;
     }
 
-    if (process.env.RESEND_API_KEY) {
-      try {
-        await resend.emails.send({
-          from: RESEND_FROM_EMAIL,
-          to: requesterEmail,
-          subject: `Your ${formatMasterTypeKey(masterTypeKey)} is ready`,
-          html: `
-            <p>Hi ${(order.requester_name as string) ?? "there"},</p>
-            <p>Your <strong>${formatMasterTypeKey(masterTypeKey)}</strong> for <strong>${(order.property_address as string) ?? "the submitted property"}</strong> is ready.</p>
-            ${downloadUrl ? `<p style="margin:24px 0;"><a href="${downloadUrl}" style="display:inline-block;background:#0f172a;color:#f8f5f0;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Download Document</a></p><p style="color:#888;font-size:12px;">This link expires in 7 days.</p>` : ""}
-            <p>Thank you for using Havn.</p>
-            <p>— ${orgName}</p>
-          `,
-        });
-      } catch (emailErr) {
-        console.error("[fulfillAndGenerate] Delivery email failed:", emailErr);
-      }
-    } else {
-      console.error("[fulfillAndGenerate] RESEND_API_KEY not set — email not sent");
+    try {
+      await resend.emails.send({
+        from: RESEND_FROM_EMAIL,
+        to: requesterEmail,
+        subject: `Your ${formatMasterTypeKey(masterTypeKey)} is ready`,
+        html: `
+          <p>Hi ${(order.requester_name as string) ?? "there"},</p>
+          <p>Your <strong>${formatMasterTypeKey(masterTypeKey)}</strong> for <strong>${(order.property_address as string) ?? "the submitted property"}</strong> is ready.</p>
+          ${downloadUrl ? `<p style="margin:24px 0;"><a href="${downloadUrl}" style="display:inline-block;background:#0f172a;color:#f8f5f0;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Download Document</a></p><p style="color:#888;font-size:12px;">This link expires in 7 days.</p>` : ""}
+          <p>Thank you for using Havn.</p>
+          <p>— ${orgName}</p>
+        `,
+      });
+    } catch (emailErr) {
+      console.error("[fulfillAndGenerate] Delivery email failed:", emailErr);
     }
   } else {
     console.error("[fulfillAndGenerate] No requester email on order — email not sent");

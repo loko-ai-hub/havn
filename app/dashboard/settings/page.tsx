@@ -146,6 +146,7 @@ export default function DashboardSettingsPage() {
   const [billingDifferent, setBillingDifferent] = useState(false);
 
   const [brandColor, setBrandColor] = useState("#0f172a");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [portalTagline, setPortalTagline] = useState("");
 
 
@@ -213,6 +214,7 @@ export default function DashboardSettingsPage() {
       setStateAbbr(o.state ?? "");
       setZip(o.zip ?? "");
       setBrandColor(o.brand_color && o.brand_color.length > 0 ? o.brand_color : "#0f172a");
+      setLogoUrl(o.logo_url ?? null);
       setPortalTagline(o.portal_tagline ?? "");
       setStripeAccountId(o.stripe_account_id);
       setStripeComplete(o.stripe_onboarding_complete);
@@ -543,11 +545,12 @@ export default function DashboardSettingsPage() {
         <DashboardSectionCard title="Portal Customization">
           <div className="space-y-2">
             <Label htmlFor="portal-logo">Logo</Label>
-            {orgId && (() => {
-              const orgRow = {} as Record<string, unknown>;
-              // Show current logo if exists
-              return null;
-            })()}
+            {logoUrl && (
+              <div className="flex items-center gap-4">
+                <img src={logoUrl} alt="Organization logo" className="h-16 w-16 rounded-lg border border-border object-contain" />
+                <p className="text-xs text-muted-foreground">Current logo</p>
+              </div>
+            )}
             <Input
               id="portal-logo"
               type="file"

@@ -156,25 +156,24 @@ export async function sendTeamInvitation(orgId: string, email: string, role: str
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://havnhq.com";
   const acceptUrl = `${baseUrl}/accept-invite?token=${token}`;
 
-  if (process.env.RESEND_API_KEY) {
-    try {
-      await resend.emails.send({
-        from: RESEND_FROM_EMAIL,
-        to: email,
-        subject: "You've been invited to join Havn",
-        html: `
-          <p>You've been invited to join your organization on Havn as a <strong>${role.replace(/_/g, " ")}</strong>.</p>
-          <p style="margin:24px 0;">
-            <a href="${acceptUrl}" style="display:inline-block;background:#0f172a;color:#f8f5f0;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Accept Invitation</a>
-          </p>
-          <p style="color:#888;font-size:12px;">Or copy this link: ${acceptUrl}</p>
-          <p style="color:#888;font-size:12px;">This invitation expires in 7 days.</p>
-          <p>— Havn</p>
-        `,
-      });
-    } catch (err) {
-      console.error("Invite email failed:", err);
-    }
+  try {
+    await resend.emails.send({
+      from: RESEND_FROM_EMAIL,
+      to: email,
+      subject: "You've been invited to join Havn",
+      html: `
+        <p>You've been invited to join your organization on Havn as a <strong>${role.replace(/_/g, " ")}</strong>.</p>
+        <p style="margin:24px 0;">
+          <a href="${acceptUrl}" style="display:inline-block;background:#0f172a;color:#f8f5f0;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Accept Invitation</a>
+        </p>
+        <p style="color:#888;font-size:12px;">Or copy this link: ${acceptUrl}</p>
+        <p style="color:#888;font-size:12px;">This invitation expires in 7 days.</p>
+        <p>— Havn</p>
+      `,
+    });
+  } catch (err) {
+    console.error("[sendTeamInvitation] Invite email failed:", err);
+    return { error: `Invitation saved but email failed: ${err instanceof Error ? err.message : "unknown error"}` };
   }
 
   revalidatePath("/dashboard/settings");
