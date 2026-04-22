@@ -197,7 +197,7 @@ export default function DashboardSettingsPage() {
       supabase
         .from("organizations")
         .select(
-          "id, name, support_email, support_phone, city, state, zip, brand_color, portal_tagline, logo_url, stripe_account_id, stripe_onboarding_complete"
+          "id, name, support_email, support_phone, city, state, zip, website, street, brand_color, portal_tagline, logo_url, stripe_account_id, stripe_onboarding_complete"
         )
         .eq("id", oid)
         .single(),
@@ -207,6 +207,8 @@ export default function DashboardSettingsPage() {
     if (!orgRes.error && orgRes.data) {
       const o = orgRes.data as OrgRow;
       setOfficePhone(o.support_phone ?? "");
+      setWebsite((o as Record<string, unknown>).website as string ?? "");
+      setStreet((o as Record<string, unknown>).street as string ?? "");
       setCity(o.city ?? "");
       setStateAbbr(o.state ?? "");
       setZip(o.zip ?? "");
@@ -292,6 +294,8 @@ export default function DashboardSettingsPage() {
         city,
         state: stateAbbr,
         zip,
+        website,
+        street,
       });
       if (result && "error" in result) {
         toast.error(result.error);

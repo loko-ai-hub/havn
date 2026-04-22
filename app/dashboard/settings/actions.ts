@@ -35,7 +35,7 @@ export async function updatePortalSettings(
 
 export async function updateCompanyInfo(
   orgId: string,
-  fields: { support_phone: string; city: string; state: string; zip: string }
+  fields: { support_phone: string; city: string; state: string; zip: string; website: string; street: string }
 ) {
   const { organizationId } = await requireDashboardOrg();
   if (organizationId !== orgId) return { error: "Access denied." };
@@ -48,6 +48,8 @@ export async function updateCompanyInfo(
       city: fields.city || null,
       state: fields.state || null,
       zip: fields.zip || null,
+      website: fields.website || null,
+      street: fields.street || null,
     })
     .eq("id", orgId);
 
