@@ -1,10 +1,57 @@
 "use client";
 
 import { Mail } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
 
 export default function BlockedPage() {
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [checking, setChecking] = useState(true);
+
+  // On load and periodically, check if the user has been unblocked
+  useEffect(() => {
+    const check = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+
+      const orgId = user.user_metadata?.organization_id as string | undefined;
+      if (!orgId) {
+        setChecking(false);
+        return;
+      }
+
+      const { data: org } = await supabase
+        .from("organizations")
+        .select("is_active")
+        .eq("id", orgId)
+        .single();
+
+      if (org?.is_active !== false) {
+        // Unblocked — send them to dashboard
+        router.replace("/dashboard");
+        return;
+      }
+
+      setChecking(false);
+    };
+
+    void check();
+  }, [supabase, router]);
+
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 text-center shadow-xl shadow-black/15">
@@ -28,7 +75,6 @@ export default function BlockedPage() {
           type="button"
           onClick={() => {
             void (async () => {
-              const supabase = createClient();
               await supabase.auth.signOut();
               window.location.href = "/login";
             })();

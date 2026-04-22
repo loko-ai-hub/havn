@@ -507,11 +507,13 @@ export async function unblockOrganization(
     .eq("organization_id", orgId);
 
   if (profiles && profiles.length > 0) {
-    await Promise.all(
-      profiles.map((p) =>
-        admin.auth.admin.updateUserById(p.id as string, { ban_duration: "none" })
-      )
-    );
+    for (const p of profiles) {
+      // Unban by setting ban_duration to "none" and confirming email
+      await admin.auth.admin.updateUserById(p.id as string, {
+        ban_duration: "none",
+        email_confirm: true,
+      });
+    }
   }
 
   return { ok: true };
