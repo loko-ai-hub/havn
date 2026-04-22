@@ -136,7 +136,15 @@ const StepCompanyDetails = ({
 
   useEffect(() => {
     void loadEnabledStates().then((states) => setEnabledStates(new Set(states)));
-  }, []);
+    // Pre-populate email from auth session
+    void (async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.email && !supportEmail) {
+        setSupportEmail(user.email);
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!portalSlug || portalSlug.length < 2) {
@@ -254,8 +262,10 @@ const StepCompanyDetails = ({
                 placeholder={isCompany ? "you@yourcompany.com" : "you@yourassociation.com"}
                 value={supportEmail}
                 onChange={(e) => setSupportEmail(e.target.value)}
-                className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                readOnly={!!supportEmail}
+                className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring read-only:bg-muted/50 read-only:text-muted-foreground"
               />
+              <p className="text-[11px] text-muted-foreground">You can add additional team emails after completing setup in Settings.</p>
               {supportEmail.trim().length > 0 && isPersonalEmail(supportEmail) && (
                 <div className="rounded-md border border-havn-amber/40 bg-havn-amber/15 px-3 py-2 text-xs leading-snug text-foreground">
                   {isCompany ? (
