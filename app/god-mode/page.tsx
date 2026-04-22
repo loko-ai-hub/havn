@@ -778,8 +778,8 @@ export default function GodModePage() {
               {[
                 { label: "OPEN ORDERS", value: String(openOrders), sub: "Current", target: "order-lookup" as TabId },
                 { label: "PENDING REVIEWS", value: "0", sub: "Current", target: "document-review" as TabId },
-                { label: "CUSTOMERS", value: String(customers.length), sub: "All time", target: "customers" as TabId },
-                { label: "MONTHLY REVENUE", value: formatCurrency(monthlyRevenue), sub: "This month", target: "analytics" as TabId },
+                { label: "CUSTOMERS", value: String(customers.filter((c) => c.is_active !== false).length), sub: "All time, active", target: "customers" as TabId },
+                { label: "MONTHLY REVENUE", value: `$${Math.round(monthlyRevenue).toLocaleString()}`, sub: "This month", target: "analytics" as TabId },
               ].map((card) => (
                 <button
                   key={card.label}
@@ -2458,7 +2458,7 @@ export default function GodModePage() {
                         <div>
                           <h2 className="text-sm font-semibold text-foreground">AI Legal Compliance Check</h2>
                           <p className="text-[11px] text-muted-foreground">
-                            Runs automatically on the 1st of each month via Claude Sonnet
+                            Runs automatically on the 1st of each month via Claude Opus 4.7
                           </p>
                         </div>
                         <Button
@@ -2512,7 +2512,7 @@ export default function GodModePage() {
                                 <div className="min-w-0 flex-1">
                                   <p className="text-sm font-medium text-foreground">{check.summary}</p>
                                   <p className="mt-1 text-[11px] text-muted-foreground">
-                                    Checked {checkedDate} · {check.model_used}
+                                    Checked {checkedDate} · {check.model_used.replace("anthropic/", "").replace(/-/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
                                   </p>
                                 </div>
                               </div>
