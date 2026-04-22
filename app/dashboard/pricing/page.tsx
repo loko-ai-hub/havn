@@ -154,7 +154,7 @@ function StateSelector({
   return (
     <div className="flex items-center gap-2 flex-wrap">
       {/* Configured state tabs */}
-      {configuredStates.map((abbr) => (
+      {configuredStates.filter((abbr) => enabledStates.has(abbr)).map((abbr) => (
         <button
           key={abbr}
           type="button"

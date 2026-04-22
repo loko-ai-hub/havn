@@ -497,17 +497,12 @@ function DashboardRequestsPageInner() {
         {/* Table */}
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading requests…</p>
-        ) : filtered.length === 0 && !loadError ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card px-6 py-16">
-            <Inbox className="mb-2 h-8 w-8 opacity-40 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">No requests found</p>
-          </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border bg-card">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[960px]">
+              <table className="w-full min-w-[900px]">
                 <thead>
-                  <tr className="border-b border-border bg-havn-surface/30">
+                  <tr className="sticky top-0 z-10 border-b border-border bg-havn-surface/30">
                     <th className="w-10 px-3 py-3">
                       <input
                         type="checkbox"
@@ -540,6 +535,14 @@ function DashboardRequestsPageInner() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
+                  {filtered.length === 0 && !loadError ? (
+                    <tr>
+                      <td colSpan={11} className="px-4 py-16 text-center">
+                        <Inbox className="mx-auto mb-2 h-8 w-8 opacity-40 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">No requests found</p>
+                      </td>
+                    </tr>
+                  ) : null}
                   {filtered.map((order) => {
                     const detailHref = `/dashboard/requests/${order.id}`;
                     const shortId = order.id.slice(0, 8);

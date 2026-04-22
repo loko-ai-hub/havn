@@ -220,8 +220,7 @@ export async function loadStateCaps(
   const { data, error } = await admin
     .from("state_fee_limits")
     .select("master_type_key, pricing_cap, cap_type, statute")
-    .eq("state", state.toUpperCase())
-    .eq("state_enabled", true);
+    .eq("state", state.toUpperCase());
 
   if (error) return { error: error.message };
 
