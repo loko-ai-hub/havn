@@ -87,9 +87,13 @@ export async function requireDashboardOrg(): Promise<DashboardSession> {
 
   const { data: org } = await adminClient
     .from("organizations")
-    .select("portal_slug")
+    .select("portal_slug, is_active")
     .eq("id", profile.organization_id as string)
     .single();
+
+  if (org?.is_active === false) {
+    redirect("/blocked");
+  }
 
   return {
     userId: user.id,
