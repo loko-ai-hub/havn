@@ -392,14 +392,14 @@ function DashboardRequestsPageInner() {
     { key: "refunded", label: "Refunded" },
   ];
 
-  const COLUMNS: { key: SortKey | null; label: string }[] = [
-    { key: "created_at", label: "Date" },
-    { key: "requester_name", label: "Requester" },
-    { key: null, label: "Property" },
-    { key: "master_type_key", label: "Document" },
-    { key: "days_remaining", label: "Days Rem." },
-    { key: "total_fee", label: "Amount" },
-    { key: "order_status", label: "Status" },
+  const COLUMNS: { key: SortKey | null; label: string; width?: string }[] = [
+    { key: "created_at", label: "Date", width: "w-[100px]" },
+    { key: "requester_name", label: "Requester", width: "w-[180px]" },
+    { key: null, label: "Property", width: "w-[160px]" },
+    { key: "master_type_key", label: "Document", width: "w-[120px]" },
+    { key: "days_remaining", label: "Days Rem.", width: "w-[90px]" },
+    { key: "total_fee", label: "Amount", width: "w-[90px]" },
+    { key: "order_status", label: "Status", width: "w-[90px]" },
   ];
 
   return (
@@ -517,6 +517,7 @@ function DashboardRequestsPageInner() {
                         onClick={() => col.key && handleSort(col.key)}
                         className={cn(
                           "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+                          col.width,
                           col.key &&
                             "cursor-pointer select-none transition-colors hover:text-foreground"
                         )}

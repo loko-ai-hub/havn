@@ -543,7 +543,14 @@ export default function DashboardCommunitiesPage() {
                     <div className="rounded-md border border-havn-amber/40 bg-havn-amber/10 px-3 py-2 text-xs text-foreground">
                       <p className="font-semibold">Havn is not yet live in {form.state}.</p>
                       <p className="mt-0.5 text-muted-foreground">You can add this community, but you won&apos;t be able to accept orders until this state is enabled.</p>
-                      <button type="button" onClick={() => toast.success("Your request has been recorded. We'll notify you when this state is available.")} className="mt-1.5 text-xs font-medium text-foreground underline underline-offset-2">Request to unlock {form.state}</button>
+                      <button type="button" onClick={() => {
+                        void fetch("/api/feature-request", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ description: `Request to unlock state: ${form.state}`, userName: "Management Company", userEmail: "system" }),
+                        });
+                        toast.success("Your request has been recorded. We'll notify you when this state is available.");
+                      }} className="mt-1.5 text-xs font-medium text-foreground underline underline-offset-2">Request to unlock {form.state}</button>
                     </div>
                   )}
                 </div>

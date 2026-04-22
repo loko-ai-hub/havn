@@ -130,32 +130,32 @@ export default function ReviewForm({
             <p className="text-sm font-medium text-foreground">
               {filledCount} of {template.fields.length} fields populated
             </p>
-            <span
-              className={cn(
-                "text-sm font-bold tabular-nums",
-                completionPct >= 85
-                  ? "text-havn-success"
-                  : completionPct >= 50
-                  ? "text-havn-amber"
-                  : "text-destructive"
-              )}
-            >
-              {completionPct}%
-            </span>
+            {(() => {
+              const livePct = template.fields.length > 0 ? Math.min(100, Math.round((filledCount / template.fields.length) * 100)) : 0;
+              return (
+                <span className={cn(
+                  "text-sm font-bold tabular-nums",
+                  livePct >= 85 ? "text-havn-success" : livePct >= 50 ? "text-havn-amber" : "text-destructive"
+                )}>
+                  {livePct}%
+                </span>
+              );
+            })()}
           </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-border">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all",
-                completionPct >= 85
-                  ? "bg-havn-success"
-                  : completionPct >= 50
-                  ? "bg-havn-amber"
-                  : "bg-destructive"
-              )}
-              style={{ width: `${completionPct}%` }}
-            />
-          </div>
+          {(() => {
+            const livePct = template.fields.length > 0 ? Math.min(100, Math.round((filledCount / template.fields.length) * 100)) : 0;
+            return (
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-border">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    livePct >= 85 ? "bg-havn-success" : livePct >= 50 ? "bg-havn-amber" : "bg-destructive"
+                  )}
+                  style={{ width: `${livePct}%` }}
+                />
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -196,9 +196,6 @@ export default function ReviewForm({
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               {sectionFields.map((fieldDef) => {
                 const merged = fields[fieldDef.key];
-                const source = merged?.source;
-                const badge = source ? SOURCE_BADGE[source] : null;
-                const BadgeIcon = badge?.icon;
                 const isTextarea = fieldDef.type === "textarea";
 
                 return (
@@ -219,17 +216,6 @@ export default function ReviewForm({
                           <span className="ml-0.5 text-destructive">*</span>
                         )}
                       </Label>
-                      {badge && BadgeIcon && (
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium",
-                            badge.className
-                          )}
-                        >
-                          <BadgeIcon className="h-2.5 w-2.5" />
-                          {badge.label}
-                        </span>
-                      )}
                     </div>
                     {isTextarea ? (
                       <Textarea
