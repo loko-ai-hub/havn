@@ -543,7 +543,9 @@ export default function GodModePage() {
     setStateConfigDraft(mapped);
     setStateConfigBaseline(deepClone(mapped));
     if (mapped.length > 0 && !selectedConfigState) {
-      setSelectedConfigState(mapped[0].state);
+      // Auto-select first enabled state, or first state if none enabled
+      const firstEnabled = mapped.find((c) => c.enabled);
+      setSelectedConfigState(firstEnabled?.state ?? mapped[0].state);
     }
     setStateConfigsLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -671,7 +673,7 @@ export default function GodModePage() {
       <aside className="fixed left-0 top-0 z-30 flex h-screen w-64 shrink-0 flex-col bg-havn-navy text-white">
         <div className="border-b border-white/10 px-5 py-4">
           <span className="text-xl font-semibold tracking-tight text-white">Havn</span>
-          <span className="ml-2 rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/70">God Mode</span>
+          <span className="ml-2 rounded-md bg-havn-amber px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-black">God Mode</span>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3">
           {navItems.map(({ id, label, icon: Icon }) => (
@@ -690,12 +692,19 @@ export default function GodModePage() {
           ))}
         </nav>
         <div className="border-t border-white/10 p-3">
-          <Link
-            href="/dashboard"
-            className="block rounded-lg px-3 py-2.5 text-center text-sm font-medium text-white/80 transition-colors hover:bg-white/5 hover:text-white"
+          <button
+            type="button"
+            onClick={() => {
+              void (async () => {
+                const supabase = createClient();
+                await supabase.auth.signOut();
+                window.location.href = "/login";
+              })();
+            }}
+            className="block w-full rounded-lg px-3 py-2.5 text-center text-sm font-medium text-white/80 transition-colors hover:bg-white/5 hover:text-white"
           >
-            Exit to Dashboard
-          </Link>
+            Log Out
+          </button>
         </div>
       </aside>
 
@@ -707,19 +716,19 @@ export default function GodModePage() {
               <p className="mt-1 text-sm text-muted-foreground">Internal Havn admin (scoped to your session).</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <PlatformKpiCard label="Total Customers" value="1" subtext="Design partner orgs" />
+              <PlatformKpiCard label="Total Customers" value={String(customers.length)} subtext="Active organizations" />
               <PlatformKpiCard
                 label="Total Orders"
                 value={orderCount == null ? "—" : String(orderCount)}
-                subtext="All orders visible to this session"
+                subtext="Across all organizations"
               />
               <PlatformKpiCard
-                label="Total Revenue"
+                label="Net Revenue"
                 value={platformRevenue == null ? "—" : formatCurrency(platformRevenue)}
-                subtext="Paid + fulfilled"
+                subtext="Paid minus refunds"
               />
               <PlatformKpiCard
-                label="States Active"
+                label="States Enabled"
                 value={String(stateConfigDraft.filter((c) => c.enabled).length)}
                 subtext={stateConfigDraft.filter((c) => c.enabled).map((c) => c.state).join(", ") || "None"}
               />
@@ -758,8 +767,9 @@ export default function GodModePage() {
 
             {/* Recent Legal Alerts */}
             {(() => {
-              const alertStates = Object.values(legalChecks).filter((c) => c.changes_detected);
-              const recentItems = alertStates.flatMap((c) =>
+              const allChecks = Object.values(legalChecks);
+              const alertStates = allChecks.filter((c) => c.changes_detected);
+              const recentItems = allChecks.flatMap((c) =>
                 c.details
                   .filter((d) => d.type === "recent_change" || d.type === "action_needed" || d.type === "pending_legislation")
                   .map((d) => ({ ...d, state: c.state, checked_at: c.checked_at }))
@@ -1885,59 +1895,71 @@ export default function GodModePage() {
                   className="h-9 text-sm"
                 />
                 <div className="max-h-[calc(100vh-240px)] overflow-y-auto rounded-xl border border-border bg-card p-1.5">
-                  {US_STATES
-                    .filter((s) => {
-                      const q = stateSearchQuery.trim().toLowerCase();
-                      if (!q) return true;
-                      return s.name.toLowerCase().includes(q) || s.abbr.toLowerCase().includes(q);
-                    })
-                    .map((s) => {
+                  {(() => {
+                    const q = stateSearchQuery.trim().toLowerCase();
+                    const filtered = US_STATES.filter((s) =>
+                      !q || s.name.toLowerCase().includes(q) || s.abbr.toLowerCase().includes(q)
+                    );
+                    // Sort: enabled first (alpha), then disabled (alpha)
+                    const sorted = [...filtered].sort((a, b) => {
+                      const aEnabled = stateConfigDraft.find((c) => c.state === a.abbr)?.enabled === true;
+                      const bEnabled = stateConfigDraft.find((c) => c.state === b.abbr)?.enabled === true;
+                      if (aEnabled && !bEnabled) return -1;
+                      if (!aEnabled && bEnabled) return 1;
+                      return a.name.localeCompare(b.name);
+                    });
+                    const enabledCount = sorted.filter((s) => stateConfigDraft.find((c) => c.state === s.abbr)?.enabled).length;
+                    return sorted.map((s, idx) => {
                       const cfg = stateConfigDraft.find((c) => c.state === s.abbr);
                       const isEnabled = cfg?.enabled === true;
                       const isSelected = selectedConfigState === s.abbr;
                       return (
-                        <button
-                          key={s.abbr}
-                          type="button"
-                          onClick={() => {
-                            // If no config exists for this state, create a disabled one
-                            if (!cfg) {
-                              applyStateConfigUpdate((draft) => [
-                                ...draft,
-                                {
-                                  state: s.abbr,
-                                  stateName: s.name,
-                                  enabled: false,
-                                  notes: "",
-                                  services: [],
-                                },
-                              ]);
-                            }
-                            setSelectedConfigState(s.abbr);
-                            setSelectedServiceIndex(0);
-                            setStateEnableToggle(null);
-                          }}
-                          className={cn(
-                            "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                            isSelected
-                              ? "bg-havn-navy text-white"
-                              : isEnabled
-                              ? "font-medium text-foreground hover:bg-muted/60"
-                              : "text-muted-foreground hover:bg-muted/40"
+                        <Fragment key={s.abbr}>
+                          {idx === enabledCount && enabledCount > 0 && !q && (
+                            <div className="my-2 border-t border-border" />
                           )}
-                        >
-                          <span>{s.name} ({s.abbr})</span>
-                          <span className="flex items-center gap-1.5">
-                            {legalChecks[s.abbr]?.changes_detected && !isSelected && (
-                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-havn-amber" title="Legal changes detected" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!cfg) {
+                                applyStateConfigUpdate((draft) => [
+                                  ...draft,
+                                  {
+                                    state: s.abbr,
+                                    stateName: s.name,
+                                    enabled: false,
+                                    notes: "",
+                                    services: [],
+                                  },
+                                ]);
+                              }
+                              setSelectedConfigState(s.abbr);
+                              setSelectedServiceIndex(0);
+                              setStateEnableToggle(null);
+                            }}
+                            className={cn(
+                              "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                              isSelected
+                                ? "bg-havn-navy text-white"
+                                : isEnabled
+                                ? "font-medium text-foreground hover:bg-muted/60"
+                                : "text-muted-foreground hover:bg-muted/40"
                             )}
-                            {isEnabled && !isSelected && (
-                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-havn-success" />
-                            )}
-                          </span>
-                        </button>
+                          >
+                            <span>{s.name} ({s.abbr})</span>
+                            <span className="flex items-center gap-1.5">
+                              {legalChecks[s.abbr]?.changes_detected && !isSelected && (
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-havn-amber" title="Legal changes detected" />
+                              )}
+                              {isEnabled && !isSelected && (
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-havn-success" />
+                              )}
+                            </span>
+                          </button>
+                        </Fragment>
                       );
-                    })}
+                    });
+                  })()}
                 </div>
               </aside>
               <div className="min-w-0 flex-1 space-y-6">

@@ -21,6 +21,8 @@ export default function ImpersonationBanner({ orgName }: { orgName: string | nul
           setStopping(true);
           void (async () => {
             await stopImpersonation();
+            window.close();
+            // If window.close() is blocked (not opened by script), fall back to redirect
             router.push("/god-mode");
             router.refresh();
           })();

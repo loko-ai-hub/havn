@@ -57,8 +57,10 @@ export async function loadStateConfigs(): Promise<
         services: [],
       });
     }
+    const mtk = row.master_type_key as string;
+    if (mtk === "_placeholder") continue; // skip legacy placeholder rows
     grouped.get(st)!.services.push({
-      master_type_key: row.master_type_key as string,
+      master_type_key: mtk,
       formal_name: (row.formal_name as string) ?? "",
       pricing_cap: row.pricing_cap as number | null,
       cap_type: ((row.cap_type as string) ?? "actual") as "fixed" | "actual",
@@ -111,11 +113,13 @@ export async function toggleStateEnabled(
       .eq("state", st);
     if (error) return { error: error.message };
   } else {
-    // Create a placeholder row so the enabled state persists
+    // Create a seed row with resale_certificate so the state exists in the table
     const { error } = await admin.from("state_fee_limits").insert({
       state: st,
       state_enabled: enabled,
-      master_type_key: "_placeholder",
+      master_type_key: "resale_certificate",
+      formal_name: "Resale Certificate",
+      standard_turnaround: 5,
       state_notes: "",
       updated_at: new Date().toISOString(),
     });
@@ -335,8 +339,7 @@ export async function loadCustomers(): Promise<CustomerRow[] | { error: string }
     admin
       .from("profiles")
       .select("organization_id, id, role")
-      .in("organization_id", orgIds)
-      .eq("role", "owner"),
+      .in("organization_id", orgIds),
     admin
       .from("communities")
       .select("organization_id")
@@ -349,15 +352,23 @@ export async function loadCustomers(): Promise<CustomerRow[] | { error: string }
   ]);
 
   // Owner emails
+  // Build owner email map — prefer "owner" role, fall back to first profile
   const ownerMap = new Map<string, string>();
-  if (ownersRes.data) {
+  if (ownersRes.data && ownersRes.data.length > 0) {
+    // Sort so owners come first
+    const sorted = [...ownersRes.data].sort((a, b) => {
+      if (a.role === "owner" && b.role !== "owner") return -1;
+      if (a.role !== "owner" && b.role === "owner") return 1;
+      return 0;
+    });
     const userResults = await Promise.all(
-      ownersRes.data.map((p) => admin.auth.admin.getUserById(p.id as string))
+      sorted.map((p) => admin.auth.admin.getUserById(p.id as string))
     );
-    for (let i = 0; i < ownersRes.data.length; i++) {
+    for (let i = 0; i < sorted.length; i++) {
       const u = userResults[i];
-      if (!u.error && u.data.user) {
-        ownerMap.set(ownersRes.data[i].organization_id as string, u.data.user.email ?? "");
+      const oid = sorted[i].organization_id as string;
+      if (!u.error && u.data.user && !ownerMap.has(oid)) {
+        ownerMap.set(oid, u.data.user.email ?? "");
       }
     }
   }
