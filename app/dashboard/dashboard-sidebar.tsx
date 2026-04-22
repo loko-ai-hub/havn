@@ -78,7 +78,9 @@ const ROLE_LABELS: Record<string, string> = {
   management_admin: "Admin",
   property_manager: "Manager",
   board_member: "Board Member",
-  owner: "Owner",
+  owner: "Super Admin",
+  admin: "Admin",
+  staff: "Staff",
 };
 
 function initialsFromName(name: string): string {

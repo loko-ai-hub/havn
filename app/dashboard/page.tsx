@@ -52,6 +52,7 @@ type OrderRow = {
 
 async function resolveOrg(supabase: ReturnType<typeof createClient>): Promise<{
   orgId: string;
+  orgName: string;
   portalSlug: string | null;
   stripeConnected: boolean;
 } | null> {
@@ -72,12 +73,13 @@ async function resolveOrg(supabase: ReturnType<typeof createClient>): Promise<{
 
   const { data: org } = await supabase
     .from("organizations")
-    .select("portal_slug, stripe_account_id, stripe_onboarding_complete")
+    .select("name, portal_slug, stripe_account_id, stripe_onboarding_complete")
     .eq("id", orgId)
     .single();
 
   return {
     orgId,
+    orgName: (org?.name as string) ?? "",
     portalSlug: org?.portal_slug ?? null,
     stripeConnected: !!(org?.stripe_account_id && org?.stripe_onboarding_complete),
   };
@@ -258,6 +260,7 @@ export default function DashboardHomePage() {
   // Org state
   const [portalSlug, setPortalSlug] = useState<string | null>(null);
   const [stripeConnected, setStripeConnected] = useState(true);
+  const [orgName, setOrgName] = useState("");
   const [communitiesCount, setCommunitiesCount] = useState(0);
   const [feesCount, setFeesCount] = useState(0);
   const [communities, setCommunities] = useState<{ id: string; name: string }[]>([]);
@@ -291,9 +294,10 @@ export default function DashboardHomePage() {
       setLoading(false);
       return;
     }
-    const { orgId, portalSlug: slug, stripeConnected: stripe } = resolved;
+    const { orgId, orgName: name, portalSlug: slug, stripeConnected: stripe } = resolved;
     setPortalSlug(slug);
     setStripeConnected(stripe);
+    setOrgName(name);
 
     const [openRes, fulRes, revRes, indexedRes, totalDocsRes, pagesRes, recentRes, commRes, feesRes, commListRes] = await Promise.all([
       // Open requests = paid + in_progress (not yet fulfilled)
@@ -423,6 +427,9 @@ export default function DashboardHomePage() {
     <div className="space-y-6">
       {/* Top bar */}
       <div className="sticky top-0 z-20 -mx-6 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        {orgName && (
+          <h1 className="mb-2 text-lg font-semibold tracking-tight text-foreground">{orgName}</h1>
+        )}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             {/* Community selector */}
@@ -506,21 +513,21 @@ export default function DashboardHomePage() {
               delay: 60,
             },
             {
-              label: "Time saved",
-              value: `${timeSavedHours}h`,
-              subtext: "Estimated hours saved",
-              icon: Timer,
-              accent: "text-havn-success",
-              iconBg: "bg-havn-success/10",
-              delay: 120,
-            },
-            {
               label: "Pages processed",
               value: pagesProcessed.toLocaleString(),
               subtext: "Total all time",
               icon: FileText,
               accent: "text-primary",
               iconBg: "bg-primary/10",
+              delay: 120,
+            },
+            {
+              label: "Time saved",
+              value: `${timeSavedHours}h`,
+              subtext: "~30 min saved per document",
+              icon: Timer,
+              accent: "text-havn-success",
+              iconBg: "bg-havn-success/10",
               delay: 180,
             },
             {

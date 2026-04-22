@@ -107,10 +107,14 @@ function Disclosure({
 }
 
 function roleLabel(role: string): string {
-  return role
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
+  const labels: Record<string, string> = {
+    owner: "Super Admin",
+    admin: "Admin",
+    property_manager: "Manager",
+    board_member: "Board Member",
+    staff: "Staff",
+  };
+  return labels[role] ?? role.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
 function memberInitials(fullName: string, email: string): string {
@@ -402,10 +406,10 @@ export default function DashboardSettingsPage() {
         <DashboardSectionCard title="Your Info">
           <div className="flex flex-col gap-6 sm:flex-row">
             <div
-              className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-xs text-muted-foreground"
+              className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-havn-navy text-xl font-bold text-havn-sand"
               aria-hidden
             >
-              Photo
+              {(metaFirst?.[0] ?? "").toUpperCase()}{(metaLast?.[0] ?? "").toUpperCase()}
             </div>
             <div className="grid flex-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -418,7 +422,13 @@ export default function DashboardSettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="settings-phone">Phone</Label>
-                <Input id="settings-phone" value={metaPhone} onChange={(e) => setMetaPhone(e.target.value)} />
+                <Input id="settings-phone" type="tel" value={metaPhone} onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                  if (digits.length === 0) { setMetaPhone(""); return; }
+                  if (digits.length <= 3) { setMetaPhone(`(${digits}`); return; }
+                  if (digits.length <= 6) { setMetaPhone(`(${digits.slice(0, 3)}) ${digits.slice(3)}`); return; }
+                  setMetaPhone(`(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`);
+                }} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="settings-email">Email</Label>
