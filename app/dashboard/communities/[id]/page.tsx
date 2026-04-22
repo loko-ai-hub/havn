@@ -70,7 +70,7 @@ export default async function CommunityDetailPage({
   const [orgRes, openRequestsRes, docsRes, contactsRes] = await Promise.all([
     admin
       .from("organizations")
-      .select("support_email, support_phone")
+      .select("name, support_email, support_phone")
       .eq("id", organizationId)
       .single(),
     admin
@@ -88,14 +88,23 @@ export default async function CommunityDetailPage({
       .eq("community_id", id),
   ]);
 
-  const org = orgRes.data as { support_email: string | null; support_phone: string | null } | null;
+  const org = orgRes.data as { name: string | null; support_email: string | null; support_phone: string | null } | null;
   const openRequestsCount = openRequestsRes.count ?? 0;
 
   type ContactRow = { contact_type: string; name: string | null; role: string | null; address: string | null; phone: string | null; email: string | null };
   const contacts = (contactsRes.data ?? []) as ContactRow[];
   const emptyContact = { name: null, role: null, address: null, phone: null, email: null };
   const insuranceContact = contacts.find((c) => c.contact_type === "insurance_agent") ?? emptyContact;
-  const mgmtContact = contacts.find((c) => c.contact_type === "management_company") ?? emptyContact;
+
+  // Pre-populate management contact from org + assigned manager
+  const savedMgmt = contacts.find((c) => c.contact_type === "management_company");
+  const mgmtContact = savedMgmt ?? {
+    name: c.manager_name ?? null,
+    role: org?.name ?? null,
+    address: null,
+    phone: org?.support_phone ?? null,
+    email: org?.support_email ?? null,
+  };
 
   type DocRow = { document_category: string | null };
   const presentCategories = new Set(

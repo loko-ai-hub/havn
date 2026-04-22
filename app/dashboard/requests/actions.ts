@@ -235,27 +235,40 @@ export async function fulfillAndGenerate(
 
   // 8. Send delivery email with signed download link
   const requesterEmail = order.requester_email as string | null;
-  if (requesterEmail && process.env.RESEND_API_KEY) {
-    const { data: signedUrl } = await admin.storage
+  if (requesterEmail) {
+    let downloadUrl = "";
+    const { data: signedUrlData, error: signedUrlErr } = await admin.storage
       .from("order-documents")
       .createSignedUrl(storagePath, 60 * 60 * 24 * 7); // 7 days
 
-    try {
-      await resend.emails.send({
-        from: RESEND_FROM_EMAIL,
-        to: requesterEmail,
-        subject: `Your ${formatMasterTypeKey(masterTypeKey)} is ready`,
-        html: `
-          <p>Hi ${(order.requester_name as string) ?? "there"},</p>
-          <p>Your <strong>${formatMasterTypeKey(masterTypeKey)}</strong> for <strong>${(order.property_address as string) ?? "the submitted property"}</strong> is ready.</p>
-          ${signedUrl?.signedUrl ? `<p style="margin:24px 0;"><a href="${signedUrl.signedUrl}" style="display:inline-block;background:#0f172a;color:#f8f5f0;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Download Document</a></p><p style="color:#888;font-size:12px;">This link expires in 7 days.</p>` : ""}
-          <p>Thank you for using Havn.</p>
-          <p>— ${orgName}</p>
-        `,
-      });
-    } catch (emailErr) {
-      console.error("Delivery email failed:", emailErr);
+    if (signedUrlErr) {
+      console.error("[fulfillAndGenerate] Signed URL failed:", signedUrlErr.message);
+    } else if (signedUrlData?.signedUrl) {
+      downloadUrl = signedUrlData.signedUrl;
     }
+
+    if (process.env.RESEND_API_KEY) {
+      try {
+        await resend.emails.send({
+          from: RESEND_FROM_EMAIL,
+          to: requesterEmail,
+          subject: `Your ${formatMasterTypeKey(masterTypeKey)} is ready`,
+          html: `
+            <p>Hi ${(order.requester_name as string) ?? "there"},</p>
+            <p>Your <strong>${formatMasterTypeKey(masterTypeKey)}</strong> for <strong>${(order.property_address as string) ?? "the submitted property"}</strong> is ready.</p>
+            ${downloadUrl ? `<p style="margin:24px 0;"><a href="${downloadUrl}" style="display:inline-block;background:#0f172a;color:#f8f5f0;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Download Document</a></p><p style="color:#888;font-size:12px;">This link expires in 7 days.</p>` : ""}
+            <p>Thank you for using Havn.</p>
+            <p>— ${orgName}</p>
+          `,
+        });
+      } catch (emailErr) {
+        console.error("[fulfillAndGenerate] Delivery email failed:", emailErr);
+      }
+    } else {
+      console.error("[fulfillAndGenerate] RESEND_API_KEY not set — email not sent");
+    }
+  } else {
+    console.error("[fulfillAndGenerate] No requester email on order — email not sent");
   }
 
   revalidatePath("/dashboard");

@@ -323,6 +323,7 @@ export default function DashboardSettingsPage() {
         return;
       }
       toast.success("Profile updated.");
+      router.refresh(); // Update sidebar name
     } finally {
       setSavingPersonal(false);
     }
@@ -534,10 +535,6 @@ export default function DashboardSettingsPage() {
               <Input id="co-zip" value={zip} onChange={(e) => setZip(e.target.value)} />
             </div>
           </div>
-          <label className="flex items-center gap-3 text-sm text-foreground">
-            <Checkbox checked={billingDifferent} onCheckedChange={(c) => setBillingDifferent(Boolean(c))} />
-            Billing address is different
-          </label>
           <Button type="button" disabled={savingCompany || !orgId} onClick={() => void handleCompanySave()}>
             {savingCompany ? "Saving…" : "Save company info"}
           </Button>
@@ -546,8 +543,36 @@ export default function DashboardSettingsPage() {
         <DashboardSectionCard title="Portal Customization">
           <div className="space-y-2">
             <Label htmlFor="portal-logo">Logo</Label>
-            <Input id="portal-logo" type="file" accept="image/*" className="cursor-pointer bg-background" />
-            <p className="text-xs text-muted-foreground">Logo upload will connect to storage in a later release.</p>
+            {orgId && (() => {
+              const orgRow = {} as Record<string, unknown>;
+              // Show current logo if exists
+              return null;
+            })()}
+            <Input
+              id="portal-logo"
+              type="file"
+              accept="image/*"
+              className="cursor-pointer bg-background"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file || !orgId) return;
+                void (async () => {
+                  const path = `${orgId}/${Date.now()}-${file.name}`;
+                  const { error: uploadErr } = await supabase.storage.from("logos").upload(path, file);
+                  if (uploadErr) {
+                    toast.error(`Upload failed: ${uploadErr.message}`);
+                    return;
+                  }
+                  const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
+                  if (urlData?.publicUrl) {
+                    await supabase.from("organizations").update({ logo_url: urlData.publicUrl }).eq("id", orgId);
+                    toast.success("Logo uploaded.");
+                    await load();
+                  }
+                })();
+              }}
+            />
+            <p className="text-xs text-muted-foreground">Appears on your portal and generated documents.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 sm:items-end">
             <div className="space-y-2">
