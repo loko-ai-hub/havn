@@ -336,7 +336,8 @@ export default function DashboardHomePage() {
 
     setOpenRequests(openRes.count ?? 0);
     setAutoCompletedPct(pctComplete);
-    setTimeSavedHours(fulfilledCount * 2);
+    // 3 min per auto-filled cell, ~20 cells per fulfilled order
+    setTimeSavedHours(Math.round(fulfilledCount * 20 * 3 / 60));
     setPagesProcessed(pages);
     const revSum = (revRes.data ?? []).reduce((s, r) => s + (Number((r as { total_fee: number | null }).total_fee) || 0), 0);
     setTotalRevenue(revSum);
@@ -524,7 +525,7 @@ export default function DashboardHomePage() {
             {
               label: "Time saved",
               value: `${timeSavedHours}h`,
-              subtext: "~30 min saved per document",
+              subtext: "Estimated from auto-fill",
               icon: Timer,
               accent: "text-havn-success",
               iconBg: "bg-havn-success/10",

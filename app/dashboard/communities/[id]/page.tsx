@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   FileText,
   MapPin,
-  Users,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -232,47 +231,18 @@ export default async function CommunityDetailPage({
             </div>
           </div>
 
-          {/* Detail mini-cards */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {/* Location */}
-            <div className="space-y-3 rounded-xl border border-border bg-card p-5">
-              <div className="mb-1 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
-                    <MapPin className="h-3.5 w-3.5 text-primary" />
-                  </div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Location
-                  </h4>
-                </div>
+          {/* Location card */}
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+                <MapPin className="h-3.5 w-3.5 text-primary" />
               </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {c.city ?? "—"}, {c.state ?? "—"} {c.zip ?? ""}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{c.community_type ?? "—"}</p>
-              </div>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Location</h4>
             </div>
-
-            {/* Manager */}
-            <div className="space-y-3 rounded-xl border border-border bg-card p-5">
-              <div className="mb-1 flex items-center gap-2">
-                <div className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
-                  <Users className="h-3.5 w-3.5 text-primary" />
-                </div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Manager
-                </h4>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {c.manager_name?.trim() ? c.manager_name : "Unassigned"}
-                </p>
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  To change the manager, contact an admin.
-                </p>
-              </div>
-            </div>
+            <p className="text-sm font-medium text-foreground">
+              {c.city ?? "—"}, {c.state ?? "—"} {c.zip ?? ""}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{c.community_type ?? "—"}</p>
           </div>
         </div>
 

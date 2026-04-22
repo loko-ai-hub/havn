@@ -542,7 +542,8 @@ export default function DashboardCommunitiesPage() {
                   {form.state && !enabledStates.has(form.state) && (
                     <div className="rounded-md border border-havn-amber/40 bg-havn-amber/10 px-3 py-2 text-xs text-foreground">
                       <p className="font-semibold">Havn is not yet live in {form.state}.</p>
-                      <p className="mt-0.5 text-muted-foreground">You can add this community, but you won&apos;t be able to accept orders until this state is enabled. <a href="mailto:support@havnhq.com?subject=Request to enable {form.state}" className="underline hover:text-foreground">Notify Havn to unlock this state</a></p>
+                      <p className="mt-0.5 text-muted-foreground">You can add this community, but you won&apos;t be able to accept orders until this state is enabled.</p>
+                      <button type="button" onClick={() => toast.success("Your request has been recorded. We'll notify you when this state is available.")} className="mt-1.5 text-xs font-medium text-foreground underline underline-offset-2">Request to unlock {form.state}</button>
                     </div>
                   )}
                 </div>

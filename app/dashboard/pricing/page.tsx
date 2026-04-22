@@ -437,7 +437,7 @@ export default function DashboardPricingPage() {
         </div>
       ) : rows ? (
         <div className="space-y-4">
-          {showTip && (
+          {showTip && selectedState && Object.keys(stateCaps).length > 0 && (
             <div className="flex items-start justify-between gap-3 rounded-lg border border-havn-amber/40 bg-havn-amber/10 px-4 py-3 text-sm text-foreground">
               <p>Prices shown are for <strong>{stateName}</strong>. Where state law sets a lower cap, Havn automatically enforces it at order time.</p>
               <button

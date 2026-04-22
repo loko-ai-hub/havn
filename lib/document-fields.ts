@@ -133,12 +133,12 @@ export async function getPrefilledFields(
   }
 
   const filled = Object.values(fields).filter((f) => f.value?.trim()).length;
-  const required = template.fields.filter((f) => f.required).length;
+  const total = template.fields.length;
 
   return {
     fields,
     template,
-    completionPct: required > 0 ? Math.min(100, Math.round((filled / required) * 100)) : 100,
+    completionPct: total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 100,
     communityId,
   };
 }

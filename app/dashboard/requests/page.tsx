@@ -393,12 +393,10 @@ function DashboardRequestsPageInner() {
   ];
 
   const COLUMNS: { key: SortKey | null; label: string }[] = [
-    { key: "created_at", label: "Order Date" },
-    { key: null, label: "Order #" },
+    { key: "created_at", label: "Date" },
     { key: "requester_name", label: "Requester" },
     { key: null, label: "Property" },
     { key: "master_type_key", label: "Document" },
-    { key: "closing_date", label: "Due By" },
     { key: "days_remaining", label: "Days Rem." },
     { key: "total_fee", label: "Amount" },
     { key: "order_status", label: "Status" },
@@ -500,7 +498,7 @@ function DashboardRequestsPageInner() {
         ) : (
           <div className="overflow-hidden rounded-xl border border-border bg-card">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px]">
+              <table className="w-full min-w-[760px]">
                 <thead>
                   <tr className="sticky top-0 z-10 border-b border-border bg-havn-surface/30">
                     <th className="w-10 px-3 py-3">
@@ -537,7 +535,7 @@ function DashboardRequestsPageInner() {
                 <tbody className="divide-y divide-border">
                   {filtered.length === 0 && !loadError ? (
                     <tr>
-                      <td colSpan={11} className="px-4 py-16 text-center">
+                      <td colSpan={9} className="px-4 py-16 text-center">
                         <Inbox className="mx-auto mb-2 h-8 w-8 opacity-40 text-muted-foreground" />
                         <p className="text-sm text-muted-foreground">No requests found</p>
                       </td>
@@ -581,11 +579,6 @@ function DashboardRequestsPageInner() {
                           {formatOrderDate(order.created_at)}
                         </td>
                         <td className="px-4 py-3.5">
-                          <span className="font-mono text-sm font-medium text-foreground">
-                            {shortId}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5">
                           <span className="block text-sm font-medium text-foreground">
                             {order.requester_name || "—"}
                           </span>
@@ -600,9 +593,6 @@ function DashboardRequestsPageInner() {
                         </td>
                         <td className="px-4 py-3.5 text-sm text-foreground">
                           {formatMasterTypeKey(order.master_type_key)}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3.5 text-sm text-muted-foreground">
-                          {order.closing_date ? formatOrderDate(order.closing_date) : "—"}
                         </td>
                         <td className="px-4 py-3.5">
                           {days !== null ? (
