@@ -249,8 +249,9 @@ const OnboardingPage = () => {
 
       router.push("/onboarding/complete");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to send invitations.";
+      const message = error instanceof Error ? error.message : typeof error === "object" && error !== null && "message" in error ? String((error as { message: string }).message) : "Failed to send invitations.";
       toast.error(message);
+      console.error("[onboarding] invitation error:", error);
     } finally {
       setIsSubmitting(false);
     }
