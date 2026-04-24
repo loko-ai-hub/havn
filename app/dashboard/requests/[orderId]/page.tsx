@@ -28,6 +28,7 @@ import {
 import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
 import { getStatusCfg } from "../../_lib/status-badge";
 import ApproveRejectButtons from "../approve-reject-buttons";
+import RefundButton from "./refund-button";
 
 type OrderDetail = {
   id: string;
@@ -117,6 +118,8 @@ export default async function DashboardRequestDetailPage({
     row.order_status !== "fulfilled" &&
     row.order_status !== "cancelled" &&
     row.order_status !== "refunded";
+  const canRefund =
+    row.order_status === "paid" && Boolean(row.stripe_payment_intent_id);
   const roleLabel = row.requester_role
     ? row.requester_role.split("_").join(" ")
     : "—";
@@ -423,6 +426,12 @@ export default async function DashboardRequestDetailPage({
         {showActions && (
           <div className="pt-2">
             <ApproveRejectButtons orderId={row.id} alreadyFulfilled={false} />
+          </div>
+        )}
+
+        {canRefund && (
+          <div className="pt-2">
+            <RefundButton orderId={row.id} totalFee={row.total_fee} />
           </div>
         )}
       </div>

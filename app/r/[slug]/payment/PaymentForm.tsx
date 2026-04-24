@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { CreditCard } from "lucide-react";
 
 import { loadStripe } from "@stripe/stripe-js";
-import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
+import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 
 import { Button } from "../../../../components/ui/button";
 import { formatCurrency } from "../../../../lib/portal-data";
@@ -17,14 +17,12 @@ const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 function PaymentCardForm({
   slug,
   orderId,
-  clientSecret,
   totalFee,
   confirmationQuery,
   primaryColor,
 }: {
   slug: string;
   orderId: string;
-  clientSecret: string;
   totalFee: number;
   confirmationQuery: string;
   primaryColor: string;
@@ -34,47 +32,52 @@ function PaymentCardForm({
   const elements = useElements();
 
   const [isProcessing, setIsProcessing] = useState(false);
-  const [cardError, setCardError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    setCardError(null);
     setSubmitError(null);
 
     if (!stripe || !elements) return;
 
-    const card = elements.getElement(CardElement);
-    if (!card) {
-      setCardError("Card details are not ready. Please try again.");
-      return;
-    }
-
     setIsProcessing(true);
     try {
-      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card,
+      // Absolute return URL is required by Stripe. We include our own confirmation
+      // query params so the page can render full order detail even after a redirect.
+      const returnUrl = `${window.location.origin}/r/${slug}/confirmation?${confirmationQuery}`;
+
+      const { error, paymentIntent } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: returnUrl,
         },
+        // Only redirect the user away when the payment method actually requires it
+        // (e.g. 3DS, some wallets). Cards / Link / Apple Pay / Google Pay resolve inline.
+        redirect: "if_required",
       });
 
       if (error) {
-        setCardError(error.message ?? "Payment failed. Please try again.");
+        setSubmitError(error.message ?? "Payment failed. Please try again.");
         return;
       }
 
       if (!paymentIntent) {
-        setCardError("Payment failed. Please try again.");
+        setSubmitError("Payment did not complete. Please try again.");
         return;
       }
 
-      const result = await confirmPayment(orderId, paymentIntent.id);
-      if ("error" in result) {
-        setSubmitError(result.error ?? "Unable to confirm payment. Please try again.");
+      if (paymentIntent.status === "succeeded" || paymentIntent.status === "processing") {
+        // Fast-path status sync — webhook is still the source of truth.
+        const result = await confirmPayment(orderId, paymentIntent.id);
+        if ("error" in result) {
+          // Non-fatal — webhook will catch up. Log and continue to confirmation.
+          console.error("confirmPayment server action error:", result.error);
+        }
+        router.push(`/r/${slug}/confirmation?${confirmationQuery}`);
         return;
       }
 
-      router.push(`/r/${slug}/confirmation?${confirmationQuery}`);
+      setSubmitError(`Unexpected payment status: ${paymentIntent.status}.`);
     } finally {
       setIsProcessing(false);
     }
@@ -92,18 +95,7 @@ function PaymentCardForm({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <p className="text-sm font-medium text-foreground">Card details</p>
-            <div className="mt-2 rounded-md border border-border bg-background px-3 py-2">
-              <CardElement options={{ hidePostalCode: true }} />
-            </div>
-          </div>
-
-          {cardError ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
-              <p className="text-sm text-destructive">{cardError}</p>
-            </div>
-          ) : null}
+          <PaymentElement options={{ layout: "tabs" }} />
 
           {submitError ? (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
@@ -117,6 +109,7 @@ function PaymentCardForm({
               variant="outline"
               className="h-12 flex-1 text-base"
               onClick={() => router.push(`/r/${slug}/review`)}
+              disabled={isProcessing}
             >
               Back
             </Button>
@@ -144,10 +137,16 @@ export default function PaymentForm(props: {
   confirmationQuery: string;
   primaryColor: string;
 }) {
+  const { clientSecret, ...rest } = props;
   return (
-    <Elements stripe={stripePromise} options={{ clientSecret: props.clientSecret }}>
-      <PaymentCardForm {...props} />
+    <Elements
+      stripe={stripePromise}
+      options={{
+        clientSecret,
+        appearance: { theme: "stripe" },
+      }}
+    >
+      <PaymentCardForm {...rest} />
     </Elements>
   );
 }
-

@@ -9,6 +9,7 @@ import { generateDocumentPdf } from "../../../lib/pdf-generator";
 import { formatMasterTypeKey } from "../_lib/format";
 
 import { requireDashboardOrg } from "../_lib/require-dashboard-org";
+import { stripe } from "../../../lib/stripe";
 
 export async function fulfillOrder(orderId: string) {
   const { organizationId } = await requireDashboardOrg();
@@ -267,6 +268,56 @@ export async function fulfillAndGenerate(
     console.error("[fulfillAndGenerate] No requester email on order — email not sent");
   }
 
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/requests");
+  revalidatePath(`/dashboard/requests/${orderId}`);
+  return { ok: true };
+}
+
+export async function refundOrder(orderId: string, reason?: string) {
+  const { organizationId } = await requireDashboardOrg();
+  const admin = createAdminClient();
+
+  const { data: row, error: fetchError } = await admin
+    .from("document_orders")
+    .select("id, organization_id, order_status, stripe_payment_intent_id")
+    .eq("id", orderId)
+    .single();
+
+  if (fetchError || !row || row.organization_id !== organizationId) {
+    return { error: "Order not found or access denied." };
+  }
+
+  const paymentIntentId = row.stripe_payment_intent_id as string | null;
+  if (!paymentIntentId) {
+    return { error: "This order has no Stripe payment to refund." };
+  }
+
+  if (row.order_status !== "paid") {
+    return {
+      error: `Only paid orders can be refunded. Current status: ${row.order_status ?? "unknown"}.`,
+    };
+  }
+
+  try {
+    await stripe.refunds.create({
+      payment_intent: paymentIntentId,
+      // Destination charges: pull funds back from the connected account…
+      reverse_transfer: true,
+      // …and refund Havn's 35% application fee proportionally.
+      refund_application_fee: true,
+      metadata: {
+        orderId,
+        reason: reason?.trim() ?? "",
+      },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Refund failed.";
+    return { error: msg };
+  }
+
+  // Status flip happens in the charge.refunded webhook — markOrderRefunded is
+  // idempotent, so we don't duplicate the write here.
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/requests");
   revalidatePath(`/dashboard/requests/${orderId}`);
