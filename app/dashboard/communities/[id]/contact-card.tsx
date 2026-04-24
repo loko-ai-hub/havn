@@ -77,7 +77,7 @@ export default function CommunityContactCard({ communityId, contactType, label, 
 
   const isEmpty = !contact.name && !contact.role && !contact.address && !contact.phone && !contact.email;
 
-  const defaultRole = contactType === "insurance_agent" ? "Insurance Agent" : "Management Contact";
+  const defaultRole = "";
 
   const handleSave = async () => {
     // Email validation

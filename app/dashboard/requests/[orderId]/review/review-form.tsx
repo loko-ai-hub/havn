@@ -168,7 +168,7 @@ export default function ReviewForm({
           <select
             value={selectedCommunity}
             onChange={(e) => setSelectedCommunity(e.target.value)}
-            disabled={isFulfilled}
+            disabled={false}
             className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
           >
             <option value="">Select community...</option>
@@ -222,7 +222,7 @@ export default function ReviewForm({
                         id={`field-${fieldDef.key}`}
                         value={merged?.value ?? ""}
                         onChange={(e) => updateField(fieldDef.key, e.target.value)}
-                        disabled={isFulfilled}
+                        disabled={false}
                         rows={3}
                         className="text-sm disabled:opacity-50"
                       />
@@ -232,7 +232,7 @@ export default function ReviewForm({
                         type={fieldDef.type === "date" ? "date" : "text"}
                         value={merged?.value ?? ""}
                         onChange={(e) => updateField(fieldDef.key, e.target.value)}
-                        disabled={isFulfilled}
+                        disabled={false}
                         className={cn(
                           "h-9 text-sm disabled:opacity-50",
                           fieldDef.required && !merged?.value?.trim() && "border-destructive/40"
@@ -248,8 +248,11 @@ export default function ReviewForm({
       })}
 
       {/* Actions */}
-      {!isFulfilled && (
-        <div className="flex items-center justify-end gap-3 border-t border-border pt-5">
+      <div className="flex items-center justify-between gap-3 border-t border-border pt-5">
+        {isFulfilled && (
+          <p className="text-xs text-havn-success font-medium">Previously generated and delivered</p>
+        )}
+        <div className="flex items-center gap-3 ml-auto">
           <Button
             type="button"
             variant="outline"
@@ -266,18 +269,10 @@ export default function ReviewForm({
             className="bg-havn-success text-white hover:bg-havn-success/90"
           >
             <CheckCircle2 className="mr-2 h-4 w-4" />
-            {generating ? "Generating..." : "Approve & Generate PDF"}
+            {generating ? "Generating..." : isFulfilled ? "Regenerate PDF" : "Approve & Generate PDF"}
           </Button>
         </div>
-      )}
-
-      {isFulfilled && (
-        <div className="rounded-lg border border-havn-success/30 bg-havn-success/10 px-4 py-3 text-center">
-          <p className="text-sm font-medium text-havn-success">
-            This document has been generated and delivered.
-          </p>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

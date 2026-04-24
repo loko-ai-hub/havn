@@ -299,21 +299,29 @@ export default function DashboardHomePage() {
     setStripeConnected(stripe);
     setOrgName(name);
 
+    const cid = selectedCommunity || null;
+    // Order queries: filter by community_id if a community is selected
+    let openQ = supabase.from("document_orders").select("id", { count: "exact", head: true }).eq("organization_id", orgId).in("order_status", ["paid", "in_progress"]);
+    let fulQ = supabase.from("document_orders").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("order_status", "fulfilled");
+    let revQ = supabase.from("document_orders").select("total_fee").eq("organization_id", orgId).in("order_status", ["paid", "fulfilled"]);
+    let recentQ = supabase.from("document_orders").select("id, created_at, requester_name, requester_email, property_address, master_type_key, delivery_speed, total_fee, order_status").eq("organization_id", orgId).neq("order_status", "pending_payment").order("created_at", { ascending: false }).limit(5);
+    // Doc queries: filter by community_id
+    let indexedQ = supabase.from("community_documents").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("ocr_status", "complete");
+    let totalDocsQ = supabase.from("community_documents").select("id", { count: "exact", head: true }).eq("organization_id", orgId);
+    let pagesQ = supabase.from("community_documents").select("page_count").eq("organization_id", orgId);
+
+    if (cid) {
+      openQ = openQ.eq("community_id", cid);
+      fulQ = fulQ.eq("community_id", cid);
+      revQ = revQ.eq("community_id", cid);
+      recentQ = recentQ.eq("community_id", cid);
+      indexedQ = indexedQ.eq("community_id", cid);
+      totalDocsQ = totalDocsQ.eq("community_id", cid);
+      pagesQ = pagesQ.eq("community_id", cid);
+    }
+
     const [openRes, fulRes, revRes, indexedRes, totalDocsRes, pagesRes, recentRes, commRes, feesRes, commListRes] = await Promise.all([
-      // Open requests = paid + in_progress (not yet fulfilled)
-      supabase.from("document_orders").select("id", { count: "exact", head: true }).eq("organization_id", orgId).in("order_status", ["paid", "in_progress"]),
-      // Fulfilled count (for time saved estimate)
-      supabase.from("document_orders").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("order_status", "fulfilled"),
-      // Revenue
-      supabase.from("document_orders").select("total_fee").eq("organization_id", orgId).in("order_status", ["paid", "fulfilled"]),
-      // Docs with OCR complete (for auto-completed %)
-      supabase.from("community_documents").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("ocr_status", "complete"),
-      // Total docs uploaded (denominator for auto-completed %)
-      supabase.from("community_documents").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
-      // Pages processed (sum of page_count)
-      supabase.from("community_documents").select("page_count").eq("organization_id", orgId),
-      // Recent orders — only paid/confirmed orders visible to management
-      supabase.from("document_orders").select("id, created_at, requester_name, requester_email, property_address, master_type_key, delivery_speed, total_fee, order_status").eq("organization_id", orgId).neq("order_status", "pending_payment").order("created_at", { ascending: false }).limit(5),
+      openQ, fulQ, revQ, indexedQ, totalDocsQ, pagesQ, recentQ,
       // Checklist: communities count
       supabase.from("communities").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
       // Checklist: fees count
@@ -347,7 +355,7 @@ export default function DashboardHomePage() {
     setFeesCount(feesRes.count ?? 0);
     setCommunities((commListRes.data ?? []).map((r) => ({ id: (r as { id: string; legal_name: string }).id, name: (r as { id: string; legal_name: string }).legal_name })));
     setLoading(false);
-  }, []);
+  }, [selectedCommunity]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { void load(); }, [load]);
 

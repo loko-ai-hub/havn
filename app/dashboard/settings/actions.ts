@@ -142,19 +142,22 @@ export async function sendTeamInvitation(orgId: string, email: string, role: str
   const token = randomUUID();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { error: insertError } = await admin.from("invitations").insert({
+  const { data: insertedInvite, error: insertError } = await admin.from("invitations").insert({
     organization_id: orgId,
     email: email.toLowerCase(),
     role,
     invited_by: userId,
     token,
     expires_at: expiresAt,
-  });
+  }).select("token").single();
 
   if (insertError) return { error: insertError.message };
 
+  // Use the actual token from DB (in case DEFAULT overrode the provided value)
+  const actualToken = (insertedInvite?.token as string) ?? token;
+
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://havnhq.com";
-  const acceptUrl = `${baseUrl}/accept-invite?token=${token}`;
+  const acceptUrl = `${baseUrl}/accept-invite?token=${actualToken}`;
 
   try {
     await resend.emails.send({
