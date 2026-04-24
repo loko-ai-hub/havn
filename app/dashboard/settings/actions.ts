@@ -116,7 +116,7 @@ export async function getOrgTeam(
     .from("invitations")
     .select("id, email, role, created_at")
     .eq("organization_id", orgId)
-    .eq("accepted", false);
+    .is("accepted_at", null);
 
   return {
     members,

@@ -19,7 +19,7 @@ export async function getInviteDetails(
 
   const { data: invite, error } = await admin
     .from("invitations")
-    .select("id, email, role, organization_id, accepted, expires_at, token")
+    .select("id, email, role, organization_id, accepted_at, expires_at, token")
     .eq("token", token)
     .maybeSingle();
 
@@ -33,7 +33,7 @@ export async function getInviteDetails(
     console.error("[accept-invite] Token not found:", token, "Total invitations:", count);
     return { error: "Invitation not found or has expired." };
   }
-  if (invite.accepted) return { error: "This invitation has already been accepted." };
+  if (invite.accepted_at) return { error: "This invitation has already been accepted." };
   if (invite.expires_at && new Date(invite.expires_at as string) < new Date()) {
     return {
       error:
@@ -66,12 +66,12 @@ export async function acceptInvite(
 
   const { data: invite, error: fetchError } = await admin
     .from("invitations")
-    .select("id, email, role, organization_id, accepted, expires_at")
+    .select("id, email, role, organization_id, accepted_at, expires_at")
     .eq("token", token)
     .maybeSingle();
 
   if (fetchError || !invite) return { error: "Invitation not found." };
-  if (invite.accepted) return { error: "This invitation has already been accepted." };
+  if (invite.accepted_at) return { error: "This invitation has already been accepted." };
   if (invite.expires_at && new Date(invite.expires_at as string) < new Date()) {
     return { error: "This invitation has expired." };
   }
@@ -120,7 +120,7 @@ export async function acceptInvite(
   // Mark invite as accepted
   await admin
     .from("invitations")
-    .update({ accepted: true })
+    .update({ accepted_at: new Date().toISOString() })
     .eq("id", invite.id as string);
 
   return { ok: true, email };
