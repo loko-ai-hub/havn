@@ -161,7 +161,7 @@ export async function sendTeamInvitation(orgId: string, email: string, role: str
 
   try {
     await resend.emails.send({
-      from: RESEND_FROM_EMAIL,
+      from: "Havn <welcome@havnhq.com>",
       to: email,
       subject: "You've been invited to join Havn",
       html: `

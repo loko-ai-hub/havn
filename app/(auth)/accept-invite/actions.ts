@@ -19,11 +19,20 @@ export async function getInviteDetails(
 
   const { data: invite, error } = await admin
     .from("invitations")
-    .select("id, email, role, organization_id, accepted, expires_at")
+    .select("id, email, role, organization_id, accepted, expires_at, token")
     .eq("token", token)
     .maybeSingle();
 
-  if (error || !invite) return { error: "Invitation not found or has expired." };
+  if (error) {
+    console.error("[accept-invite] Query error:", error.message);
+    return { error: `Invitation lookup failed: ${error.message}` };
+  }
+  if (!invite) {
+    // Try to find by checking if any invitations exist at all
+    const { count } = await admin.from("invitations").select("id", { count: "exact", head: true });
+    console.error("[accept-invite] Token not found:", token, "Total invitations:", count);
+    return { error: "Invitation not found or has expired." };
+  }
   if (invite.accepted) return { error: "This invitation has already been accepted." };
   if (invite.expires_at && new Date(invite.expires_at as string) < new Date()) {
     return {
