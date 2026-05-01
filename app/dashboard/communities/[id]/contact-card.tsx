@@ -46,19 +46,54 @@ function formatPhone(value: string): string {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
-// Parse combined address string into parts
+// Matches a segment that's *only* a unit designator like "Suite 100",
+// "Apt 4B", "#205". These should be folded into the street, not the city.
+const UNIT_ONLY_RE =
+  /^(?:suite|ste|apt|apartment|unit|building|bldg|floor|fl|#)\s*[\w\-]+\.?$/i;
+
+// Matches a segment that *starts with* a unit designator and has more text
+// after — e.g. "Suite 100 Bellevue" where the OCR jammed unit + city into
+// one comma segment. Group 1 = the unit portion, group 2 = the rest (city).
+const UNIT_AND_REST_RE =
+  /^((?:suite|ste|apt|apartment|unit|building|bldg|floor|fl|#)\s*[\w\-]+\.?)\s+(.+)$/i;
+
+// Parse a combined address string into separate street / city / state / zip
+// for the contact-card editor. Handles a few real-world OCR quirks:
+//   - "40 Lake Bellevue, Suite 100, Bellevue, WA 98005" (clean canonical)
+//   - "40 Lake Bellevue, Suite 100 Bellevue, WA 98005" (unit + city collided)
+//   - "40 Lake Bellevue Suite 100, Bellevue, WA 98005" (no comma before unit)
 function parseAddress(addr: string | null): { street: string; city: string; state: string; zip: string } {
   if (!addr) return { street: "", city: "", state: "", zip: "" };
-  // Try "Street, City, ST ZIP" format
-  const parts = addr.split(",").map((s) => s.trim());
-  if (parts.length >= 2) {
-    const street = parts[0];
-    const cityStateZip = parts.slice(1).join(", ").trim();
-    const match = cityStateZip.match(/^(.+?)\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
-    if (match) return { street, city: match[1].replace(/,\s*$/, ""), state: match[2], zip: match[3] };
-    return { street, city: cityStateZip, state: "", zip: "" };
+  const parts = addr.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  if (parts.length === 0) return { street: "", city: "", state: "", zip: "" };
+  if (parts.length === 1) return { street: parts[0], city: "", state: "", zip: "" };
+
+  let street = parts[0];
+  let cursor = 1;
+
+  // Absorb any "Suite 100"-style segments that follow the street into the
+  // street itself.
+  while (cursor < parts.length && UNIT_ONLY_RE.test(parts[cursor])) {
+    street += `, ${parts[cursor]}`;
+    cursor++;
   }
-  return { street: addr, city: "", state: "", zip: "" };
+
+  // If the next segment starts with a unit designator AND has more text
+  // (e.g. "Suite 100 Bellevue"), split it: unit → street, remainder → city.
+  if (cursor < parts.length) {
+    const m = parts[cursor].match(UNIT_AND_REST_RE);
+    if (m) {
+      street += `, ${m[1]}`;
+      parts[cursor] = m[2];
+    }
+  }
+
+  const cityStateZip = parts.slice(cursor).join(", ").trim();
+  const match = cityStateZip.match(/^(.+?)\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  if (match) {
+    return { street, city: match[1].replace(/,\s*$/, "").trim(), state: match[2], zip: match[3] };
+  }
+  return { street, city: cityStateZip, state: "", zip: "" };
 }
 
 function combineAddress(street: string, city: string, state: string, zip: string): string | null {

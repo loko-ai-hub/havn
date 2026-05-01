@@ -69,6 +69,7 @@ export async function addCommunity(
     state: string;
     zip: string;
     community_type: string;
+    manager_user_id: string | null;
     manager_name: string;
     unit_count: number;
   }
@@ -80,6 +81,31 @@ export async function addCommunity(
 
   const admin = createAdminClient();
 
+  // If a real user is being assigned as the manager, verify membership in
+  // the org and derive a display name from their profile so the legacy
+  // manager_name string still has something useful.
+  let derivedManagerName: string | null = data.manager_name?.trim() || null;
+  if (data.manager_user_id) {
+    const { data: profileRow } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("id", data.manager_user_id)
+      .eq("organization_id", orgId)
+      .single();
+    if (!profileRow) return { error: "Selected user isn't in this organization." };
+
+    const { data: userResult } = await admin.auth.admin.getUserById(
+      data.manager_user_id
+    );
+    if (userResult?.user) {
+      const meta = (userResult.user.user_metadata ?? {}) as Record<string, unknown>;
+      derivedManagerName =
+        String(meta.full_name ?? meta.name ?? "").trim() ||
+        userResult.user.email?.split("@")[0] ||
+        derivedManagerName;
+    }
+  }
+
   const { error } = await admin.from("communities").insert({
     organization_id: orgId,
     legal_name: data.legal_name,
@@ -87,7 +113,8 @@ export async function addCommunity(
     state: data.state,
     zip: data.zip,
     community_type: data.community_type,
-    manager_name: data.manager_name || null,
+    manager_user_id: data.manager_user_id,
+    manager_name: derivedManagerName,
     unit_count: data.unit_count,
     status: "active",
   });

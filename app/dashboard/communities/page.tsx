@@ -27,6 +27,7 @@ import {
   extractCommunityFromGoverningDoc,
   lookupAddress,
 } from "./actions";
+import { listOrganizationUsers, type OrgUserOption } from "./[id]/actions";
 import type { CcAndRExtractionResult } from "@/lib/cc-and-r-extractor";
 import { loadEnabledStates } from "@/lib/enabled-states-action";
 import BulkUploadModal from "./bulk-upload-modal";
@@ -100,9 +101,12 @@ export default function DashboardCommunitiesPage() {
     state: "",
     zip: "",
     community_type: "HOA",
+    manager_user_id: "" as string,
     manager_name: "",
     unit_count: 0,
   });
+
+  const [orgUsers, setOrgUsers] = useState<OrgUserOption[]>([]);
 
   const resetForm = () => {
     setForm({
@@ -111,6 +115,7 @@ export default function DashboardCommunitiesPage() {
       state: "",
       zip: "",
       community_type: "HOA",
+      manager_user_id: "",
       manager_name: "",
       unit_count: 0,
     });
@@ -330,6 +335,20 @@ export default function DashboardCommunitiesPage() {
     form.zip.trim().length > 0 &&
     form.community_type.trim().length > 0;
 
+  // Load org users once so the manager picker has options. Cheap query —
+  // happens on first mount and stays cached for the modal's lifetime.
+  useEffect(() => {
+    if (orgUsers.length > 0) return;
+    void (async () => {
+      try {
+        const users = await listOrganizationUsers();
+        setOrgUsers(users);
+      } catch {
+        // Non-fatal — modal still works with manual entry fallback.
+      }
+    })();
+  }, [orgUsers.length]);
+
   const handleSubmit = () => {
     if (!orgId) { toast.error("Organization not found."); return; }
     if (!canSubmit) return;
@@ -340,6 +359,7 @@ export default function DashboardCommunitiesPage() {
         state: form.state.trim(),
         zip: form.zip.trim(),
         community_type: form.community_type,
+        manager_user_id: form.manager_user_id || null,
         manager_name: form.manager_name.trim(),
         unit_count: Number.isFinite(form.unit_count) ? Number(form.unit_count) : 0,
       });
@@ -891,13 +911,37 @@ export default function DashboardCommunitiesPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="manager_name">Manager Name</Label>
-                <Input
-                  id="manager_name"
-                  value={form.manager_name}
-                  onChange={(e) => setForm((f) => ({ ...f, manager_name: e.target.value }))}
-                  placeholder="e.g. Jane Smith"
-                />
+                <Label htmlFor="manager_user_id">Assigned Manager</Label>
+                <select
+                  id="manager_user_id"
+                  value={form.manager_user_id}
+                  onChange={(e) => {
+                    const userId = e.target.value;
+                    const picked = orgUsers.find((u) => u.id === userId);
+                    setForm((f) => ({
+                      ...f,
+                      manager_user_id: userId,
+                      manager_name: picked?.fullName ?? "",
+                    }));
+                  }}
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">— Pick a team member —</option>
+                  {orgUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.fullName} · {u.email}
+                    </option>
+                  ))}
+                </select>
+                {orgUsers.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No team members yet. Invite users from Settings to assign one as manager.
+                  </p>
+                )}
+                <p className="text-[11px] text-muted-foreground/70">
+                  Their profile and your management company&apos;s mailing
+                  address will populate the management contact card automatically.
+                </p>
               </div>
 
               <div className="space-y-2">
