@@ -399,12 +399,12 @@ export default function CommunityDocumentsPage() {
     if (!community) return;
     setIsProcessingAll(true);
 
-    const toProcess = pendingFiles.filter((f) => f.status === "pending");
+    const queue = pendingFiles.filter((f) => f.status === "pending");
 
-    for (const pf of toProcess) {
+    const processOne = async (pf: PendingFile) => {
       // Fetch is the whole pipeline (upload + OCR + classification). Show
-      // "processing" for the duration so the user sees a single, honest
-      // signal: "we're reading and categorizing this file."
+      // "processing" for the duration so the user sees an honest signal:
+      // "we're reading and categorizing this file."
       updatePendingFile(pf.id, { status: "processing" });
 
       const formData = new FormData();
@@ -437,16 +437,13 @@ export default function CommunityDocumentsPage() {
             duplicateOf: result.existingFilename ?? undefined,
             category: result.existingCategory ?? pf.category,
           });
-          continue;
+          return;
         }
 
         if (!response.ok || !result.success || !result.documentId) {
           throw new Error(result.error ?? "Processing failed.");
         }
 
-        // Strict: only mark done when the route says ocr is fully complete.
-        // A stale server returning "processing" used to slip through and
-        // flip rows to Verified before OCR was actually finished.
         if (result.ocrStatus === "complete") {
           updatePendingFile(pf.id, {
             status: "done",
@@ -513,7 +510,24 @@ export default function CommunityDocumentsPage() {
           error: error instanceof Error ? error.message : "Upload failed.",
         });
       }
-    }
+    };
+
+    // Bounded-concurrency worker pool. 3 is the sweet spot: ~3x faster than
+    // strictly serial without hammering rate limits or making the visual
+    // flow ("which file is being worked on?") unreadable.
+    const CONCURRENCY = 3;
+    let cursor = 0;
+    const worker = async () => {
+      while (true) {
+        const idx = cursor;
+        cursor++;
+        if (idx >= queue.length) return;
+        await processOne(queue[idx]);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => worker())
+    );
 
     setIsProcessingAll(false);
   };
