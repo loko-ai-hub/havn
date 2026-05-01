@@ -198,7 +198,7 @@ export default function DashboardSidebar({
             className="flex items-center gap-2 rounded-md px-2 py-2 text-xs font-medium text-havn-navy-muted transition-colors hover:text-havn-sand"
           >
             <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-            View resident portal →
+            View order portal →
           </a>
         ) : null}
 
