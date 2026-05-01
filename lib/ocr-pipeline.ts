@@ -91,15 +91,19 @@ const CategoryOutputSchema = z.object({
 const CLAUDE_TIMEOUT_MS = 60_000;
 
 async function callClaudeForCategory(rawText: string): Promise<string | undefined> {
+  console.log(`[OCR_CATEGORY] calling model=${BEST_MODEL} textLen=${rawText.length}`);
   try {
-    const { output } = await generateText({
+    const result = await generateText({
       model: BEST_MODEL,
       output: Output.object({ schema: CategoryOutputSchema }),
       system: CATEGORY_PROMPT,
       prompt: `Document text:\n\n${rawText.slice(0, 8000)}`,
       abortSignal: AbortSignal.timeout(CLAUDE_TIMEOUT_MS),
     });
-    const suggested = output?.suggested_category?.trim();
+    console.log(
+      `[OCR_CATEGORY] result keys=${Object.keys(result).join(",")} text=${(result.text ?? "").slice(0, 200)} output=${JSON.stringify(result.output)}`
+    );
+    const suggested = result.output?.suggested_category?.trim();
     return suggested && suggested.length > 0 ? suggested : undefined;
   } catch (err) {
     console.error("[OCR_CATEGORY] Exception:", err);
@@ -110,6 +114,7 @@ async function callClaudeForCategory(rawText: string): Promise<string | undefine
 async function callClaudeForFieldExtraction(
   rawText: string
 ): Promise<Record<string, unknown>> {
+  console.log(`[OCR_EXTRACT] calling model=${BEST_MODEL} textLen=${rawText.length}`);
   try {
     const { text } = await generateText({
       model: BEST_MODEL,
@@ -117,7 +122,10 @@ async function callClaudeForFieldExtraction(
       prompt: `Document text:\n\n${rawText.slice(0, 180000)}`,
       abortSignal: AbortSignal.timeout(CLAUDE_TIMEOUT_MS),
     });
-    if (!text) return {};
+    if (!text) {
+      console.log("[OCR_EXTRACT] empty text response");
+      return {};
+    }
     console.log("[OCR_EXTRACT] raw response (first 500):", text.slice(0, 500));
     return safeJsonParse(text);
   } catch (err) {
