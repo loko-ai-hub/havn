@@ -1,10 +1,10 @@
 "use client";
 
-import { Building2, Mail, MapPin, Pencil, Phone, Shield, User, X } from "lucide-react";
+import { Building2, Mail, MapPin, Pencil, Phone, RefreshCw, Shield, User, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { upsertCommunityContact } from "./actions";
+import { rerunInsuranceAgentExtraction, upsertCommunityContact } from "./actions";
 
 type Contact = {
   name: string | null;
@@ -69,6 +69,7 @@ function combineAddress(street: string, city: string, state: string, zip: string
 export default function CommunityContactCard({ communityId, contactType, label, initial }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
   const [contact, setContact] = useState<Contact>(initial);
   const [draft, setDraft] = useState<Contact>(initial);
 
@@ -117,6 +118,34 @@ export default function CommunityContactCard({ communityId, contactType, label, 
     setEditing(true);
   };
 
+  const handleRescanCOI = async () => {
+    setRescanning(true);
+    try {
+      const result = await rerunInsuranceAgentExtraction(communityId);
+      if (result && "error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      if (result?.ok && result.extracted) {
+        const next = {
+          name: contact.name || result.extracted.name,
+          role: contact.role || result.extracted.role,
+          address: contact.address || result.extracted.address,
+          phone: contact.phone || result.extracted.phone,
+          email: contact.email || result.extracted.email,
+        };
+        setContact(next);
+        toast.success(
+          result.sourceFilename
+            ? `Filled from ${result.sourceFilename}`
+            : "Insurance agent info filled."
+        );
+      }
+    } finally {
+      setRescanning(false);
+    }
+  };
+
   const iconEl = contactType === "insurance_agent"
     ? <Shield className="h-3.5 w-3.5 text-primary" />
     : <User className="h-3.5 w-3.5 text-primary" />;
@@ -146,7 +175,24 @@ export default function CommunityContactCard({ communityId, contactType, label, 
       {!editing && (
         <div className="space-y-2.5">
           {isEmpty ? (
-            <p className="text-xs text-muted-foreground italic">No contact on file — click edit to add.</p>
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground italic">
+                {contactType === "insurance_agent"
+                  ? "Upload your COI to pre-populate this information."
+                  : "No contact on file. Click edit to add."}
+              </p>
+              {contactType === "insurance_agent" && (
+                <button
+                  type="button"
+                  onClick={() => void handleRescanCOI()}
+                  disabled={rescanning}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+                >
+                  <RefreshCw className={`h-3 w-3 ${rescanning ? "animate-spin" : ""}`} />
+                  {rescanning ? "Scanning…" : "Auto-fill from latest COI"}
+                </button>
+              )}
+            </div>
           ) : (
             <>
               {contact.name && (

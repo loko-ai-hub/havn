@@ -23,10 +23,12 @@ import CommunityContactCard from "./contact-card";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+// Keep in sync with the per-community documents page, the communities list,
+// and the global documents overview. Amendments, Articles of Incorporation,
+// Site Plan / Map, FHA/VA, and Management Agreement are optional.
 const REQUIRED_CATEGORIES = [
   "CC&Rs / Declaration",
   "Bylaws",
-  "Amendments",
   "Financial Reports",
   "Insurance Certificate",
   "Reserve Study",
