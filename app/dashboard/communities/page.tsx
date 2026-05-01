@@ -36,10 +36,13 @@ import { Loader2, Sparkles } from "lucide-react";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+// Required categories for a community to count as document-complete. Must
+// stay in sync with REQUIRED_CATEGORIES in /dashboard/communities/[id]/documents
+// — Amendments, Articles of Incorporation, Site Plan / Map, FHA/VA, and
+// Management Agreement are optional and not counted here.
 const REQUIRED_CATEGORIES = [
   "CC&Rs / Declaration",
   "Bylaws",
-  "Amendments",
   "Financial Reports",
   "Insurance Certificate",
   "Reserve Study",

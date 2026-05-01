@@ -32,10 +32,13 @@ type DocRow = {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+// Keep in sync with REQUIRED_CATEGORIES in /dashboard/communities/page.tsx
+// and /dashboard/communities/[id]/documents/page.tsx. Amendments, Articles of
+// Incorporation, Site Plan / Map, FHA/VA, and Management Agreement are
+// optional and not counted toward "complete" here.
 const REQUIRED_CATEGORIES = [
   "CC&Rs / Declaration",
   "Bylaws",
-  "Amendments",
   "Financial Reports",
   "Insurance Certificate",
   "Reserve Study",
