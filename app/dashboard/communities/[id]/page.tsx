@@ -417,7 +417,7 @@ export default async function CommunityDetailPage({
             <CommunityContactCard
               communityId={id}
               contactType="management_company"
-              label="Management Company Contact"
+              label="Management Contact"
               initial={mgmtContact}
               orgUsers={orgUsers}
               currentManagerId={c.manager_user_id}
