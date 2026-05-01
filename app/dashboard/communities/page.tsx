@@ -321,8 +321,27 @@ export default function DashboardCommunitiesPage() {
     });
   }, [communities, search, tab]);
 
-  const hasZeroUnits = useMemo(
-    () => filtered.some((c) => !c.unit_count || c.unit_count === 0),
+  // Banner priority: documents first (the actually-required step), then
+  // addresses (optional — only nudge once docs are handled). Both look at
+  // active communities only so archived rows don't trigger nags.
+  const needsDocsCount = useMemo(
+    () =>
+      filtered.filter((c) => {
+        const status = (c.status ?? "active").toString();
+        if (status !== "active") return false;
+        const missing = missingAlerts[c.id] ?? REQUIRED_CATEGORIES.length;
+        return missing > 0;
+      }).length,
+    [filtered, missingAlerts]
+  );
+
+  const needsAddressCount = useMemo(
+    () =>
+      filtered.filter((c) => {
+        const status = (c.status ?? "active").toString();
+        if (status !== "active") return false;
+        return !c.unit_count || c.unit_count === 0;
+      }).length,
     [filtered]
   );
 
@@ -461,14 +480,39 @@ export default function DashboardCommunitiesPage() {
           </div>
         </div>
 
-        {/* Zero-units banner */}
-        {!loading && hasZeroUnits && (
+        {/* Priority banner: documents first (required for orders), then a
+            softer optional nudge for addresses. Only one shows at a time. */}
+        {!loading && tab === "active" && needsDocsCount > 0 && (
           <div className="flex items-start gap-3 rounded-xl border border-havn-amber/40 bg-havn-amber/10 px-5 py-4">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
             <div>
-              <p className="text-sm font-semibold text-amber-800">Property addresses required</p>
+              <p className="text-sm font-semibold text-amber-800">
+                {needsDocsCount === 1
+                  ? "1 community is missing required documents"
+                  : `${needsDocsCount} communities are missing required documents`}
+              </p>
               <p className="mt-0.5 text-xs text-amber-700">
-                Upload property addresses for communities with 0 units so all future inbound requests are auto-assigned to the community manager.
+                Upload governing docs (CC&amp;Rs, bylaws, financials, insurance, reserve study, budget, meeting minutes, rules) so Havn can auto-fill order forms when requests come in.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!loading && tab === "active" && needsDocsCount === 0 && needsAddressCount > 0 && (
+          <div className="flex items-start gap-3 rounded-xl border border-havn-cyan/30 bg-havn-cyan/5 px-5 py-4">
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-havn-cyan-deep" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Add property addresses to enhance your portal{" "}
+                <span className="text-xs font-normal text-muted-foreground">
+                  (optional)
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {needsAddressCount === 1
+                  ? "1 community"
+                  : `${needsAddressCount} communities`}{" "}
+                don&apos;t have a property list on file yet. Adding addresses lets Havn auto-route inbound requests to the right manager.
               </p>
             </div>
           </div>
