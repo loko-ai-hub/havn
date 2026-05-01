@@ -414,7 +414,18 @@ export async function POST(request: Request) {
       } else {
         const resolved = resolveCategory(pipelineResult.inferredCategory);
         const isUnknown = !resolved || resolved === "Other" || resolved === "Unknown";
-        finalCategory = isUnknown ? "Other" : resolved!;
+        // If Claude failed (e.g. AI-Gateway 402 / rate limit / timeout), preserve
+        // the user's filename-guessed category instead of clobbering it to
+        // "Other". The original category came in via the form's `category` field.
+        // Internal-only signal, not surfaced to the client.
+        if (pipelineResult.classifierFailed) {
+          console.warn(
+            `[DOC_PROCESS] classifier unavailable, preserving filename guess "${category}" for ${documentId}: ${pipelineResult.classifierError}`
+          );
+          finalCategory = category;
+        } else {
+          finalCategory = isUnknown ? "Other" : resolved!;
+        }
         inferredCategory = pipelineResult.inferredCategory;
 
         const { data: communityRow } = await admin

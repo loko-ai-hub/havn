@@ -90,7 +90,12 @@ const CategoryOutputSchema = z.object({
 // hung gateway from consuming the function's remaining lifetime.
 const CLAUDE_TIMEOUT_MS = 60_000;
 
-async function callClaudeForCategory(rawText: string): Promise<string | undefined> {
+type CategoryCallResult = {
+  category?: string;
+  error?: string;
+};
+
+async function callClaudeForCategory(rawText: string): Promise<CategoryCallResult> {
   console.log(`[OCR_CATEGORY] calling model=${BEST_MODEL} textLen=${rawText.length}`);
   try {
     const result = await generateText({
@@ -104,10 +109,11 @@ async function callClaudeForCategory(rawText: string): Promise<string | undefine
       `[OCR_CATEGORY] result keys=${Object.keys(result).join(",")} text=${(result.text ?? "").slice(0, 200)} output=${JSON.stringify(result.output)}`
     );
     const suggested = result.output?.suggested_category?.trim();
-    return suggested && suggested.length > 0 ? suggested : undefined;
+    return { category: suggested && suggested.length > 0 ? suggested : undefined };
   } catch (err) {
     console.error("[OCR_CATEGORY] Exception:", err);
-    return undefined;
+    const message = err instanceof Error ? err.message : "Classifier failed.";
+    return { error: message };
   }
 }
 
@@ -142,7 +148,7 @@ export async function processDocumentOCR(
   originalFilename: string,
   documentCategory: string,
   documentId: string
-): Promise<{ success: boolean; txtPath?: string; jsonPath?: string; inferredCategory?: string; extractedFields?: Record<string, unknown>; pageCount?: number; error?: string }> {
+): Promise<{ success: boolean; txtPath?: string; jsonPath?: string; inferredCategory?: string; extractedFields?: Record<string, unknown>; pageCount?: number; error?: string; classifierFailed?: boolean; classifierError?: string }> {
   // The `documentId` param is the row this OCR pass corresponds to. Earlier
   // versions looked it up by (community_id, organization_id, filename,
   // category) which raced with archive / dedup / cleanup-cron updates and
@@ -184,10 +190,12 @@ export async function processDocumentOCR(
     }
 
     // Step 4: category classification + field extraction in parallel.
-    const [inferredCategory, extractedFields] = await Promise.all([
+    const [categoryResult, extractedFields] = await Promise.all([
       callClaudeForCategory(rawText),
       callClaudeForFieldExtraction(rawText),
     ]);
+    const inferredCategory = categoryResult.category;
+    const classifierError = categoryResult.error;
 
     // Step 5: save extracted JSON.
     const jsonPath = `community-documents/${communityId}/${Date.now()}_fields.json`;
@@ -232,7 +240,16 @@ export async function processDocumentOCR(
       console.warn("[OCR] Merge-tag resolution failed (non-fatal):", resolveErr);
     }
 
-    return { success: true, txtPath, jsonPath, inferredCategory, extractedFields, pageCount };
+    return {
+      success: true,
+      txtPath,
+      jsonPath,
+      inferredCategory,
+      extractedFields,
+      pageCount,
+      classifierFailed: !!classifierError,
+      classifierError,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "OCR processing failed.";
     await admin
