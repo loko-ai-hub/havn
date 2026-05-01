@@ -285,3 +285,101 @@ export async function rerunInsuranceAgentExtraction(communityId: string) {
     extracted: extractedAgent,
   };
 }
+
+// ─── Manager assignment ─────────────────────────────────────────────────────
+
+export type OrgUserOption = {
+  id: string;
+  fullName: string;
+  email: string;
+  role: string;
+};
+
+export async function listOrganizationUsers(): Promise<OrgUserOption[]> {
+  const { organizationId } = await requireDashboardOrg();
+  const admin = createAdminClient();
+
+  const { data: profiles } = await admin
+    .from("profiles")
+    .select("id, role")
+    .eq("organization_id", organizationId);
+
+  const list = (profiles ?? []) as Array<{ id: string; role: string }>;
+  if (list.length === 0) return [];
+
+  const userResults = await Promise.all(
+    list.map((p) => admin.auth.admin.getUserById(p.id))
+  );
+
+  return userResults
+    .map((r, i) => {
+      if (r.error || !r.data.user) return null;
+      const u = r.data.user;
+      const meta = (u.user_metadata ?? {}) as Record<string, unknown>;
+      const fullName =
+        String(meta.full_name ?? meta.name ?? "").trim() ||
+        u.email?.split("@")[0] ||
+        "Unnamed user";
+      return {
+        id: u.id,
+        fullName,
+        email: u.email ?? "",
+        role: list[i].role,
+      };
+    })
+    .filter((m): m is OrgUserOption => m !== null)
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+export async function assignCommunityManager(
+  communityId: string,
+  userId: string | null
+) {
+  const { organizationId } = await requireDashboardOrg();
+  const admin = createAdminClient();
+
+  // Verify the community belongs to this org.
+  const { data: community, error: commErr } = await admin
+    .from("communities")
+    .select("id")
+    .eq("id", communityId)
+    .eq("organization_id", organizationId)
+    .single();
+  if (commErr || !community) return { error: "Community not found." };
+
+  // If a userId is given, verify they're in the same org.
+  let derivedManagerName: string | null = null;
+  if (userId) {
+    const { data: profileRow } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("id", userId)
+      .eq("organization_id", organizationId)
+      .single();
+    if (!profileRow) return { error: "User isn't in this organization." };
+
+    const { data: userResult } = await admin.auth.admin.getUserById(userId);
+    if (userResult?.user) {
+      const meta = (userResult.user.user_metadata ?? {}) as Record<string, unknown>;
+      derivedManagerName =
+        String(meta.full_name ?? meta.name ?? "").trim() ||
+        userResult.user.email?.split("@")[0] ||
+        null;
+    }
+  }
+
+  const { error: updateErr } = await admin
+    .from("communities")
+    .update({
+      manager_user_id: userId,
+      // Mirror the user's name into manager_name so legacy displays still
+      // show something sensible. Clearing assignment leaves manager_name as-is.
+      ...(userId ? { manager_name: derivedManagerName } : {}),
+    })
+    .eq("id", communityId);
+
+  if (updateErr) return { error: updateErr.message };
+
+  revalidatePath(`/dashboard/communities/${communityId}`);
+  return { ok: true };
+}

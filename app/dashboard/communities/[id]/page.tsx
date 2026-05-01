@@ -19,7 +19,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
 import ArchiveRestoreCommunityButton from "../archive-restore-button";
+import { listOrganizationUsers } from "./actions";
 import CommunityContactCard from "./contact-card";
+import ManagerAssignmentCard from "./manager-assignment-card";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -48,6 +50,7 @@ type CommunityRow = {
   zip: string | null;
   community_type: string | null;
   manager_name: string | null;
+  manager_user_id: string | null;
   unit_count: number | null;
   status: "active" | "archived" | string | null;
 };
@@ -74,10 +77,10 @@ export default async function CommunityDetailPage({
   const c = community as CommunityRow;
   if (c.organization_id !== organizationId) notFound();
 
-  const [orgRes, openRequestsRes, docsRes, contactsRes, fieldCacheRes] = await Promise.all([
+  const [orgRes, openRequestsRes, docsRes, contactsRes, fieldCacheRes, orgUsers] = await Promise.all([
     admin
       .from("organizations")
-      .select("name, support_email, support_phone")
+      .select("name, support_email, support_phone, street, city, state, zip")
       .eq("id", organizationId)
       .single(),
     admin
@@ -99,9 +102,55 @@ export default async function CommunityDetailPage({
       .eq("community_id", id)
       .eq("document_type", "_shared")
       .in("field_key", ALL_CONTACT_REGISTRY_KEYS),
+    listOrganizationUsers(),
   ]);
 
-  const org = orgRes.data as { name: string | null; support_email: string | null; support_phone: string | null } | null;
+  const org = orgRes.data as {
+    name: string | null;
+    support_email: string | null;
+    support_phone: string | null;
+    street: string | null;
+    city: string | null;
+    state: string | null;
+    zip: string | null;
+  } | null;
+
+  // Pull the assigned manager's profile + auth metadata so the management
+  // contact card derives from the real user. Re-assigning the manager
+  // automatically updates the contact since this query runs on every load.
+  let managerProfile: {
+    fullName: string | null;
+    email: string | null;
+    phone: string | null;
+  } | null = null;
+  if (c.manager_user_id) {
+    const userRes = await admin.auth.admin.getUserById(c.manager_user_id);
+    if (userRes.data?.user) {
+      const meta = (userRes.data.user.user_metadata ?? {}) as Record<string, unknown>;
+      const fullName =
+        String(meta.full_name ?? meta.name ?? "").trim() ||
+        userRes.data.user.email?.split("@")[0] ||
+        null;
+      managerProfile = {
+        fullName: fullName || null,
+        email: userRes.data.user.email ?? null,
+        phone:
+          typeof meta.phone === "string" && meta.phone.trim()
+            ? meta.phone
+            : null,
+      };
+    }
+  }
+
+  // Combine org address fields into a single mailing address string.
+  const orgAddress = org
+    ? [
+        org.street,
+        [org.city, org.state, org.zip].filter(Boolean).join(" "),
+      ]
+        .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+        .join(", ")
+    : "";
   const openRequestsCount = openRequestsRes.count ?? 0;
 
   type ContactRow = { contact_type: string; name: string | null; role: string | null; address: string | null; phone: string | null; email: string | null };
@@ -140,17 +189,37 @@ export default async function CommunityDetailPage({
 
   const savedMgmt = contacts.find((c) => c.contact_type === "management_company");
   const mergedMgmt = mergeContact(savedMgmt, "management_company");
-  // Pre-populate management contact from org + assigned manager when nothing
-  // has been saved (or auto-extracted) yet.
-  const mgmtContact = savedMgmt
-    ? mergedMgmt
-    : {
-        name: mergedMgmt.name ?? c.manager_name ?? null,
-        role: mergedMgmt.role ?? org?.name ?? null,
-        address: mergedMgmt.address ?? null,
-        phone: mergedMgmt.phone ?? org?.support_phone ?? null,
-        email: mergedMgmt.email ?? org?.support_email ?? null,
-      };
+
+  // Management contact is derived from the assigned Havn user when one is
+  // set. Reassigning the manager updates the card automatically; the legacy
+  // manager_name string and OCR-cached values only show through when no real
+  // user is assigned. Hand-saved community_contacts values still win on top
+  // (so an admin can override anything we derived).
+  const mgmtContact = managerProfile
+    ? {
+        name: savedMgmt?.name ?? managerProfile.fullName,
+        role: savedMgmt?.role ?? org?.name ?? null,
+        address: savedMgmt?.address ?? (orgAddress || null),
+        phone:
+          savedMgmt?.phone ??
+          managerProfile.phone ??
+          org?.support_phone ??
+          null,
+        email:
+          savedMgmt?.email ??
+          managerProfile.email ??
+          org?.support_email ??
+          null,
+      }
+    : savedMgmt
+      ? mergedMgmt
+      : {
+          name: mergedMgmt.name ?? c.manager_name ?? null,
+          role: mergedMgmt.role ?? org?.name ?? null,
+          address: mergedMgmt.address ?? (orgAddress || null),
+          phone: mergedMgmt.phone ?? org?.support_phone ?? null,
+          email: mergedMgmt.email ?? org?.support_email ?? null,
+        };
 
   type DocRow = { document_category: string | null };
   const presentCategories = new Set(
@@ -301,9 +370,14 @@ export default async function CommunityDetailPage({
           </div>
         </div>
 
-        {/* Key Contacts */}
+        {/* Manager assignment + Key Contacts */}
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-foreground">Key Contacts</h3>
+          <ManagerAssignmentCard
+            communityId={id}
+            initialManagerId={c.manager_user_id}
+            orgUsers={orgUsers}
+          />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <CommunityContactCard
               communityId={id}
