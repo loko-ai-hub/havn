@@ -78,6 +78,8 @@ const REQUIRED_CATEGORIES = new Set([
 
 const OPTIONAL_CATEGORIES = new Set([
   "Amendments",
+  "Articles of Incorporation",
+  "Site Plan / Map",
   "FHA/VA Certification",
   "Management Agreement",
 ]);
