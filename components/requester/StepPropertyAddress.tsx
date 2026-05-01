@@ -18,94 +18,8 @@ type AddressForm = {
   zip: string;
 };
 
-type ConfirmChoice = "suggested" | "entered" | null;
-
 const ZIP_REGEX = /^\d{5}(-\d{4})?$/;
 const PO_BOX_REGEX = /\b(p\.?\s*o\.?\s*box|post\s+office\s+box)\b/i;
-
-function titleCase(text: string): string {
-  return text
-    .toLowerCase()
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
-function normalizeStreet(street: string): string {
-  const replacements: Record<string, string> = {
-    "\\bStreet\\b": "St",
-    "\\bAvenue\\b": "Ave",
-    "\\bRoad\\b": "Rd",
-    "\\bDrive\\b": "Dr",
-    "\\bLane\\b": "Ln",
-    "\\bBoulevard\\b": "Blvd",
-    "\\bCourt\\b": "Ct",
-    "\\bPlace\\b": "Pl",
-  };
-
-  let normalized = street.trim().replace(/\s+/g, " ");
-  Object.entries(replacements).forEach(([pattern, replacement]) => {
-    normalized = normalized.replace(new RegExp(pattern, "gi"), replacement);
-  });
-  return normalized;
-}
-
-function buildSuggestedAddress(input: AddressForm): AddressForm {
-  const next = {
-    ...input,
-    street: normalizeStreet(input.street),
-    city: titleCase(input.city.trim()),
-  };
-  if (/^\d{5}$/.test(next.zip)) {
-    next.zip = `${next.zip}-1234`;
-  }
-  return next;
-}
-
-function addressesDiffer(a: AddressForm, b: AddressForm): boolean {
-  return (
-    a.street !== b.street ||
-    a.unit !== b.unit ||
-    a.city !== b.city ||
-    a.state !== b.state ||
-    a.zip !== b.zip
-  );
-}
-
-function AddressCard({
-  title,
-  address,
-  selected,
-  onSelect,
-}: {
-  title: string;
-  address: AddressForm;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={[
-        "w-full rounded-xl border-2 p-4 text-left transition-colors",
-        selected
-          ? "border-havn-success bg-havn-success/10"
-          : "border-border bg-card hover:border-havn-success/50",
-      ].join(" ")}
-    >
-      <p className="text-sm font-semibold text-foreground">{title}</p>
-      <div className="mt-3 space-y-0.5 text-sm text-muted-foreground">
-        <p>{address.street}</p>
-        {address.unit ? <p>{address.unit}</p> : null}
-        <p>
-          {address.city}, {address.state} {address.zip}
-        </p>
-      </div>
-    </button>
-  );
-}
 
 export default function StepPropertyAddress({ slug, primaryColor = "#1B2B4B" }: { slug: string; primaryColor?: string }) {
   const router = useRouter();
@@ -124,9 +38,6 @@ export default function StepPropertyAddress({ slug, primaryColor = "#1B2B4B" }: 
     state?: string;
     zip?: string;
   }>({});
-  const [confirming, setConfirming] = useState(false);
-  const [choice, setChoice] = useState<ConfirmChoice>(null);
-  const [suggestedAddress, setSuggestedAddress] = useState<AddressForm | null>(null);
 
   const enteredAddress = useMemo(
     () => ({
@@ -161,39 +72,13 @@ export default function StepPropertyAddress({ slug, primaryColor = "#1B2B4B" }: 
   };
 
   const handleContinue = () => {
-    if (confirming) {
-      if (!choice) {
-        setError("Please select Suggested or As entered to continue.");
-        return;
-      }
-      setError(null);
-      const chosenAddress = choice === "suggested" && suggestedAddress ? suggestedAddress : enteredAddress;
-      updateOrder({
-        propertyAddress: chosenAddress.street,
-        unitNumber: chosenAddress.unit,
-        city: chosenAddress.city,
-        state: chosenAddress.state,
-        zip: chosenAddress.zip,
-      });
-      router.push(`/r/${slug}/documents`);
-      return;
-    }
-
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
       setFieldErrors(validationErrors);
       return;
     }
     setFieldErrors({});
-
-    const suggestion = buildSuggestedAddress(enteredAddress);
-    if (addressesDiffer(enteredAddress, suggestion)) {
-      setSuggestedAddress(suggestion);
-      setConfirming(true);
-      setChoice("suggested");
-      setError(null);
-      return;
-    }
+    setError(null);
 
     updateOrder({
       propertyAddress: enteredAddress.street,
@@ -212,8 +97,7 @@ export default function StepPropertyAddress({ slug, primaryColor = "#1B2B4B" }: 
         Enter the property address for this document request.
       </p>
 
-      {!confirming ? (
-        <div className="mt-8 space-y-5">
+      <div className="mt-8 space-y-5">
           <div className="space-y-2">
             <Label htmlFor="street">Street Address</Label>
             <div className="relative">
@@ -312,38 +196,6 @@ export default function StepPropertyAddress({ slug, primaryColor = "#1B2B4B" }: 
             </div>
           </div>
         </div>
-      ) : (
-        <div className="mt-8 space-y-5">
-          <div className="rounded-xl border border-havn-amber bg-havn-amber/10 p-4">
-            <p className="text-sm font-medium text-foreground">Please confirm this property address</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              We found a suggested formatting update. Choose which version you want to continue with.
-            </p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {suggestedAddress ? (
-              <AddressCard
-                title="Suggested"
-                address={suggestedAddress}
-                selected={choice === "suggested"}
-                onSelect={() => {
-                  setChoice("suggested");
-                  setError(null);
-                }}
-              />
-            ) : null}
-            <AddressCard
-              title="As Entered"
-              address={enteredAddress}
-              selected={choice === "entered"}
-              onSelect={() => {
-                setChoice("entered");
-                setError(null);
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
