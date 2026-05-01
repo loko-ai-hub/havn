@@ -31,10 +31,13 @@ interface StepDocumentSelectionProps {
 
 const RESALE_IDS = ["resale_cert", "resale_cert_update"];
 const LENDER_DOC_IDS = ["lender_questionnaire", "custom_company_form"] as const;
+const TITLE_DOC_IDS = ["demand_letter", "custom_company_form"] as const;
 
 const StepDocumentSelection = ({ requesterType, selected, primaryColor, availableDocIds, customFormUpload, onToggle, onCustomFormUploaded, onContinue, onBack }: StepDocumentSelectionProps) => {
   const isHomeowner = requesterType === "homeowner";
   const isLender = requesterType === "lender_title";
+  const isTitleCompany = requesterType === "title_company";
+  const isFormUploadFlow = isLender || isTitleCompany;
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(customFormUpload?.filename ?? null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -89,40 +92,68 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
           availableTo: ["lender_title"] as RequesterType[],
         },
       ]
-    : PORTAL_DOCUMENTS.filter((d) => {
-        if (!d.availableTo.includes(requesterType)) return false;
-        if (!isHomeowner && d.id === "resale_cert_update") return false;
-        if (availableDocIds && !availableDocIds.includes(d.id)) return false;
-        return true;
-      });
+    : isTitleCompany
+      ? [
+          {
+            id: "demand_letter",
+            name: "Demand / Payoff Letter",
+            description:
+              "Payoff statement covering current dues, transfer fees, and amounts owed at closing.",
+            fee: 100,
+            required: false,
+            availableTo: ["title_company"] as RequesterType[],
+          },
+          {
+            id: "custom_company_form",
+            name: "Upload Your Own Form",
+            description:
+              "Use your title company's specific payoff/status format. Upload a PDF or DOCX file.",
+            fee: 200,
+            required: false,
+            availableTo: ["title_company"] as RequesterType[],
+          },
+        ]
+      : PORTAL_DOCUMENTS.filter((d) => {
+          if (!d.availableTo.includes(requesterType)) return false;
+          if (!isHomeowner && d.id === "resale_cert_update") return false;
+          if (availableDocIds && !availableDocIds.includes(d.id)) return false;
+          return true;
+        });
 
   const handleToggle = (docId: string) => onToggle(docId);
 
-  const total = isLender
+  const total = isFormUploadFlow
     ? availableDocs.reduce(
         (sum, doc) => (selected.includes(doc.id) ? sum + doc.fee : sum),
         0
       )
     : getDocumentFee(selected.filter((id) => id !== "custom_company_form"));
 
+  const headingTitle = isLender
+    ? "Lender Questionnaire"
+    : isTitleCompany
+      ? "Payoff Letter"
+      : "Select Documents";
+  const headingSubtitle = isLender
+    ? "Choose which questionnaire format you'd like us to complete for this transaction."
+    : isTitleCompany
+      ? "Choose which payoff format you'd like us to complete for this closing."
+      : "Choose the documents you need for this transaction.";
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-foreground">
-          {isLender ? "Lender Questionnaire" : "Select Documents"}
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          {isLender
-            ? "Choose which questionnaire format you'd like us to complete for this transaction."
-            : "Choose the documents you need for this transaction."}
-        </p>
+        <h2 className="text-xl font-semibold text-foreground">{headingTitle}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{headingSubtitle}</p>
       </div>
 
       <div className="space-y-2">
         {availableDocs.map((doc) => {
           const isSelected = selected.includes(doc.id);
           const isResale = isHomeowner && RESALE_IDS.includes(doc.id);
-          const isLenderSingleSelect = isLender && LENDER_DOC_IDS.includes(doc.id as (typeof LENDER_DOC_IDS)[number]);
+          const isLenderSingleSelect =
+            (isLender && (LENDER_DOC_IDS as readonly string[]).includes(doc.id)) ||
+            (isTitleCompany && (TITLE_DOC_IDS as readonly string[]).includes(doc.id));
           const isRequired = doc.required && !isResale;
           const isCustomCompanyForm = doc.id === "custom_company_form";
           return (
@@ -256,13 +287,17 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
         </button>
         <button
           onClick={() => {
-            if (isLender && selected.includes("custom_company_form")) {
+            if (isFormUploadFlow && selected.includes("custom_company_form")) {
               if (uploading) {
                 setUploadError("Please wait for your file to finish uploading.");
                 return;
               }
               if (!customFormUpload) {
-                setUploadError("Please upload your questionnaire to continue.");
+                setUploadError(
+                  isTitleCompany
+                    ? "Please upload your payoff form to continue."
+                    : "Please upload your questionnaire to continue."
+                );
                 return;
               }
             }

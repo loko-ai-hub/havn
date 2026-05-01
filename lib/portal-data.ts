@@ -1,4 +1,8 @@
-export type RequesterType = "homeowner" | "buyer_agent" | "lender_title";
+export type RequesterType =
+  | "homeowner"
+  | "buyer_agent"
+  | "lender_title"
+  | "title_company";
 
 export type RequesterTypeOption = {
   value: RequesterType;
@@ -19,8 +23,13 @@ export const REQUESTER_TYPES: RequesterTypeOption[] = [
   },
   {
     value: "lender_title",
-    title: "Lender or Title Company",
-    description: "I need documents for a loan or closing.",
+    title: "Lender",
+    description: "I'm financing the purchase or refinance and need closing docs.",
+  },
+  {
+    value: "title_company",
+    title: "Title Company",
+    description: "I'm closing a transaction and need HOA payoff info.",
   },
 ];
 
@@ -80,7 +89,7 @@ export const PORTAL_DOCUMENTS: PortalDocument[] = [
     description: "Payoff amount required to close or refinance",
     fee: 100,
     required: false,
-    availableTo: ["lender_title"],
+    availableTo: ["lender_title", "title_company"],
   },
 ];
 

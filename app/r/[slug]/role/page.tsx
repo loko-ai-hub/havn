@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowRight, Briefcase, Building2, User } from "lucide-react";
+import { ArrowRight, Briefcase, Building2, FileSignature, User } from "lucide-react";
 
 import { REQUESTER_TYPES, type RequesterType } from "@/lib/portal-data";
 import {
@@ -14,6 +14,7 @@ const ICONS: Record<RequesterType, typeof User> = {
   homeowner: User,
   buyer_agent: Briefcase,
   lender_title: Building2,
+  title_company: FileSignature,
 };
 
 export default function RequesterRolePage() {

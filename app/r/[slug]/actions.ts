@@ -135,14 +135,68 @@ export async function submitOrder(input: {
   const deliveryFee = getDeliveryFee(order.deliveryType);
   const rushFeePerRow = deliveryFee / selectedDocuments.length;
   const propertyAddress = buildAddress(order);
-  const notes = order.addOns.length > 0 ? order.addOns.join(", ") : null;
+  const baseNotes = order.addOns.length > 0 ? order.addOns.join(", ") : null;
   const closingDate = order.closingDate
     ? new Date(order.closingDate).toISOString().slice(0, 10)
     : null;
 
+  // If the order includes a demand_letter (title company payoff request) and
+  // the same property already has a qualifying recent cert on file, the
+  // payoff letter rides for free. Window: 60 days. Trigger doc types: resale
+  // certificate / certificate update / estoppel. Trigger statuses: paid,
+  // in_progress, fulfilled (an unpaid prior order shouldn't unlock a freebie).
+  const FREE_PAYOFF_WINDOW_DAYS = 60;
+  const FREE_PAYOFF_TRIGGER_TYPES = [
+    "resale_certificate",
+    "certificate_update",
+    "estoppel_letter",
+  ];
+  const FREE_PAYOFF_TRIGGER_STATUSES = ["paid", "in_progress", "fulfilled"];
+
+  let priorCert: {
+    masterTypeKey: string;
+    createdAt: string;
+  } | null = null;
+  if (
+    selectedDocuments.includes("demand_letter") &&
+    propertyAddress.trim().length > 0
+  ) {
+    const cutoffIso = new Date(
+      Date.now() - FREE_PAYOFF_WINDOW_DAYS * 86400000
+    ).toISOString();
+    const { data: priorMatches } = await createAdminClient()
+      .from("document_orders")
+      .select("master_type_key, created_at")
+      .eq("organization_id", organizationId)
+      .ilike("property_address", propertyAddress.trim())
+      .in("master_type_key", FREE_PAYOFF_TRIGGER_TYPES)
+      .in("order_status", FREE_PAYOFF_TRIGGER_STATUSES)
+      .gte("created_at", cutoffIso)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const hit = (priorMatches ?? [])[0] as
+      | { master_type_key: string; created_at: string }
+      | undefined;
+    if (hit) {
+      priorCert = {
+        masterTypeKey: hit.master_type_key,
+        createdAt: hit.created_at,
+      };
+    }
+  }
+
   const rows = selectedDocuments.map((docId) => {
     const baseFee = getBaseFee(docId);
     const rushFee = Number(rushFeePerRow.toFixed(2));
+    const isFreePayoff = docId === "demand_letter" && priorCert !== null;
+    const finalBaseFee = isFreePayoff ? 0 : baseFee;
+    const freeNote = isFreePayoff
+      ? `Free payoff letter — prior ${priorCert!.masterTypeKey} on file (${new Date(
+          priorCert!.createdAt
+        ).toLocaleDateString("en-US")})`
+      : null;
+    const notes = [baseNotes, freeNote].filter(Boolean).join(" · ") || null;
+
     return {
       organization_id: organizationId,
       master_type_key: DOC_TYPE_MAP[docId],
@@ -154,9 +208,9 @@ export async function submitOrder(input: {
       property_address: propertyAddress,
       unit_number: order.unitNumber || null,
       closing_date: closingDate,
-      base_fee: baseFee,
+      base_fee: finalBaseFee,
       rush_fee: rushFee,
-      total_fee: Number((baseFee + rushFee).toFixed(2)),
+      total_fee: Number((finalBaseFee + rushFee).toFixed(2)),
       notes,
     };
   });
