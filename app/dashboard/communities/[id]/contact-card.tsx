@@ -246,14 +246,20 @@ export default function CommunityContactCard({
           <button
             type="button"
             onClick={() => setPicking((v) => !v)}
-            className="rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-muted transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
           >
+            <Pencil className="h-3 w-3" />
             {currentManagerId ? "Change" : "Assign"}
           </button>
         )}
         {!editing && !managerPickerEnabled && (
-          <button type="button" onClick={handleStartEdit} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+          <button
+            type="button"
+            onClick={handleStartEdit}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+          >
             <Pencil className="h-3 w-3" />
+            Edit
           </button>
         )}
       </div>

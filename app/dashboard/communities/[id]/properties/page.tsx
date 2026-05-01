@@ -1,4 +1,4 @@
-import { ArrowLeft, Building2 } from "lucide-react";
+import { ArrowLeft, Building2, Info } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -66,7 +66,16 @@ export default async function CommunityPropertiesPage({
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 space-y-4">
+        <div className="flex items-start gap-3 rounded-xl border border-havn-cyan/30 bg-havn-cyan/5 px-4 py-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-havn-cyan-deep" />
+          <p className="text-xs text-foreground/80">
+            <span className="font-medium text-foreground">To update this list,</span>{" "}
+            re-upload the entire community export from the community page.
+            Each import replaces the existing roster, so your latest export is
+            always the source of truth — there&apos;s no per-row editing here.
+          </p>
+        </div>
         <PropertiesTable rows={rows} />
       </div>
     </div>

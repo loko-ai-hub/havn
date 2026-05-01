@@ -308,6 +308,10 @@ export default async function CommunityDetailPage({
               {c.city ?? "—"}, {c.state ?? "—"} {c.zip ?? ""}
             </p>
           </div>
+          <ArchiveRestoreCommunityButton
+            communityId={c.id}
+            currentStatus={isActive ? "active" : "archived"}
+          />
         </div>
       </div>
 
@@ -498,25 +502,9 @@ export default async function CommunityDetailPage({
           </div>
         </div>
 
-        {/* Danger Zone */}
-        <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-destructive">Danger Zone</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {isActive
-                  ? "Archive this community to hide it from active listings."
-                  : "Restore this community to make it active again."}
-              </p>
-            </div>
-          </div>
-          <div className="mt-4">
-            <ArchiveRestoreCommunityButton
-              communityId={c.id}
-              currentStatus={isActive ? "active" : "archived"}
-            />
-          </div>
-        </div>
+        {/* Archive moved to the page header (top-right) — no separate Danger
+            Zone block. Archive is reversible, so a giant red panel was
+            overkill; the small header button is enough. */}
       </div>
     </div>
   );
