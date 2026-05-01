@@ -76,7 +76,11 @@ const REQUIRED_CATEGORIES = new Set([
   "Budget",
 ]);
 
-const OPTIONAL_CATEGORIES = new Set(["FHA/VA Certification", "Management Agreement"]);
+const OPTIONAL_CATEGORIES = new Set([
+  "Amendments",
+  "FHA/VA Certification",
+  "Management Agreement",
+]);
 
 const NON_METRIC_CATEGORIES = new Set(["Other", ...OPTIONAL_CATEGORIES]);
 const TRACKABLE_CATEGORIES = CATEGORY_OPTIONS.filter((c) => !NON_METRIC_CATEGORIES.has(c));
