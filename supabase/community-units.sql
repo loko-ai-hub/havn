@@ -60,6 +60,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_community_units_account
 CREATE INDEX IF NOT EXISTS idx_community_units_property_street_lower
   ON public.community_units(community_id, lower(property_street));
 
+-- Table-level grants. Supabase normally adds these automatically on
+-- table creation, but spelling them out keeps the migration self-
+-- contained — without these the service_role admin client would hit
+-- "permission denied for table community_units" before RLS even runs.
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON public.community_units
+  TO anon, authenticated, service_role;
+
 -- RLS — operators can read/write units only for their own org's communities.
 ALTER TABLE public.community_units ENABLE ROW LEVEL SECURITY;
 
