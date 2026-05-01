@@ -45,6 +45,11 @@ export default function RequesterDocumentsPage() {
         ? order.documentsSelected
         : ["lender_questionnaire"];
     }
+    if (requesterType === "title_company") {
+      // Title companies have a single doc option (their uploaded form),
+      // so auto-select it on arrival.
+      return ["custom_company_form"];
+    }
     return order.documentsSelected;
   }, [order.documentsSelected, requesterType]);
   const [selected, setSelected] = useState<string[]>(initialSelected);
@@ -59,6 +64,13 @@ export default function RequesterDocumentsPage() {
       const lenderSelected = selected.filter((id) => LENDER_IDS.includes(id));
       if (lenderSelected.length !== 1) {
         setSelected(["lender_questionnaire"]);
+      }
+    }
+    if (requesterType === "title_company") {
+      // Single-option flow — keep the upload card selected even if the
+      // user lands on this step with stale state.
+      if (selected.length !== 1 || selected[0] !== "custom_company_form") {
+        setSelected(["custom_company_form"]);
       }
     }
   }, [requesterType, selected]);

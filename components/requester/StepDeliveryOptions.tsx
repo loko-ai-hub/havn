@@ -67,8 +67,11 @@ export default function StepDeliveryOptions({
       deliveryType,
       closingDate: closingDate ? closingDate.toISOString() : "",
     });
-    // Lenders have add-ons (Rush Processing, HOA Violation Search, etc.); others skip that step
-    router.push(requesterType === "lender_title" ? `/r/${slug}/addons` : `/r/${slug}/review`);
+    // Add-ons are no longer surfaced to lender / title-company flows — they
+    // skip straight to review. Homeowners and agents also skip add-ons today
+    // (the addons step is effectively unused; keeping the route in case we
+    // re-enable it for a specific flow later).
+    router.push(`/r/${slug}/review`);
   };
 
   const handleDateSelect = (date: Date | undefined) => {

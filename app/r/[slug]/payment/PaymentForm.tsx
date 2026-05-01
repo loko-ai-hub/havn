@@ -18,12 +18,24 @@ function PaymentCardForm({
   slug,
   orderId,
   totalFee,
+  baseFee,
+  rushFee,
+  documentName,
+  propertyAddress,
+  requesterName,
+  requesterEmail,
   confirmationQuery,
   primaryColor,
 }: {
   slug: string;
   orderId: string;
   totalFee: number;
+  baseFee: number;
+  rushFee: number;
+  documentName: string;
+  propertyAddress: string;
+  requesterName: string;
+  requesterEmail: string;
   confirmationQuery: string;
   primaryColor: string;
 }) {
@@ -84,15 +96,63 @@ function PaymentCardForm({
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-12 md:py-16">
+    <div className="mx-auto w-full max-w-5xl px-6 py-12 md:py-16">
       <h1 className="text-3xl font-semibold tracking-tight text-foreground">Payment</h1>
       <p className="mt-2 text-sm text-muted-foreground">Pay securely to complete your document request.</p>
 
-      <div className="mt-6 rounded-xl border border-border bg-card p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">Total due</p>
-          <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrency(totalFee)}</p>
+      <div className="mt-6 grid gap-6 lg:grid-cols-5">
+        <div className="lg:col-span-3 space-y-4">
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="bg-foreground px-5 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-background">
+                Order Summary
+              </p>
+            </div>
+            <div className="space-y-3 p-5 text-sm">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Document
+                </p>
+                <p className="text-foreground">{documentName}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Property
+                </p>
+                <p className="text-foreground">{propertyAddress || "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Requester
+                </p>
+                <p className="text-foreground">{requesterName || "—"}</p>
+                {requesterEmail ? (
+                  <p className="text-xs text-muted-foreground">{requesterEmail}</p>
+                ) : null}
+              </div>
+            </div>
+          </div>
         </div>
+
+        <div className="lg:col-span-2 rounded-xl border border-border bg-card p-6">
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Base fee</span>
+              <span className="text-foreground">{formatCurrency(baseFee)}</span>
+            </div>
+            {rushFee > 0 ? (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Rush fee</span>
+                <span className="text-foreground">{formatCurrency(rushFee)}</span>
+              </div>
+            ) : null}
+          </div>
+          <div className="mb-4 mt-3 flex items-center justify-between border-t border-border pt-3">
+            <p className="text-sm font-semibold text-foreground">Total due</p>
+            <p className="text-lg font-bold text-foreground tabular-nums">
+              {formatCurrency(totalFee)}
+            </p>
+          </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <PaymentElement options={{ layout: "tabs" }} />
@@ -120,10 +180,15 @@ function PaymentCardForm({
               style={{ backgroundColor: primaryColor }}
             >
               <CreditCard className="mr-2 h-4 w-4" />
-              {isProcessing ? "Processing..." : `Pay ${formatCurrency(totalFee)}`}
+              {!stripe || !elements
+                ? "Loading…"
+                : isProcessing
+                  ? "Processing…"
+                  : `Pay ${formatCurrency(totalFee)}`}
             </Button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );
@@ -134,6 +199,12 @@ export default function PaymentForm(props: {
   orderId: string;
   clientSecret: string;
   totalFee: number;
+  baseFee: number;
+  rushFee: number;
+  documentName: string;
+  propertyAddress: string;
+  requesterName: string;
+  requesterEmail: string;
   confirmationQuery: string;
   primaryColor: string;
 }) {

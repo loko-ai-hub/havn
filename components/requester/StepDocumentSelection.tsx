@@ -45,7 +45,7 @@ interface StepDocumentSelectionProps {
 
 const RESALE_IDS = ["resale_cert", "resale_cert_update"];
 const LENDER_DOC_IDS = ["lender_questionnaire", "custom_company_form"] as const;
-const TITLE_DOC_IDS = ["demand_letter", "custom_company_form"] as const;
+const TITLE_DOC_IDS = ["custom_company_form"] as const;
 
 const StepDocumentSelection = ({ requesterType, selected, primaryColor, availableDocIds, customFormUpload, onToggle, onCustomFormUploaded, onContinue, onBack }: StepDocumentSelectionProps) => {
   const isHomeowner = requesterType === "homeowner";
@@ -59,7 +59,14 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
   const portalOrg = usePortalOrg();
   const feesByMasterType = portalOrg?.feesByMasterType ?? {};
   const feeFor = (portalDocId: string, fallback: number): number => {
-    const masterKey = PORTAL_ID_TO_MASTER_TYPE[portalDocId];
+    // Title companies upload their own payoff form via the
+    // custom_company_form doc id, but the underlying master_type_key is
+    // demand_letter — so the fee must come from the demand_letter row,
+    // not the lender_questionnaire row.
+    const masterKey =
+      isTitleCompany && portalDocId === "custom_company_form"
+        ? "demand_letter"
+        : PORTAL_ID_TO_MASTER_TYPE[portalDocId];
     if (!masterKey) return fallback;
     const cfg = feesByMasterType[masterKey];
     if (cfg && typeof cfg.base_fee === "number") return cfg.base_fee;
@@ -122,20 +129,11 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
     : isTitleCompany
       ? [
           {
-            id: "demand_letter",
-            name: "Demand / Payoff Letter",
-            description:
-              "Payoff statement covering current dues, transfer fees, and amounts owed at closing.",
-            fee: feeFor("demand_letter", 100),
-            required: false,
-            availableTo: ["title_company"] as RequesterType[],
-          },
-          {
             id: "custom_company_form",
-            name: "Upload Your Own Form",
+            name: "Upload Your Form",
             description:
-              "Use your title company's specific payoff/status format. Upload a PDF or DOCX file.",
-            fee: feeFor("custom_company_form", 200),
+              "Upload your title company's payoff/status form. We'll fill it in and return it to you (PDF or DOCX).",
+            fee: feeFor("custom_company_form", 100),
             required: false,
             availableTo: ["title_company"] as RequesterType[],
           },

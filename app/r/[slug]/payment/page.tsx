@@ -46,7 +46,7 @@ export default async function RequesterPaymentPage({
   const { data: order, error: orderError } = await supabase
     .from("document_orders")
     .select(
-      "id,total_fee,organization_id,requester_email,requester_name,property_address,delivery_speed,master_type_key"
+      "id,total_fee,base_fee,rush_fee,organization_id,requester_email,requester_name,property_address,delivery_speed,master_type_key,notes"
     )
     .eq("id", orderId)
     .single();
@@ -106,6 +106,8 @@ export default async function RequesterPaymentPage({
   });
 
   const totalFee = Number(order.total_fee ?? 0);
+  const baseFee = Number(order.base_fee ?? 0);
+  const rushFee = Number(order.rush_fee ?? 0);
 
   return (
     <div>
@@ -116,6 +118,12 @@ export default async function RequesterPaymentPage({
         orderId={orderId}
         clientSecret={paymentIntentResult.clientSecret}
         totalFee={totalFee}
+        baseFee={baseFee}
+        rushFee={rushFee}
+        documentName={docName}
+        propertyAddress={order.property_address ?? ""}
+        requesterName={order.requester_name ?? ""}
+        requesterEmail={order.requester_email ?? ""}
         confirmationQuery={confirmationQuery.toString()}
         primaryColor={primaryColor}
       />

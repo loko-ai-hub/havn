@@ -29,6 +29,19 @@ const DOC_TYPE_MAP: Record<string, string> = {
   demand_letter: "demand_letter",
 };
 
+// Resolve the canonical master_type_key for an order row, taking the
+// requester's role into account. Title companies upload their own payoff
+// form via the same `custom_company_form` doc id the lender flow uses, but
+// the underlying document type is a demand/payoff letter — not a lender
+// questionnaire — so it needs to route to demand_letter for pricing,
+// dashboard display, and the recent-cert discount logic.
+function resolveMasterTypeKey(docId: string, requesterType: string): string {
+  if (docId === "custom_company_form" && requesterType === "title_company") {
+    return "demand_letter";
+  }
+  return DOC_TYPE_MAP[docId];
+}
+
 const DELIVERY_SPEED_MAP: Record<string, string> = {
   standard: "standard",
   rush: "rush_3day",
@@ -63,9 +76,10 @@ function buildAddress(order: PortalOrder) {
 // default only when the org hasn't priced that doc type yet.
 function getBaseFee(
   docId: string,
+  requesterType: string,
   feesByMasterType: Record<string, number | null>
 ): number {
-  const masterKey = DOC_TYPE_MAP[docId];
+  const masterKey = resolveMasterTypeKey(docId, requesterType);
   if (masterKey && typeof feesByMasterType[masterKey] === "number") {
     return feesByMasterType[masterKey] as number;
   }
@@ -178,12 +192,19 @@ export async function submitOrder(input: {
   ];
   const FREE_PAYOFF_TRIGGER_STATUSES = ["paid", "in_progress", "fulfilled"];
 
+  // Resolve each selected docId to its canonical master_type_key under this
+  // requester's role. Title companies' "custom_company_form" routes to
+  // demand_letter — see resolveMasterTypeKey above.
+  const selectedMasterKeys = selectedDocuments.map((d) =>
+    resolveMasterTypeKey(d, order.requesterType)
+  );
+
   let priorCert: {
     masterTypeKey: string;
     createdAt: string;
   } | null = null;
   if (
-    selectedDocuments.includes("demand_letter") &&
+    selectedMasterKeys.includes("demand_letter") &&
     propertyAddress.trim().length > 0
   ) {
     const cutoffIso = new Date(
@@ -211,9 +232,10 @@ export async function submitOrder(input: {
   }
 
   const rows = selectedDocuments.map((docId) => {
-    const baseFee = getBaseFee(docId, feesByMasterType);
+    const masterKey = resolveMasterTypeKey(docId, order.requesterType);
+    const baseFee = getBaseFee(docId, order.requesterType, feesByMasterType);
     const rushFee = Number(rushFeePerRow.toFixed(2));
-    const isFreePayoff = docId === "demand_letter" && priorCert !== null;
+    const isFreePayoff = masterKey === "demand_letter" && priorCert !== null;
     const finalBaseFee = isFreePayoff ? 0 : baseFee;
     const freeNote = isFreePayoff
       ? `Free payoff letter — prior ${priorCert!.masterTypeKey} on file (${new Date(
@@ -224,7 +246,7 @@ export async function submitOrder(input: {
 
     return {
       organization_id: organizationId,
-      master_type_key: DOC_TYPE_MAP[docId],
+      master_type_key: masterKey,
       delivery_speed: deliverySpeed,
       requester_name: order.requesterName,
       requester_email: order.requesterEmail,
