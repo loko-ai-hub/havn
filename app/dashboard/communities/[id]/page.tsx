@@ -22,7 +22,6 @@ import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
 import ArchiveRestoreCommunityButton from "../archive-restore-button";
 import { listOrganizationUsers } from "./actions";
 import CommunityContactCard from "./contact-card";
-import ManagerAssignmentCard from "./manager-assignment-card";
 import CommunityPropertiesCard from "./properties-card";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -203,26 +202,18 @@ export default async function CommunityDetailPage({
   const savedMgmt = contacts.find((c) => c.contact_type === "management_company");
   const mergedMgmt = mergeContact(savedMgmt, "management_company");
 
-  // Management contact is derived from the assigned Havn user when one is
-  // set. Reassigning the manager updates the card automatically; the legacy
-  // manager_name string and OCR-cached values only show through when no real
-  // user is assigned. Hand-saved community_contacts values still win on top
-  // (so an admin can override anything we derived).
+  // When a Havn user is assigned as manager, the management contact derives
+  // entirely from their auth profile + the org's mailing address. Stale
+  // `community_contacts` overrides (e.g. legacy "Loren" written before this
+  // unified flow existed) are intentionally ignored — re-assigning is the
+  // way to change the contact, not field-by-field hand editing.
   const mgmtContact = managerProfile
     ? {
-        name: savedMgmt?.name ?? managerProfile.fullName,
-        role: savedMgmt?.role ?? org?.name ?? null,
-        address: savedMgmt?.address ?? (orgAddress || null),
-        phone:
-          savedMgmt?.phone ??
-          managerProfile.phone ??
-          org?.support_phone ??
-          null,
-        email:
-          savedMgmt?.email ??
-          managerProfile.email ??
-          org?.support_email ??
-          null,
+        name: managerProfile.fullName,
+        role: org?.name ?? null,
+        address: orgAddress || null,
+        phone: managerProfile.phone ?? org?.support_phone ?? null,
+        email: managerProfile.email ?? org?.support_email ?? null,
       }
     : savedMgmt
       ? mergedMgmt
@@ -247,12 +238,18 @@ export default async function CommunityDetailPage({
 
   const isActive = (c.status ?? "active").toLowerCase() === "active";
 
-  // KPI card definitions
+  // KPI card definitions. Prefer the imported roster count (truth) over the
+  // legacy manual unit_count field, which is just an estimate operators
+  // typed at create time. Fall back to the legacy value when no roster has
+  // been imported yet.
+  const displayedUnitCount =
+    unitCountTotal > 0 ? unitCountTotal : (c.unit_count ?? 0);
   const kpiCards = [
     {
       label: "Units",
-      value: String(c.unit_count ?? 0),
-      subtext: "Total properties",
+      value: String(displayedUnitCount),
+      subtext:
+        unitCountTotal > 0 ? "From property roster" : "Total properties",
       Icon: Building2,
       accent: "text-primary",
       iconBg: "bg-primary/10",
@@ -343,20 +340,21 @@ export default async function CommunityDetailPage({
           </div>
         )}
 
-        {missingCount === 0 && (!c.unit_count || c.unit_count === 0) && (
+        {missingCount === 0 && unitCountTotal === 0 && (
           <div className="flex items-start gap-3 rounded-xl border border-havn-cyan/30 bg-havn-cyan/5 px-5 py-4">
             <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-havn-cyan-deep" />
             <div>
               <p className="text-sm font-semibold text-foreground">
-                Add a property list to enhance auto-routing{" "}
+                Upload your property list to save time on every order{" "}
                 <span className="text-xs font-normal text-muted-foreground">
                   (optional)
                 </span>
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                This community doesn&apos;t have a property list on file yet.
-                Adding addresses lets Havn route inbound requests to the right
-                manager automatically.
+                With your roster on file, Havn auto-fills as many fields as
+                possible on resale certificates, lender questionnaires, and
+                other order forms — owner names, mailing addresses, contact
+                info — so your team doesn&apos;t have to re-key it per request.
               </p>
             </div>
           </div>
@@ -383,46 +381,29 @@ export default async function CommunityDetailPage({
           ))}
         </div>
 
-        {/* Map + details row */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_2fr]">
-          {/* Map placeholder */}
-          <div className="flex min-h-[220px] items-center justify-center overflow-hidden rounded-xl border border-border bg-muted/30">
-            <div className="p-6 text-center">
-              <MapPin className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium text-muted-foreground">Map</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Mapbox integration pending</p>
-            </div>
-          </div>
-
-          {/* Location card */}
-          <div className="rounded-xl border border-border bg-card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
-                <MapPin className="h-3.5 w-3.5 text-primary" />
-              </div>
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Location</h4>
-            </div>
-            <p className="text-sm font-medium text-foreground">
-              {c.city ?? "—"}, {c.state ?? "—"} {c.zip ?? ""}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">{c.community_type ?? "—"}</p>
-          </div>
+        {/* Compact location strip — replaces the big map placeholder */}
+        <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5">
+          <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <p className="text-sm text-foreground">
+            {[c.city, c.state, c.zip].filter(Boolean).join(", ").replace(/, ([^,]+)$/, " $1") || "—"}
+          </p>
+          {c.community_type && (
+            <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {c.community_type}
+            </span>
+          )}
         </div>
 
-        {/* Manager assignment + Key Contacts */}
+        {/* Key Contacts: 3-card grid (Property Roster, Insurance, Management). The
+            management card hosts the manager picker — assignment IS the contact. */}
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-foreground">Key Contacts</h3>
-          <ManagerAssignmentCard
-            communityId={id}
-            initialManagerId={c.manager_user_id}
-            orgUsers={orgUsers}
-          />
-          <CommunityPropertiesCard
-            communityId={id}
-            initialCount={unitCountTotal}
-            initialImportedAt={lastImportedAt}
-          />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <CommunityPropertiesCard
+              communityId={id}
+              initialCount={unitCountTotal}
+              initialImportedAt={lastImportedAt}
+            />
             <CommunityContactCard
               communityId={id}
               contactType="insurance_agent"
@@ -434,6 +415,8 @@ export default async function CommunityDetailPage({
               contactType="management_company"
               label="Management Company Contact"
               initial={mgmtContact}
+              orgUsers={orgUsers}
+              currentManagerId={c.manager_user_id}
             />
           </div>
         </div>

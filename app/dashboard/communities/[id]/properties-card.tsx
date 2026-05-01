@@ -1,6 +1,7 @@
 "use client";
 
 import { Building2, Loader2, Upload } from "lucide-react";
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -124,6 +125,15 @@ export default function CommunityPropertiesCard({
           {lastImported ? ` · last imported ${lastImported}` : ""}
         </p>
       </div>
+
+      {count > 0 && (
+        <Link
+          href={`/dashboard/communities/${communityId}/properties`}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+        >
+          View all properties →
+        </Link>
+      )}
 
       {count === 0 && (
         <p className="text-[11px] text-muted-foreground/80 italic">

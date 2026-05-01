@@ -79,6 +79,7 @@ export default function DashboardCommunitiesPage() {
   const [orgId, setOrgId] = useState<string | null>(null);
   const [docsByCommunity, setDocsByCommunity] = useState<Record<string, number>>({});
   const [missingAlerts, setMissingAlerts] = useState<Record<string, number>>({});
+  const [rosterUnitCounts, setRosterUnitCounts] = useState<Record<string, number>>({});
   const [communities, setCommunities] = useState<CommunityRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -262,16 +263,23 @@ export default function DashboardCommunitiesPage() {
 
     let docMap: Record<string, number> = {};
     let alertMap: Record<string, number> = {};
+    let unitMap: Record<string, number> = {};
 
     if (communityIds.length > 0) {
-      const { data: docsData } = await supabase
-        .from("community_documents")
-        .select("community_id, document_category")
-        .in("community_id", communityIds);
+      const [docsResult, unitsResult] = await Promise.all([
+        supabase
+          .from("community_documents")
+          .select("community_id, document_category")
+          .in("community_id", communityIds),
+        supabase
+          .from("community_units")
+          .select("community_id")
+          .in("community_id", communityIds),
+      ]);
 
       type DocRow = { community_id: string | null; document_category: string | null };
       const categoryMap = new Map<string, Set<string>>();
-      for (const row of (docsData ?? []) as DocRow[]) {
+      for (const row of (docsResult.data ?? []) as DocRow[]) {
         if (row.community_id) {
           if (!categoryMap.has(row.community_id)) categoryMap.set(row.community_id, new Set());
           if (row.document_category) categoryMap.get(row.community_id)!.add(row.document_category);
@@ -286,10 +294,22 @@ export default function DashboardCommunitiesPage() {
           return [cid, REQUIRED_CATEGORIES.filter((c) => !present.has(c)).length];
         })
       );
+
+      type UnitRowMin = { community_id: string | null };
+      const unitCounter = new Map<string, number>();
+      for (const row of (unitsResult.data ?? []) as UnitRowMin[]) {
+        if (row.community_id) {
+          unitCounter.set(row.community_id, (unitCounter.get(row.community_id) ?? 0) + 1);
+        }
+      }
+      unitMap = Object.fromEntries(
+        communityIds.map((cid) => [cid, unitCounter.get(cid) ?? 0])
+      );
     }
 
     setDocsByCommunity(docMap);
     setMissingAlerts(alertMap);
+    setRosterUnitCounts(unitMap);
     setCommunities(communityRows);
     setLoading(false);
   }, [resolveOrgId]);
@@ -340,9 +360,12 @@ export default function DashboardCommunitiesPage() {
       filtered.filter((c) => {
         const status = (c.status ?? "active").toString();
         if (status !== "active") return false;
+        // Roster count (truth) wins over the legacy manual unit_count when set.
+        const rosterCount = rosterUnitCounts[c.id] ?? 0;
+        if (rosterCount > 0) return false;
         return !c.unit_count || c.unit_count === 0;
       }).length,
-    [filtered]
+    [filtered, rosterUnitCounts]
   );
 
   // ─── Actions ────────────────────────────────────────────────────────────────
@@ -503,7 +526,7 @@ export default function DashboardCommunitiesPage() {
             <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-havn-cyan-deep" />
             <div>
               <p className="text-sm font-semibold text-foreground">
-                Add property addresses to enhance your portal{" "}
+                Upload property lists to save time on every order{" "}
                 <span className="text-xs font-normal text-muted-foreground">
                   (optional)
                 </span>
@@ -512,7 +535,10 @@ export default function DashboardCommunitiesPage() {
                 {needsAddressCount === 1
                   ? "1 community"
                   : `${needsAddressCount} communities`}{" "}
-                don&apos;t have a property list on file yet. Adding addresses lets Havn auto-route inbound requests to the right manager.
+                don&apos;t have a property list yet. With one on file, Havn
+                auto-fills owner names, mailing addresses, and contact info on
+                resale certificates and lender questionnaires — your team
+                doesn&apos;t have to re-key it per request.
               </p>
             </div>
           </div>
@@ -657,18 +683,24 @@ export default function DashboardCommunitiesPage() {
                         </td>
 
                         <td className="px-4 py-3.5">
-                          {c.unit_count && c.unit_count > 0 ? (
-                            <span className="text-sm text-foreground tabular-nums">{c.unit_count}</span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/communities/${c.id}`); }}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-                            >
-                              <Upload className="h-3.5 w-3.5" />
-                              Add Details
-                            </button>
-                          )}
+                          {(() => {
+                            // Roster count (truth) wins over the legacy manual unit_count
+                            // typed at create time.
+                            const roster = rosterUnitCounts[c.id] ?? 0;
+                            const display = roster > 0 ? roster : (c.unit_count ?? 0);
+                            return display > 0 ? (
+                              <span className="text-sm text-foreground tabular-nums">{display}</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/communities/${c.id}`); }}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                              >
+                                <Upload className="h-3.5 w-3.5" />
+                                Add Details
+                              </button>
+                            );
+                          })()}
                         </td>
 
                         <td className="px-4 py-3.5 text-sm text-foreground">

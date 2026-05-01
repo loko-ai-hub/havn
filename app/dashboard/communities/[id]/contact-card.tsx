@@ -1,10 +1,16 @@
 "use client";
 
-import { Building2, Mail, MapPin, Pencil, Phone, RefreshCw, Shield, User, X } from "lucide-react";
+import { Check, Mail, MapPin, Pencil, Phone, RefreshCw, Shield, UserCircle, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { rerunInsuranceAgentExtraction, upsertCommunityContact } from "./actions";
+import {
+  assignCommunityManager,
+  type OrgUserOption,
+  rerunInsuranceAgentExtraction,
+  upsertCommunityContact,
+} from "./actions";
 
 type Contact = {
   name: string | null;
@@ -19,6 +25,11 @@ type Props = {
   contactType: "insurance_agent" | "management_company";
   label: string;
   initial: Contact;
+  // Only relevant for `management_company`: the picker is rendered when these
+  // are passed. The contact card switches into "manager picker" mode where
+  // changing the assigned user is the only way to update the contact.
+  orgUsers?: OrgUserOption[];
+  currentManagerId?: string | null;
 };
 
 function Field({ icon, value, placeholder }: { icon: React.ReactNode; value: string | null; placeholder: string }) {
@@ -101,12 +112,44 @@ function combineAddress(street: string, city: string, state: string, zip: string
   return parts.length > 0 ? parts.join(", ") : null;
 }
 
-export default function CommunityContactCard({ communityId, contactType, label, initial }: Props) {
+export default function CommunityContactCard({
+  communityId,
+  contactType,
+  label,
+  initial,
+  orgUsers,
+  currentManagerId,
+}: Props) {
+  const router = useRouter();
+  const isManagement = contactType === "management_company";
+  const managerPickerEnabled = isManagement && Array.isArray(orgUsers);
+
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rescanning, setRescanning] = useState(false);
   const [contact, setContact] = useState<Contact>(initial);
   const [draft, setDraft] = useState<Contact>(initial);
+
+  // Manager-picker state (management_company only)
+  const [picking, setPicking] = useState(false);
+  const [savingManager, setSavingManager] = useState(false);
+
+  const handlePickManager = async (userId: string | null) => {
+    setSavingManager(true);
+    try {
+      const result = await assignCommunityManager(communityId, userId);
+      if (result && "error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(userId ? "Manager updated." : "Manager assignment cleared.");
+      setPicking(false);
+      // Refresh server-rendered data so the card reflects the new assignment.
+      router.refresh();
+    } finally {
+      setSavingManager(false);
+    }
+  };
 
   // Separate address fields for editing
   const [addrParts, setAddrParts] = useState(() => parseAddress(initial.address));
@@ -183,7 +226,7 @@ export default function CommunityContactCard({ communityId, contactType, label, 
 
   const iconEl = contactType === "insurance_agent"
     ? <Shield className="h-3.5 w-3.5 text-primary" />
-    : <User className="h-3.5 w-3.5 text-primary" />;
+    : <UserCircle className="h-3.5 w-3.5 text-primary" />;
 
   const inputCls = "w-full rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-havn-navy/20";
 
@@ -199,22 +242,97 @@ export default function CommunityContactCard({ communityId, contactType, label, 
             {label}
           </h4>
         </div>
-        {!editing && (
+        {!editing && managerPickerEnabled && (
+          <button
+            type="button"
+            onClick={() => setPicking((v) => !v)}
+            className="rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-muted transition-colors"
+          >
+            {currentManagerId ? "Change" : "Assign"}
+          </button>
+        )}
+        {!editing && !managerPickerEnabled && (
           <button type="button" onClick={handleStartEdit} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
             <Pencil className="h-3 w-3" />
           </button>
         )}
       </div>
 
+      {/* Manager picker (management_company only) */}
+      {managerPickerEnabled && picking && (
+        <div className="space-y-2">
+          <div className="max-h-64 overflow-auto rounded-lg border border-border bg-background">
+            {orgUsers!.length === 0 ? (
+              <p className="px-3 py-4 text-xs text-muted-foreground italic">
+                No team members found. Invite users from Settings first.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border/60">
+                {currentManagerId && (
+                  <li>
+                    <button
+                      type="button"
+                      disabled={savingManager}
+                      onClick={() => void handlePickManager(null)}
+                      className="flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-40"
+                    >
+                      <span className="text-xs font-medium text-destructive">
+                        Clear assignment
+                      </span>
+                      <X className="h-3.5 w-3.5 text-destructive" />
+                    </button>
+                  </li>
+                )}
+                {orgUsers!.map((u) => (
+                  <li key={u.id}>
+                    <button
+                      type="button"
+                      disabled={savingManager}
+                      onClick={() => void handlePickManager(u.id)}
+                      className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-40"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm text-foreground truncate">{u.fullName}</p>
+                        <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                          {u.role}
+                        </span>
+                        {u.id === currentManagerId && (
+                          <Check className="h-3.5 w-3.5 text-havn-success" />
+                        )}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setPicking(false)}
+              disabled={savingManager}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* View mode */}
-      {!editing && (
+      {!editing && !(managerPickerEnabled && picking) && (
         <div className="space-y-2.5">
           {isEmpty ? (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground italic">
                 {contactType === "insurance_agent"
                   ? "Upload your COI to pre-populate this information."
-                  : "No contact on file. Click edit to add."}
+                  : managerPickerEnabled
+                    ? "No manager assigned yet. Click Assign to pick a team member."
+                    : "No contact on file. Click edit to add."}
               </p>
               {contactType === "insurance_agent" && (
                 <button
