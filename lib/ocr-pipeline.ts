@@ -1,24 +1,36 @@
-import mammoth from "mammoth";
-import { PDFDocument } from "pdf-lib";
+import { generateText, Output } from "ai";
+import { z } from "zod";
 
-import { getLatestSonnetModel } from "@/lib/anthropic";
+import { BEST_MODEL } from "@/lib/ai-models";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createDocumentAIClient, PROCESSOR_NAME } from "@/lib/google-document-ai";
+import { extractTextFromBuffer } from "@/lib/pdf-text";
+import { resolveAndPersistMergeTags } from "@/lib/resolve-merge-tags";
 
 const CATEGORY_PROMPT = `You are an expert at classifying HOA/COA governing documents.
 Read the document text and return ONLY a valid JSON object with a single field:
 {"suggested_category": "<category>"}
 
-The category MUST be exactly one of:
-"CC&Rs / Declaration", "Bylaws", "Amendments", "Articles of Incorporation", "Financial Reports", "Insurance Certificate", "Reserve Study", "Budget", "Meeting Minutes", "Rules & Regulations", "Site Plan / Map", "FHA/VA Certification", "Management Agreement", "Other"
+The category MUST be exactly one of the following (these match the legal
+attachment categories state templates expect; copy verbatim):
+"Declaration and amendments", "Bylaws and amendments", "Rules and regulations", "Articles of incorporation", "Current operating budget", "Most recent balance sheet and income/expense statement", "Reserve study (most recent) – attachment supplements but does not substitute for the (1)(m) disclosure on the face of the certificate", "Certificate of insurance", "Meeting minutes (most recent annual and board)", "WUCIOA buyer notice (for RCW 64.90.640 communities)", "Site Plan / Map", "FHA/VA Certification", "Management Agreement", "Other"
 
-Choose "CC&Rs / Declaration" for declarations, covenants, CC&Rs, declarant documents, or deed restrictions.
-Choose "Articles of Incorporation" for articles of incorporation, certificate of formation, or certificate of incorporation.
-Choose "Site Plan / Map" for site plans, plot plans, plat maps, community maps, property maps, or floor plans.
-Choose "FHA/VA Certification" for FHA approval letters, VA certification, HUD condo approval, or any document certifying FHA or VA eligibility.
-Choose "Management Agreement" for management contracts, property management agreements, or service agreements between the HOA and a management company.
-Choose "Other" only if the document truly does not fit any category above.
-Never return null — always pick the best match.`;
+Classification guidance:
+- "Declaration and amendments" — declarations, CC&Rs, deed restrictions, covenants, and any amendments to those instruments.
+- "Bylaws and amendments" — bylaws plus any amendments to the bylaws.
+- "Rules and regulations" — association rules, regulations, policies.
+- "Articles of incorporation" — articles of incorporation, certificate of formation, certificate of incorporation.
+- "Current operating budget" — the operating budget for the current fiscal year.
+- "Most recent balance sheet and income/expense statement" — balance sheets, income statements, P&L, audited or unaudited financial statements.
+- "Reserve study (most recent) – attachment supplements but does not substitute for the (1)(m) disclosure on the face of the certificate" — any reserve study. Use this full string verbatim.
+- "Certificate of insurance" — insurance certificates, ACORD forms, evidence of insurance.
+- "Meeting minutes (most recent annual and board)" — minutes of annual or board meetings.
+- "WUCIOA buyer notice (for RCW 64.90.640 communities)" — the statutory buyer notice required by WUCIOA.
+- "Site Plan / Map" — site plans, plot plans, plat maps, community maps, property maps, floor plans.
+- "FHA/VA Certification" — FHA approval letters, VA certification, HUD condo approval.
+- "Management Agreement" — management contracts, property management agreements, service agreements between the HOA and a management company.
+- "Other" — only if the document truly does not fit any category above.
+
+Never return null — always pick the best match. Copy the chosen category string verbatim, including parentheticals and long-form text.`;
 
 const EXTRACTION_PROMPT = `You are an expert at extracting structured data from HOA/COA governing documents.
 Extract all relevant fields from the provided document text and return ONLY a valid JSON object with no additional text or markdown.
@@ -55,38 +67,6 @@ Extract these fields if present:
 
 Return null for any field not found in the document.`;
 
-const CHUNK_SIZE = 14; // stay safely under the 15-page non-imageless limit
-
-async function splitPdfIntoChunks(pdfBuffer: Buffer): Promise<Buffer[]> {
-  let srcDoc: PDFDocument;
-  try {
-    srcDoc = await PDFDocument.load(pdfBuffer);
-  } catch (err) {
-    // Encrypted or malformed PDF — send the original bytes directly to Document AI.
-    // Document AI handles owner-locked PDFs better than re-encoded chunks would.
-    const reason = err instanceof Error && err.message.toLowerCase().includes("encrypt")
-      ? "encrypted"
-      : "malformed";
-    console.warn(`[OCR] PDF is ${reason} — sending original buffer directly to Document AI`);
-    return [pdfBuffer];
-  }
-
-  const totalPages = srcDoc.getPageCount();
-  const chunks: Buffer[] = [];
-
-  for (let start = 0; start < totalPages; start += CHUNK_SIZE) {
-    const end = Math.min(start + CHUNK_SIZE, totalPages);
-    const chunkDoc = await PDFDocument.create();
-    const pageIndices = Array.from({ length: end - start }, (_, i) => start + i);
-    const copiedPages = await chunkDoc.copyPages(srcDoc, pageIndices);
-    for (const page of copiedPages) chunkDoc.addPage(page);
-    const bytes = await chunkDoc.save();
-    chunks.push(Buffer.from(bytes));
-  }
-
-  return chunks;
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function safeJsonParse(value: string): Record<string, unknown> {
@@ -101,98 +81,47 @@ function safeJsonParse(value: string): Record<string, unknown> {
   }
 }
 
+const CategoryOutputSchema = z.object({
+  suggested_category: z.string(),
+});
+
+// Hard ceiling on individual Claude calls inside the OCR background block.
+// 60s is comfortably above p99 latency for these prompts and prevents a
+// hung gateway from consuming the function's remaining lifetime.
+const CLAUDE_TIMEOUT_MS = 60_000;
+
 async function callClaudeForCategory(rawText: string): Promise<string | undefined> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return undefined;
-
   try {
-    const model = process.env.ANTHROPIC_MODEL ?? await getLatestSonnetModel();
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 64,
-        system: CATEGORY_PROMPT,
-        messages: [{ role: "user", content: `Document text:\n\n${rawText.slice(0, 8000)}` }],
-      }),
+    const { output } = await generateText({
+      model: BEST_MODEL,
+      output: Output.object({ schema: CategoryOutputSchema }),
+      system: CATEGORY_PROMPT,
+      prompt: `Document text:\n\n${rawText.slice(0, 8000)}`,
+      abortSignal: AbortSignal.timeout(CLAUDE_TIMEOUT_MS),
     });
-
-    if (!response.ok) {
-      console.error("[CLAUDE_CAT] API error:", response.status);
-      return undefined;
-    }
-
-    const payload = (await response.json()) as {
-      content?: Array<{ type?: string; text?: string }>;
-    };
-    const text = payload.content
-      ?.filter((c) => c.type === "text" && typeof c.text === "string")
-      .map((c) => c.text as string)
-      .join("") ?? "";
-
-    const parsed = safeJsonParse(text);
-    return typeof parsed.suggested_category === "string" ? parsed.suggested_category.trim() : undefined;
+    const suggested = output?.suggested_category?.trim();
+    return suggested && suggested.length > 0 ? suggested : undefined;
   } catch (err) {
-    console.error("[CLAUDE_CAT] Exception:", err);
+    console.error("[OCR_CATEGORY] Exception:", err);
     return undefined;
   }
 }
 
-async function callClaudeForFieldExtraction(rawText: string): Promise<Record<string, unknown>> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    console.error("[CLAUDE] No ANTHROPIC_API_KEY set");
-    return {};
-  }
-
+async function callClaudeForFieldExtraction(
+  rawText: string
+): Promise<Record<string, unknown>> {
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL ?? await getLatestSonnetModel(),
-        max_tokens: 10000,
-        system: EXTRACTION_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: `Document text:\n\n${rawText.slice(0, 180000)}`,
-          },
-        ],
-      }),
+    const { text } = await generateText({
+      model: BEST_MODEL,
+      system: EXTRACTION_PROMPT,
+      prompt: `Document text:\n\n${rawText.slice(0, 180000)}`,
+      abortSignal: AbortSignal.timeout(CLAUDE_TIMEOUT_MS),
     });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("[CLAUDE] API error:", response.status, errText);
-      return {};
-    }
-
-    const payload = (await response.json()) as {
-      content?: Array<{ type?: string; text?: string }>;
-    };
-
-    const text =
-      payload.content
-        ?.filter((c) => c.type === "text" && typeof c.text === "string")
-        .map((c) => c.text as string)
-        .join("\n") ?? "{}";
-
-    console.log("[CLAUDE] raw response (first 500):", text.slice(0, 500));
-    const parsed = safeJsonParse(text);
-    console.log("[CLAUDE] suggested_category:", parsed.suggested_category);
-    return parsed;
+    if (!text) return {};
+    console.log("[OCR_EXTRACT] raw response (first 500):", text.slice(0, 500));
+    return safeJsonParse(text);
   } catch (err) {
-    console.error("[CLAUDE] Exception:", err);
+    console.error("[OCR_EXTRACT] Exception:", err);
     return {};
   }
 }
@@ -203,51 +132,34 @@ export async function processDocumentOCR(
   communityId: string,
   organizationId: string,
   originalFilename: string,
-  documentCategory: string
-): Promise<{ success: boolean; txtPath?: string; jsonPath?: string; inferredCategory?: string; extractedFields?: Record<string, unknown>; error?: string }> {
+  documentCategory: string,
+  documentId: string
+): Promise<{ success: boolean; txtPath?: string; jsonPath?: string; inferredCategory?: string; extractedFields?: Record<string, unknown>; pageCount?: number; error?: string }> {
+  // The `documentId` param is the row this OCR pass corresponds to. Earlier
+  // versions looked it up by (community_id, organization_id, filename,
+  // category) which raced with archive / dedup / cleanup-cron updates and
+  // sometimes silently no-op'd, leaving rows wedged at processing.
+  void organizationId;
+  void originalFilename;
+  void documentCategory;
+
   const admin = createAdminClient();
 
-  let rawText = "";
-  let pageCount = 1;
-
   try {
-    // Step 1/2: DOCX uses mammoth; PDF uses Google Document AI.
-    if (
-      mimeType ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ) {
-      const result = await mammoth.extractRawText({ buffer: fileBuffer });
-      rawText = result.value || "";
-      pageCount = 1;
-    } else {
-      const client = createDocumentAIClient();
-      const chunks = await splitPdfIntoChunks(fileBuffer);
-      const textParts: string[] = [];
-      let totalPageCount = 0;
+    // Step 1/2: extract text via shared helper (mammoth for DOCX, Document AI for PDF).
+    const { rawText, pageCount } = await extractTextFromBuffer(fileBuffer, mimeType);
 
-      for (const chunk of chunks) {
-        const [result] = await client.processDocument({
-          name: PROCESSOR_NAME,
-          rawDocument: {
-            content: chunk.toString("base64"),
-            mimeType,
-          },
-        });
-        const chunkText = result.document?.text ?? "";
-        if (chunkText.trim()) textParts.push(chunkText);
-        totalPageCount += result.document?.pages?.length ?? 0;
-      }
-
-      rawText = textParts.join("\n\n");
-      pageCount = totalPageCount || chunks.length;
-
-      if (!rawText.trim()) {
-        // Document AI returned nothing — likely a fully user-password-protected PDF
-        // or a pure image with no detectable text layer.
-        // Return a partial success so the document record is still saved.
-        console.warn("[OCR] Document AI returned empty text — document saved without OCR data");
-        return { success: true, inferredCategory: undefined, extractedFields: {} };
-      }
+    const isPdf = mimeType !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    if (isPdf && !rawText.trim()) {
+      // Document AI returned nothing — likely a fully user-password-protected PDF
+      // or a pure image with no detectable text layer. Mark the row complete so
+      // the user isn't stuck waiting on a doc we'll never extract from.
+      console.warn("[OCR] Document AI returned empty text — marking complete with no OCR data");
+      await admin
+        .from("community_documents")
+        .update({ ocr_status: "complete", page_count: pageCount })
+        .eq("id", documentId);
+      return { success: true, inferredCategory: undefined, extractedFields: {}, pageCount };
     }
 
     // Step 3: save raw text to storage.
@@ -282,55 +194,43 @@ export async function processDocumentOCR(
       throw new Error(jsonUpload.error.message);
     }
 
-    // Step 6: update latest in-flight community document row.
-    const { data: pendingRows } = await admin
+    // Step 6: update the row directly by its id. No fragile lookup, no
+    // racing with cleanup / archive flows.
+    await admin
       .from("community_documents")
-      .select("id")
-      .eq("community_id", communityId)
-      .eq("organization_id", organizationId)
-      .eq("original_filename", originalFilename)
-      .eq("document_category", documentCategory)
-      .in("ocr_status", ["pending", "processing"])
-      .order("created_at", { ascending: false })
-      .limit(1);
+      .update({
+        storage_path_txt: txtPath,
+        storage_path_json: jsonPath,
+        ocr_status: "complete",
+        page_count: pageCount,
+      })
+      .eq("id", documentId);
 
-    const latestId = pendingRows?.[0]?.id as string | undefined;
-
-    if (latestId) {
-      await admin
-        .from("community_documents")
-        .update({
-          storage_path_txt: txtPath,
-          storage_path_json: jsonPath,
-          ocr_status: "complete",
-          page_count: pageCount,
-        })
-        .eq("id", latestId);
+    // Step 7: hand the extracted JSON to Claude Opus for merge-tag
+    // resolution + cache upsert. Non-fatal if this step fails — OCR data
+    // is already persisted; resolution can be retried.
+    try {
+      const { resolution, persist } = await resolveAndPersistMergeTags(
+        extractedFields,
+        {
+          communityId,
+          sourceDocumentId: documentId,
+        }
+      );
+      console.log(
+        `[OCR] Merge-tag resolution: ${resolution.resolved.length} resolved, ${persist.cached} cached, ${resolution.unmapped.length} unmapped`
+      );
+    } catch (resolveErr) {
+      console.warn("[OCR] Merge-tag resolution failed (non-fatal):", resolveErr);
     }
 
-    return { success: true, txtPath, jsonPath, inferredCategory, extractedFields };
+    return { success: true, txtPath, jsonPath, inferredCategory, extractedFields, pageCount };
   } catch (error) {
     const message = error instanceof Error ? error.message : "OCR processing failed.";
-
-    const { data: pendingRows } = await admin
+    await admin
       .from("community_documents")
-      .select("id")
-      .eq("community_id", communityId)
-      .eq("organization_id", organizationId)
-      .eq("original_filename", originalFilename)
-      .eq("document_category", documentCategory)
-      .in("ocr_status", ["pending", "processing"])
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    const latestId = pendingRows?.[0]?.id as string | undefined;
-    if (latestId) {
-      await admin
-        .from("community_documents")
-        .update({ ocr_status: "failed" })
-        .eq("id", latestId);
-    }
-
+      .update({ ocr_status: "failed" })
+      .eq("id", documentId);
     return { success: false, error: message };
   }
 }

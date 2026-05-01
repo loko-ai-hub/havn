@@ -2,9 +2,27 @@
 
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { US_STATES } from "@/lib/us-states";
+import {
+  capTypeForDb,
+  generateStateServiceDraft,
+  type DraftedService,
+  type DraftedStateConfig,
+} from "@/lib/state-service-onboarding";
 
-import { IMPERSONATE_COOKIE, IMPERSONATE_NAME_COOKIE } from "./constants";
+import { GOD_MODE_EMAILS, IMPERSONATE_COOKIE, IMPERSONATE_NAME_COOKIE } from "./constants";
+
+async function requireGodMode(): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const email = (user?.email ?? "").toLowerCase();
+  if (!user || !GOD_MODE_EMAILS.includes(email)) {
+    throw new Error("Forbidden");
+  }
+}
 
 /* ── Types ────────────────────────────────────────────────────────────── */
 
@@ -59,11 +77,14 @@ export async function loadStateConfigs(): Promise<
     }
     const mtk = row.master_type_key as string;
     if (mtk === "_placeholder") continue; // skip legacy placeholder rows
+    // DB stores "actual_cost"; the existing editor expects "actual".
+    const rawCapType = ((row.cap_type as string) ?? "").toLowerCase();
+    const editorCapType: "fixed" | "actual" = rawCapType === "fixed" ? "fixed" : "actual";
     grouped.get(st)!.services.push({
       master_type_key: mtk,
       formal_name: (row.formal_name as string) ?? "",
       pricing_cap: row.pricing_cap as number | null,
-      cap_type: ((row.cap_type as string) ?? "actual") as "fixed" | "actual",
+      cap_type: editorCapType,
       rush_cap: row.rush_cap as number | null,
       no_rush: (row.no_rush as boolean) ?? false,
       standard_turnaround: (row.standard_turnaround as number) ?? 5,
@@ -173,7 +194,9 @@ export async function saveStateConfig(
     master_type_key: svc.master_type_key,
     formal_name: svc.formal_name || null,
     pricing_cap: svc.pricing_cap,
-    cap_type: svc.cap_type,
+    // DB enum `fee_cap_type` accepts only "fixed" or "actual_cost".
+    // Translate any legacy "actual" value at the write boundary.
+    cap_type: svc.cap_type === "fixed" ? "fixed" : "actual_cost",
     rush_cap: svc.rush_cap,
     no_rush: svc.no_rush,
     standard_turnaround: svc.standard_turnaround,
@@ -201,6 +224,24 @@ export async function deleteStateConfig(
     .from("state_fee_limits")
     .delete()
     .eq("state", state.toUpperCase());
+
+  if (error) return { error: error.message };
+  return { ok: true };
+}
+
+/* ── Delete a single service from a state ─────────────────────────────── */
+
+export async function deleteStateService(
+  state: string,
+  masterTypeKey: string
+): Promise<{ ok: true } | { error: string }> {
+  await requireGodMode();
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("state_fee_limits")
+    .delete()
+    .eq("state", state.toUpperCase())
+    .eq("master_type_key", masterTypeKey);
 
   if (error) return { error: error.message };
   return { ok: true };
@@ -556,4 +597,100 @@ export async function getImpersonationState(): Promise<{
   const orgId = cookieStore.get(IMPERSONATE_COOKIE)?.value ?? null;
   const orgName = cookieStore.get(IMPERSONATE_NAME_COOKIE)?.value ?? null;
   return { impersonating: !!orgId, orgId, orgName };
+}
+
+/* ── AI state-service onboarding ─────────────────────────────────────── */
+
+/**
+ * Runs the three-agent pipeline (discover → deep-dive per service →
+ * pricing) for a state and returns a draft the God Mode UI can review.
+ * Nothing is written to the database here — that happens only when the
+ * user clicks "Apply to state config" (see `applyDraftedStateConfig`).
+ */
+export async function generateStateServiceDraftAction(input: {
+  state: string;
+}): Promise<DraftedStateConfig | { error: string }> {
+  await requireGodMode();
+  try {
+    return await generateStateServiceDraft({ state: input.state });
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Service draft failed",
+    };
+  }
+}
+
+/**
+ * Commit a drafted (and optionally staff-edited) state config to
+ * `state_fee_limits`. Upserts every master_type_key in `services` and
+ * flips the state enabled. Existing services not in the draft stay
+ * untouched unless `replaceExisting` is true.
+ */
+export async function applyDraftedStateConfig(input: {
+  state: string;
+  services: DraftedService[];
+  replaceExisting?: boolean;
+}): Promise<{ ok: true; upserted: number } | { error: string }> {
+  await requireGodMode();
+  const admin = createAdminClient();
+  const st = input.state.toUpperCase();
+
+  if (input.services.length === 0) {
+    return { error: "Draft has no services to apply." };
+  }
+
+  const nowIso = new Date().toISOString();
+  const rows = input.services.map((svc) => ({
+    state: st,
+    state_enabled: true,
+    state_notes: "",
+    master_type_key: svc.masterTypeKey,
+    formal_name: svc.formalName || null,
+    pricing_cap: svc.capType === "fixed" ? svc.pricingCap : null,
+    cap_type: capTypeForDb(svc.capType),
+    rush_cap: svc.rushCap,
+    no_rush: svc.noRush,
+    standard_turnaround: svc.standardTurnaround,
+    auto_refund_on_miss: svc.autoRefundOnMiss,
+    auto_refund_note: svc.autoRefundNote || "",
+    statute: svc.statute || "",
+    recommended_default: svc.recommendedDefault,
+    ai_memory: [
+      svc.rationale && `Rationale: ${svc.rationale}`,
+      svc.pricingReasoning && `Pricing: ${svc.pricingReasoning}`,
+      svc.rushDefinition && `Rush definition: ${svc.rushDefinition}`,
+      svc.rushTriggerDays != null && `Rush trigger: ≤ ${svc.rushTriggerDays} day(s) to delivery`,
+      svc.autoRefundRequiredByStatute && `Auto-refund is a STATUTORY requirement.`,
+      svc.notes && `Notes: ${svc.notes}`,
+      svc.rushPremium != null && `Suggested rush premium: $${svc.rushPremium.toFixed(2)}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    updated_at: nowIso,
+  }));
+
+  // `state_fee_limits` does not have a unique constraint on
+  // (state, master_type_key), so a plain upsert can silently append
+  // duplicate rows. Always delete-then-insert for the keys in the draft.
+  const draftKeys = [...new Set(input.services.map((s) => s.masterTypeKey))];
+
+  if (input.replaceExisting) {
+    const { error: delErr } = await admin
+      .from("state_fee_limits")
+      .delete()
+      .eq("state", st);
+    if (delErr) return { error: delErr.message };
+  } else {
+    const { error: delErr } = await admin
+      .from("state_fee_limits")
+      .delete()
+      .eq("state", st)
+      .in("master_type_key", draftKeys);
+    if (delErr) return { error: delErr.message };
+  }
+
+  const { error: insErr } = await admin.from("state_fee_limits").insert(rows);
+  if (insErr) return { error: insErr.message };
+
+  return { ok: true, upserted: rows.length };
 }

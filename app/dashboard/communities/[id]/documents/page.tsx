@@ -65,7 +65,6 @@ const CATEGORY_OPTIONS = [
   "FHA/VA Certification",
   "Management Agreement",
   "Other",
-  "Unknown",
 ];
 
 const REQUIRED_CATEGORIES = new Set([
@@ -77,13 +76,9 @@ const REQUIRED_CATEGORIES = new Set([
   "Budget",
 ]);
 
-// Nice-to-have categories — shown but not counted as missing or required.
 const OPTIONAL_CATEGORIES = new Set(["FHA/VA Certification", "Management Agreement"]);
 
-// These categories don't count toward completion metrics and are excluded from
-// the "Missing" filter. "Other" is a quiet fallback bucket; "Unknown" is an
-// error state that needs resolution but isn't something you "upload to".
-const NON_METRIC_CATEGORIES = new Set(["Other", "Unknown", ...OPTIONAL_CATEGORIES]);
+const NON_METRIC_CATEGORIES = new Set(["Other", ...OPTIONAL_CATEGORIES]);
 const TRACKABLE_CATEGORIES = CATEGORY_OPTIONS.filter((c) => !NON_METRIC_CATEGORIES.has(c));
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -114,7 +109,13 @@ const SUGGESTED_QUESTIONS = [
 // ─── Multi-file upload types ──────────────────────────────────────────────────
 
 type FileConfidence = "high" | "medium" | "unknown";
-type FileUploadStatus = "pending" | "uploading" | "done" | "error" | "mismatch";
+type FileUploadStatus =
+  | "pending"
+  | "uploading"
+  | "processing"
+  | "done"
+  | "error"
+  | "duplicate";
 
 type PendingFile = {
   id: string;
@@ -124,6 +125,8 @@ type PendingFile = {
   status: FileUploadStatus;
   error?: string;
   ocrCategory?: string;
+  duplicateOf?: string;
+  documentId?: string;
 };
 
 // ─── Category heuristics ─────────────────────────────────────────────────────
@@ -287,6 +290,81 @@ export default function CommunityDocumentsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Realtime + polling: keep `documents` in sync as background OCR finishes.
+  // The /api/documents/process endpoint returns immediately and runs OCR in
+  // an after() block — without this, fresh uploads sit in "Other / Processing"
+  // until the user manually refreshes. Polling fallback every 8s covers the
+  // case where the realtime channel drops.
+  useEffect(() => {
+    if (!communityId) return;
+
+    const mergeRow = (row: Partial<CommunityDocumentRow> & { id: string }) => {
+      setDocuments((prev) => {
+        const idx = prev.findIndex((d) => d.id === row.id);
+        if (idx === -1) {
+          // New row inserted by upload — only adopt if it belongs to this community
+          if (row.community_id && row.community_id !== communityId) return prev;
+          return [{ ...(row as CommunityDocumentRow) }, ...prev];
+        }
+        const next = prev.slice();
+        next[idx] = { ...next[idx], ...row };
+        return next;
+      });
+    };
+
+    const channel = supabase
+      .channel(`community-docs-${communityId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "community_documents",
+          filter: `community_id=eq.${communityId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow?.id) {
+              setDocuments((prev) => prev.filter((d) => d.id !== oldRow.id));
+            }
+            return;
+          }
+          const row = payload.new as Partial<CommunityDocumentRow> & { id: string };
+          mergeRow(row);
+        }
+      )
+      .subscribe();
+
+    const pollId = window.setInterval(async () => {
+      // Only refetch while at least one row is still in flight — otherwise
+      // we're burning queries. Read latest state via a fresh closure.
+      setDocuments((current) => {
+        const inFlight = current.some(
+          (d) => d.ocr_status === "processing" || d.ocr_status === "pending"
+        );
+        if (inFlight) {
+          void supabase
+            .from("community_documents")
+            .select(
+              "id, community_id, organization_id, original_filename, document_category, ocr_status, page_count, created_at, storage_path_txt, storage_path_json, storage_path_pdf, archived"
+            )
+            .eq("community_id", communityId)
+            .order("created_at", { ascending: false })
+            .then(({ data }) => {
+              if (data) setDocuments(data as CommunityDocumentRow[]);
+            });
+        }
+        return current;
+      });
+    }, 8_000);
+
+    return () => {
+      void supabase.removeChannel(channel);
+      window.clearInterval(pollId);
+    };
+  }, [communityId, supabase]);
+
   const handleFilesSelected = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const forced = preselectCategoryRef.current;
@@ -324,7 +402,10 @@ export default function CommunityDocumentsPage() {
     const toProcess = pendingFiles.filter((f) => f.status === "pending");
 
     for (const pf of toProcess) {
-      updatePendingFile(pf.id, { status: "uploading" });
+      // Fetch is the whole pipeline (upload + OCR + classification). Show
+      // "processing" for the duration so the user sees a single, honest
+      // signal: "we're reading and categorizing this file."
+      updatePendingFile(pf.id, { status: "processing" });
 
       const formData = new FormData();
       formData.append("file", pf.file);
@@ -340,23 +421,92 @@ export default function CommunityDocumentsPage() {
         const result = (await response.json()) as {
           success: boolean;
           error?: string;
+          documentId?: string;
+          duplicate?: boolean;
+          existingFilename?: string | null;
+          existingCategory?: string | null;
           inferredCategory?: string | null;
-          finalCategory?: string;
-          wasUnknown?: boolean;
+          finalCategory?: string | null;
+          ocrStatus?: "complete" | "failed" | "processing" | "pending";
+          ocrError?: string;
         };
 
-        if (!response.ok || !result.success) {
+        if (result.duplicate) {
+          updatePendingFile(pf.id, {
+            status: "duplicate",
+            duplicateOf: result.existingFilename ?? undefined,
+            category: result.existingCategory ?? pf.category,
+          });
+          continue;
+        }
+
+        if (!response.ok || !result.success || !result.documentId) {
           throw new Error(result.error ?? "Processing failed.");
         }
 
-        const isUnknown = result.wasUnknown ?? true;
-        const finalCategory = result.finalCategory ?? "Other";
+        // Strict: only mark done when the route says ocr is fully complete.
+        // A stale server returning "processing" used to slip through and
+        // flip rows to Verified before OCR was actually finished.
+        if (result.ocrStatus === "complete") {
+          updatePendingFile(pf.id, {
+            status: "done",
+            documentId: result.documentId,
+            category: result.finalCategory ?? pf.category,
+            confidence: "high",
+            ocrCategory: result.inferredCategory ?? undefined,
+          });
+        } else if (result.ocrStatus === "failed") {
+          updatePendingFile(pf.id, {
+            status: "error",
+            documentId: result.documentId,
+            error: result.ocrError ?? "Document couldn't be read.",
+          });
+        } else {
+          updatePendingFile(pf.id, {
+            status: "error",
+            documentId: result.documentId,
+            error: "OCR didn't finish. Restart your dev server or try uploading again.",
+          });
+        }
 
-        updatePendingFile(pf.id, {
-          status: isUnknown ? "mismatch" : "done",
-          category: finalCategory,
-          ocrCategory: result.inferredCategory ?? undefined,
-        });
+        // Optimistically mirror the response into `documents` state so the
+        // docs list updates simultaneously with the modal. Realtime stays as
+        // the eventual-consistency backstop.
+        if (
+          result.documentId &&
+          (result.ocrStatus === "complete" || result.ocrStatus === "failed")
+        ) {
+          const finalRowOcrStatus = result.ocrStatus;
+          const finalRowCategory = result.finalCategory ?? null;
+          const documentId = result.documentId;
+          setDocuments((prev) => {
+            const idx = prev.findIndex((d) => d.id === documentId);
+            if (idx >= 0) {
+              const next = prev.slice();
+              next[idx] = {
+                ...next[idx],
+                ocr_status: finalRowOcrStatus,
+                document_category: finalRowCategory,
+              };
+              return next;
+            }
+            const optimisticRow: CommunityDocumentRow = {
+              id: documentId,
+              community_id: community.id,
+              organization_id: community.organization_id,
+              original_filename: pf.file.name,
+              document_category: finalRowCategory,
+              ocr_status: finalRowOcrStatus,
+              page_count: null,
+              created_at: new Date().toISOString(),
+              storage_path_txt: null,
+              storage_path_json: null,
+              storage_path_pdf: null,
+              archived: false,
+            };
+            return [optimisticRow, ...prev];
+          });
+        }
       } catch (error) {
         updatePendingFile(pf.id, {
           status: "error",
@@ -366,7 +516,6 @@ export default function CommunityDocumentsPage() {
     }
 
     setIsProcessingAll(false);
-    await load();
   };
 
   const openDocument = (row: CommunityDocumentRow) => {
@@ -407,18 +556,72 @@ export default function CommunityDocumentsPage() {
     toast.success(`Moved to ${newCategory}`);
   };
 
-  // Category summary stats
+  // After 90 seconds in 'processing' or 'pending' a row is treated as stalled
+  // — Vercel function instances can die mid-after(), leaving rows wedged in
+  // limbo. We surface these in a dedicated "Stalled" section instead of
+  // letting them pollute category buckets or sit forever in Processing.
+  const STALL_THRESHOLD_MS = 90_000;
+
+  const docState = useCallback(
+    (
+      d: CommunityDocumentRow
+    ):
+      | "complete"
+      | "failed"
+      | "in_flight"
+      | "stalled" => {
+      const status = (d.ocr_status ?? "").toLowerCase();
+      if (status === "complete") return "complete";
+      if (status === "failed") return "failed";
+      const created = d.created_at ? new Date(d.created_at).getTime() : 0;
+      if (created > 0 && Date.now() - created > STALL_THRESHOLD_MS) {
+        return "stalled";
+      }
+      return "in_flight";
+    },
+    []
+  );
+
+  // Active in-flight uploads. Render in the "Processing" section above the
+  // accordion — never in a category bucket.
+  const processingDocs = useMemo(
+    () =>
+      documents.filter(
+        (d) => !d.archived && docState(d) === "in_flight"
+      ),
+    [documents, docState]
+  );
+
+  // Stalled or failed: user-actionable. Both render in the "needs attention"
+  // section with a Discard button so the user can clear and re-upload.
+  const stalledDocs = useMemo(
+    () =>
+      documents.filter(
+        (d) =>
+          !d.archived &&
+          (docState(d) === "stalled" || docState(d) === "failed")
+      ),
+    [documents, docState]
+  );
+
   const categoryMap = useMemo(() => {
     const map = new Map<string, CommunityDocumentRow[]>();
     for (const cat of CATEGORY_OPTIONS) map.set(cat, []);
     for (const doc of documents) {
-      if (doc.ocr_status === "failed" || doc.archived) continue;
-      const cat = doc.document_category ?? "Other";
+      if (doc.archived) continue;
+      // STRICT: only fully-classified rows land in a category bucket. Failed
+      // and stalled rows render in their own sections so users can act on
+      // them. Pending/processing rows render in Processing.
+      if (docState(doc) !== "complete") continue;
+      // Coerce legacy "Unknown" rows defensively — server already maps these
+      // to "Other" on insert, but old data may still exist.
+      const raw = doc.document_category ?? "Other";
+      const cat = raw === "Unknown" ? "Other" : raw;
       const key = CATEGORY_OPTIONS.includes(cat) ? cat : "Other";
       map.get(key)!.push(doc);
     }
     return map;
-  }, [documents]);
+  }, [documents, docState]);
 
   const completeCategories = useMemo(
     () =>
@@ -429,10 +632,7 @@ export default function CommunityDocumentsPage() {
   const visibleCategories = useMemo(() => {
     return CATEGORY_OPTIONS.filter((cat) => {
       const docs = categoryMap.get(cat) ?? [];
-      // Always hide Unknown when empty — it's only meaningful when it has docs
-      if (cat === "Unknown" && docs.length === 0) return false;
       if (statusFilter === "complete") return docs.length > 0;
-      // "Missing" filter only applies to trackable categories
       if (statusFilter === "missing") return docs.length === 0 && !NON_METRIC_CATEGORIES.has(cat);
       return true;
     });
@@ -721,9 +921,10 @@ export default function CommunityDocumentsPage() {
                       className={cn(
                         "grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors",
                         pf.status === "done" && "border-havn-success/30 bg-havn-success/5",
-                        pf.status === "mismatch" && "border-havn-amber/30 bg-havn-amber/5",
+                        pf.status === "duplicate" && "border-border bg-muted/30",
                         pf.status === "error" && "border-destructive/30 bg-destructive/5",
                         pf.status === "uploading" && "border-primary/20 bg-primary/5",
+                        pf.status === "processing" && "border-havn-cyan/30 bg-havn-cyan/5",
                         pf.status === "pending" && "border-border bg-card",
                       )}
                     >
@@ -732,11 +933,14 @@ export default function CommunityDocumentsPage() {
                         {pf.status === "uploading" && (
                           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
                         )}
+                        {pf.status === "processing" && (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-havn-cyan-deep" />
+                        )}
                         {pf.status === "done" && (
                           <CheckCircle2 className="h-4 w-4 shrink-0 text-havn-success" />
                         )}
-                        {pf.status === "mismatch" && (
-                          <AlertTriangle className="h-4 w-4 shrink-0 text-havn-amber" />
+                        {pf.status === "duplicate" && (
+                          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                         )}
                         {pf.status === "error" && (
                           <XCircle className="h-4 w-4 shrink-0 text-destructive" />
@@ -746,9 +950,16 @@ export default function CommunityDocumentsPage() {
                         )}
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">{pf.file.name}</p>
-                          {pf.status === "mismatch" ? (
-                            <p className="text-[11px] text-havn-amber">
-                              Moved to Other — please reassign to the correct category
+                          {pf.status === "duplicate" ? (
+                            <p
+                              className="text-[11px] text-muted-foreground"
+                              title={pf.duplicateOf ? `Existing: ${pf.duplicateOf}` : undefined}
+                            >
+                              Already on file. No action needed.
+                            </p>
+                          ) : pf.status === "processing" ? (
+                            <p className="text-[11px] text-havn-cyan-deep">
+                              Reading and categorizing…
                             </p>
                           ) : pf.status === "error" ? (
                             <p className="text-[11px] text-destructive">{pf.error}</p>
@@ -766,9 +977,13 @@ export default function CommunityDocumentsPage() {
                           <span className="inline-flex rounded-full bg-havn-success/10 px-2 py-0.5 text-[10px] font-semibold text-havn-success">
                             Verified
                           </span>
-                        ) : pf.status === "mismatch" ? (
-                          <span className="inline-flex rounded-full bg-havn-amber/15 px-2 py-0.5 text-[10px] font-semibold text-havn-amber">
-                            Mismatch
+                        ) : pf.status === "processing" ? (
+                          <span className="inline-flex rounded-full bg-havn-cyan/10 px-2 py-0.5 text-[10px] font-semibold text-havn-cyan-deep">
+                            Reading
+                          </span>
+                        ) : pf.status === "duplicate" ? (
+                          <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                            On file
                           </span>
                         ) : pf.status === "error" ? (
                           <span className="inline-flex rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold text-destructive">
@@ -789,10 +1004,12 @@ export default function CommunityDocumentsPage() {
                         )}
                       </div>
 
-                      {/* Category — read-only before OCR, editable after */}
-                      {pf.status === "pending" || pf.status === "uploading" ? (
+                      {/* Category — read-only while in flight, editable after */}
+                      {pf.status === "pending" ||
+                      pf.status === "uploading" ||
+                      pf.status === "processing" ? (
                         <span className="w-48 truncate rounded-lg border border-border bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
-                          {pf.category}
+                          {pf.status === "processing" ? "Detecting…" : pf.category}
                         </span>
                       ) : (
                         <select
@@ -809,7 +1026,7 @@ export default function CommunityDocumentsPage() {
                       {/* Remove button */}
                       <button
                         type="button"
-                        disabled={pf.status === "uploading"}
+                        disabled={pf.status === "uploading" || pf.status === "processing"}
                         onClick={() => setPendingFiles((prev) => prev.filter((f) => f.id !== pf.id))}
                         className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
                       >
@@ -832,15 +1049,21 @@ export default function CommunityDocumentsPage() {
                   </button>
 
                   <div className="flex items-center gap-3">
-                    {pendingFiles.every((f) => f.status !== "pending") && (
-                      <button
-                        type="button"
-                        onClick={() => { setUploadOpen(false); setPendingFiles([]); }}
-                        className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        Done
-                      </button>
-                    )}
+                    {pendingFiles.length > 0 &&
+                      pendingFiles.every(
+                        (f) =>
+                          f.status === "done" ||
+                          f.status === "error" ||
+                          f.status === "duplicate"
+                      ) && (
+                        <button
+                          type="button"
+                          onClick={() => { setUploadOpen(false); setPendingFiles([]); }}
+                          className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Done
+                        </button>
+                      )}
                     {pendingFiles.some((f) => f.status === "pending") && (
                       <button
                         type="button"
@@ -859,23 +1082,107 @@ export default function CommunityDocumentsPage() {
           </section>
         )}
 
-        {/* Unknown documents — resolution banner */}
-        {!loading && (categoryMap.get("Unknown") ?? []).length > 0 && (() => {
-          const unknownCount = (categoryMap.get("Unknown") ?? []).length;
-          return (
-            <div className="rounded-xl border border-destructive/40 bg-destructive/5 px-5 py-4 flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-destructive">
-                  {unknownCount} document{unknownCount > 1 ? "s" : ""} need{unknownCount === 1 ? "s" : ""} categorization
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  These documents couldn&apos;t be automatically classified. Assign each to the correct category — even &quot;Other&quot; — before they can be used in orders.
-                </p>
-              </div>
+        {/* Processing — in-flight uploads, hidden from category buckets until OCR + classification settle */}
+        {!loading && processingDocs.length > 0 && (
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            <div className="flex items-center gap-2.5 px-5 py-3 bg-havn-navy/5 border-b border-border">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-havn-navy" />
+              <span className="text-sm font-semibold text-havn-navy">
+                Processing {processingDocs.length} document{processingDocs.length === 1 ? "" : "s"}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Auto-categorizing. They&apos;ll move to the right bucket once ready.
+              </span>
             </div>
-          );
-        })()}
+            <div className="divide-y divide-border/50">
+              {processingDocs.map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between px-5 py-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {doc.original_filename ? toTitleCase(doc.original_filename) : "—"}
+                    </p>
+                  </div>
+                  <OcrBadge status={doc.ocr_status} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Stalled — rows that have been in flight too long. Server-side OCR
+            likely failed without recording it (function instance died, etc.).
+            User can discard to clear and re-upload. */}
+        {!loading && stalledDocs.length > 0 && (
+          <div className="rounded-xl border border-havn-amber/40 bg-havn-amber/5 overflow-hidden">
+            <div className="flex items-center justify-between gap-2.5 px-5 py-3 bg-havn-amber/10 border-b border-havn-amber/30">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-havn-amber" />
+                <span className="text-sm font-semibold text-havn-amber">
+                  {stalledDocs.length} document{stalledDocs.length === 1 ? "" : "s"} stalled
+                </span>
+                <span className="text-xs text-muted-foreground truncate">
+                  Processing took longer than expected. Discard to clear and try again.
+                </span>
+              </div>
+              {stalledDocs.length > 1 && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!window.confirm(`Discard all ${stalledDocs.length} stalled documents?`)) return;
+                    for (const doc of stalledDocs) {
+                      await fetch(`/api/documents/${doc.id}`, {
+                        method: "PATCH",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ action: "archive" }),
+                      });
+                    }
+                    setDocuments((prev) =>
+                      prev.map((d) =>
+                        stalledDocs.some((s) => s.id === d.id) ? { ...d, archived: true } : d
+                      )
+                    );
+                    toast.success(`Discarded ${stalledDocs.length} stalled documents`);
+                  }}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-havn-amber/40 bg-background px-2.5 py-1 text-xs font-medium text-havn-amber transition-colors hover:bg-havn-amber/10"
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  Discard all
+                </button>
+              )}
+            </div>
+            <div className="divide-y divide-havn-amber/20">
+              {stalledDocs.map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between px-5 py-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {doc.original_filename ? toTitleCase(doc.original_filename) : "—"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Stuck since {formatDate(doc.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={deletingDocId === doc.id}
+                    onClick={() => void handleArchiveDocument(doc)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-havn-amber/40 bg-background px-2.5 py-1 text-xs font-medium text-havn-amber transition-colors hover:bg-havn-amber/10 disabled:opacity-40"
+                  >
+                    {deletingDocId === doc.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Archive className="h-3.5 w-3.5" />
+                    )}
+                    Discard
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Category accordion */}
         {loading ? (
@@ -887,39 +1194,26 @@ export default function CommunityDocumentsPage() {
               const isExpanded = expandedCategories.has(cat);
               const isComplete = catDocs.length > 0;
               const isRequired = REQUIRED_CATEGORIES.has(cat);
-              const isUnknown = cat === "Unknown";
               const isOther = cat === "Other";
               const isOptional = OPTIONAL_CATEGORIES.has(cat);
               return (
                 <div
                   key={cat}
-                  className={cn(
-                    "overflow-hidden rounded-xl border bg-card",
-                    isUnknown ? "border-destructive/40" : "border-border"
-                  )}
+                  className="overflow-hidden rounded-xl border border-border bg-card"
                 >
                   <button
                     type="button"
                     onClick={() => toggleCategory(cat)}
-                    className={cn(
-                      "flex w-full items-center justify-between px-5 py-3 transition-colors",
-                      isUnknown
-                        ? "bg-destructive/5 hover:bg-destructive/8"
-                        : "bg-havn-navy/5 hover:bg-havn-navy/10"
-                    )}
+                    className="flex w-full items-center justify-between px-5 py-3 transition-colors bg-havn-navy/5 hover:bg-havn-navy/10"
                   >
                     <div className="flex items-center gap-3">
                       {isExpanded ? (
-                        <ChevronDown className={cn("h-4 w-4", isUnknown ? "text-destructive" : "text-havn-navy")} />
+                        <ChevronDown className="h-4 w-4 text-havn-navy" />
                       ) : (
-                        <ChevronRight className={cn("h-4 w-4", isUnknown ? "text-destructive" : "text-havn-navy")} />
+                        <ChevronRight className="h-4 w-4 text-havn-navy" />
                       )}
-                      {isUnknown ? (
-                        <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
-                      ) : (
-                        <FileText className="h-4 w-4 shrink-0 text-havn-navy" />
-                      )}
-                      <span className={cn("text-sm font-semibold", isUnknown ? "text-destructive" : "text-havn-navy")}>
+                      <FileText className="h-4 w-4 shrink-0 text-havn-navy" />
+                      <span className="text-sm font-semibold text-havn-navy">
                         {cat}
                       </span>
                       {isRequired && !isComplete && (
@@ -929,13 +1223,7 @@ export default function CommunityDocumentsPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      {isUnknown ? (
-                        // Unknown: always destructive when visible (hidden when empty)
-                        <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-semibold text-destructive">
-                          <AlertTriangle className="h-3 w-3" />
-                          {catDocs.length} unresolved
-                        </span>
-                      ) : isOther ? (
+                      {isOther ? (
                         // Other: quiet count when has docs, nothing when empty
                         isComplete ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
@@ -1020,13 +1308,10 @@ export default function CommunityDocumentsPage() {
                           {catDocs.map((doc) => (
                             <div
                               key={doc.id}
-                              className={cn(
-                                "flex items-center justify-between px-5 py-3 transition-colors",
-                                isUnknown ? "bg-destructive/[0.03] hover:bg-destructive/5" : "hover:bg-muted/20"
-                              )}
+                              className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-muted/20"
                             >
                               <div className="flex items-center gap-3 min-w-0">
-                                <FileText className={cn("h-4 w-4 shrink-0", isUnknown ? "text-destructive" : "text-havn-navy")} />
+                                <FileText className="h-4 w-4 shrink-0 text-havn-navy" />
                                 <div className="min-w-0">
                                   <p className="text-sm font-medium text-foreground truncate">
                                     {doc.original_filename ? toTitleCase(doc.original_filename) : "—"}
@@ -1046,7 +1331,6 @@ export default function CommunityDocumentsPage() {
                                 >
                                   View
                                 </button>
-                                {/* Move / Resolve */}
                                 {movingDocId === doc.id ? (
                                   <div className="flex items-center gap-1.5">
                                     <select
@@ -1055,7 +1339,7 @@ export default function CommunityDocumentsPage() {
                                       onChange={(e) => void handleMoveDocument(doc, e.target.value)}
                                       className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                                     >
-                                      {CATEGORY_OPTIONS.filter((o) => o !== "Unknown").map((opt) => (
+                                      {CATEGORY_OPTIONS.map((opt) => (
                                         <option key={opt} value={opt}>{opt}</option>
                                       ))}
                                     </select>
@@ -1067,15 +1351,6 @@ export default function CommunityDocumentsPage() {
                                       <X className="h-3.5 w-3.5" />
                                     </button>
                                   </div>
-                                ) : isUnknown ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setMovingDocId(doc.id)}
-                                    className="inline-flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1 text-xs font-semibold text-white hover:bg-destructive/90 transition-colors"
-                                  >
-                                    <FolderInput className="h-3.5 w-3.5" />
-                                    Resolve
-                                  </button>
                                 ) : (
                                   <button
                                     type="button"
@@ -1087,7 +1362,6 @@ export default function CommunityDocumentsPage() {
                                   </button>
                                 )}
 
-                                {/* Archive */}
                                 <button
                                   type="button"
                                   title="Archive document"
@@ -1102,22 +1376,19 @@ export default function CommunityDocumentsPage() {
                               </div>
                             </div>
                           ))}
-                          {/* Add more button — not shown for Unknown */}
-                          {!isUnknown && (
-                            <div className="flex items-center justify-between px-5 py-3 bg-muted/10">
-                              <p className="text-xs text-muted-foreground">
-                                Add another {cat} document
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => openUploadForCategory(cat)}
-                                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                              >
-                                <Upload className="h-3 w-3" />
-                                Upload
-                              </button>
-                            </div>
-                          )}
+                          <div className="flex items-center justify-between px-5 py-3 bg-muted/10">
+                            <p className="text-xs text-muted-foreground">
+                              Add another {cat} document
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => openUploadForCategory(cat)}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                            >
+                              <Upload className="h-3 w-3" />
+                              Upload
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

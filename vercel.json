@@ -7,6 +7,14 @@
     {
       "path": "/api/cron/legal-check",
       "schedule": "0 9 1 * *"
+    },
+    {
+      "path": "/api/cron/3p-expire",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-stuck-docs",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

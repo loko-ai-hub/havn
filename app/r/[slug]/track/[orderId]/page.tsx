@@ -64,10 +64,10 @@ function formatDeliverySpeed(speed: string | null | undefined): string {
   if (!speed) return "—";
   const map: Record<string, string> = {
     standard: "Standard (5 business days)",
-    rush_3_day: "Rush — 3 Day",
-    rush_3day: "Rush — 3 Day",
-    rush_next_day: "Rush — Next Day",
-    rush_same_day: "Rush — Same Day",
+    rush_3_day: "Rush · 3 Day",
+    rush_3day: "Rush · 3 Day",
+    rush_next_day: "Rush · Next Day",
+    rush_same_day: "Rush · Same Day",
   };
   return map[speed] ?? speed;
 }
@@ -213,18 +213,17 @@ export default async function RequesterTrackOrderPage({
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col bg-havn-navy md:flex">
         <div className="p-6">
-          <p className="text-lg font-semibold tracking-tight text-havn-sand">Havn</p>
+          <Image src="/havn-lockup-dark.svg" alt="Havn" width={84} height={28} priority className="h-7 w-auto" />
           <div className="mt-8 space-y-3">
             {org.logo_url ? (
-              <div className="relative h-12 w-full max-w-[180px]">
-                <Image
-                  src={org.logo_url}
-                  alt={org.name ?? "Organization logo"}
-                  fill
-                  className="object-contain object-left"
-                  unoptimized
-                />
-              </div>
+              <Image
+                src={org.logo_url}
+                alt={org.name ?? "Organization logo"}
+                width={56}
+                height={56}
+                className="h-14 w-14 rounded-full border border-white/20 object-cover"
+                unoptimized
+              />
             ) : null}
             {org.name ? (
               <p className="text-sm font-medium leading-snug text-white">{org.name}</p>

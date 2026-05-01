@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 
@@ -21,9 +22,16 @@ export default function Home() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-background to-muted/30 px-6 py-12">
       <main className="w-full max-w-md rounded-2xl border border-border bg-card p-10 shadow-lg shadow-black/5">
-        <div className="text-center">
-          <p className="text-4xl font-bold tracking-tight text-havn-navy dark:text-white">Havn</p>
-          <p className="mt-2 text-sm font-medium text-muted-foreground">Internal access only</p>
+        <div className="flex flex-col items-center text-center">
+          <Image
+            src="/havn-lockup-light.svg"
+            alt="Havn"
+            width={144}
+            height={48}
+            priority
+            className="h-12 w-auto"
+          />
+          <p className="mt-3 text-sm font-medium text-muted-foreground">Internal access only</p>
         </div>
 
         {!unlocked ? (

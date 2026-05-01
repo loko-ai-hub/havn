@@ -99,7 +99,7 @@ export function RequesterPortalLanding({
             <img
               src={logoUrl}
               alt={`${communityName} logo`}
-              className="mx-auto h-12 w-full max-w-[220px] object-contain"
+              className="mx-auto h-20 w-20 rounded-full border border-border object-cover"
             />
           ) : (
             <p className="text-balance text-lg font-semibold tracking-tight text-havn-navy">{communityName}</p>

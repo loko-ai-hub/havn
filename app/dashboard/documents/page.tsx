@@ -7,12 +7,15 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
+  Upload,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+
+import BulkDocumentUpload from "./bulk-document-upload";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,6 +62,8 @@ export default function DashboardDocumentsPage() {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(REQUIRED_CATEGORIES)
   );
@@ -92,6 +97,7 @@ export default function DashboardDocumentsPage() {
       setLoading(false);
       return;
     }
+    setOrgId(orgId);
 
     const [commRes, docsRes] = await Promise.all([
       supabase
@@ -160,16 +166,45 @@ export default function DashboardDocumentsPage() {
     <div>
       {/* Sticky header */}
       <div className="sticky top-0 -mx-6 z-10 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex items-center gap-3">
-          <FileText className="h-5 w-5 text-foreground" />
-          <h1 className="text-lg font-semibold text-foreground">Documents</h1>
-          {!loading && (
-            <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-              {communities.length} {communities.length === 1 ? "community" : "communities"}
-            </span>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <FileText className="h-5 w-5 text-foreground" />
+            <h1 className="text-lg font-semibold text-foreground">Documents</h1>
+            {!loading && (
+              <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                {communities.length} {communities.length === 1 ? "community" : "communities"}
+              </span>
+            )}
+          </div>
+          {communities.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setBulkOpen(true)}
+              disabled={!orgId}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Upload className="h-4 w-4" />
+              Bulk upload
+            </button>
           )}
         </div>
       </div>
+
+      {orgId && (
+        <BulkDocumentUpload
+          open={bulkOpen}
+          onOpenChange={setBulkOpen}
+          communities={communities.map((c) => ({
+            id: c.id,
+            legal_name: c.legal_name,
+            organization_id: orgId,
+          }))}
+          organizationId={orgId}
+          onDone={() => {
+            void load();
+          }}
+        />
+      )}
 
       <div className="mt-6 space-y-5">
         {/* Summary bar */}

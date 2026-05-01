@@ -44,6 +44,7 @@ type OrderRow = {
   total_fee: number | null;
   order_status: string | null;
   closing_date: string | null;
+  third_party_review_status: string | null;
 };
 
 type FilterTab = "all" | "open" | "overdue" | "fulfilled" | "cancelled" | "refunded";
@@ -84,6 +85,42 @@ function filterFromSearchParam(param: string | null): FilterTab {
     return param;
   }
   return "open";
+}
+
+// ─── Third-party form status badge ────────────────────────────────────────────
+
+function ThirdPartyBadge({ status }: { status: string | null }) {
+  if (!status) return null;
+  const cfg: Record<string, { label: string; cls: string }> = {
+    pending: {
+      label: "3P awaiting review",
+      cls: "border-havn-amber/40 bg-havn-amber/10 text-havn-amber",
+    },
+    approved: {
+      label: "Using requester form",
+      cls: "border-havn-success/40 bg-havn-success/10 text-havn-success",
+    },
+    denied: {
+      label: "Default Havn form",
+      cls: "border-border bg-muted/50 text-muted-foreground",
+    },
+    auto_defaulted: {
+      label: "Default Havn form",
+      cls: "border-border bg-muted/50 text-muted-foreground",
+    },
+  };
+  const entry = cfg[status];
+  if (!entry) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium",
+        entry.cls
+      )}
+    >
+      {entry.label}
+    </span>
+  );
 }
 
 // ─── Row actions dropdown (uses Popover as menu) ──────────────────────────────
@@ -213,7 +250,7 @@ function DashboardRequestsPageInner() {
     const { data, error } = await supabase
       .from("document_orders")
       .select(
-        "id, created_at, requester_name, requester_email, property_address, master_type_key, total_fee, order_status, closing_date"
+        "id, created_at, requester_name, requester_email, property_address, master_type_key, total_fee, order_status, closing_date, third_party_review_status"
       )
       .eq("organization_id", orgId)
       .neq("order_status", "pending_payment")
@@ -622,15 +659,18 @@ function DashboardRequestsPageInner() {
                           className="px-4 py-3.5"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                              cfg.className
-                            )}
-                          >
-                            <StatusIcon className="h-3 w-3" />
-                            {cfg.label}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                                cfg.className
+                              )}
+                            >
+                              <StatusIcon className="h-3 w-3" />
+                              {cfg.label}
+                            </span>
+                            <ThirdPartyBadge status={order.third_party_review_status} />
+                          </div>
                         </td>
                         <td
                           className="px-4 py-3.5"

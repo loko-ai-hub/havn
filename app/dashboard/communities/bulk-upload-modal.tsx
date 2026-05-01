@@ -340,7 +340,7 @@ export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
               { field: "City", req: true, note: "City where the community is located" },
               { field: "State", req: true, note: "2-letter state abbreviation, e.g. WA" },
               { field: "ZIP", req: true, note: "5-digit ZIP code" },
-              { field: "Community Type", req: false, note: "HOA, COA, Condo Association, or Planned Development — defaults to HOA" },
+              { field: "Community Type", req: false, note: "HOA, COA, Condo Association, or Planned Development. Defaults to HOA" },
               { field: "Manager Name", req: false, note: "Assigned property manager" },
             ].map(({ field, req, note }) => (
               <div key={field} className="flex items-baseline gap-2 text-xs">

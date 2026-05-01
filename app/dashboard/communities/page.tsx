@@ -21,9 +21,18 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { US_STATES } from "@/lib/us-states";
 
-import { addCommunity, archiveCommunity } from "./actions";
+import {
+  addCommunity,
+  archiveCommunity,
+  extractCommunityFromGoverningDoc,
+  lookupAddress,
+} from "./actions";
+import type { CcAndRExtractionResult } from "@/lib/cc-and-r-extractor";
 import { loadEnabledStates } from "@/lib/enabled-states-action";
 import BulkUploadModal from "./bulk-upload-modal";
+import CcAndRPreview from "./cc-and-r-preview";
+import ConciergeModal from "./concierge-modal";
+import { Loader2, Sparkles } from "lucide-react";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -71,6 +80,14 @@ export default function DashboardCommunitiesPage() {
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [isConciergeOpen, setIsConciergeOpen] = useState(false);
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressLookupLoading, setAddressLookupLoading] = useState(false);
+  const [addressLookupError, setAddressLookupError] = useState<string | null>(null);
+  const [ccrFileName, setCcrFileName] = useState<string | null>(null);
+  const [ccrLoading, setCcrLoading] = useState(false);
+  const [ccrError, setCcrError] = useState<string | null>(null);
+  const [ccrExtraction, setCcrExtraction] = useState<CcAndRExtractionResult | null>(null);
   const [enabledStates, setEnabledStates] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
 
@@ -84,7 +101,7 @@ export default function DashboardCommunitiesPage() {
     unit_count: 0,
   });
 
-  const resetForm = () =>
+  const resetForm = () => {
     setForm({
       legal_name: "",
       city: "",
@@ -94,6 +111,98 @@ export default function DashboardCommunitiesPage() {
       manager_name: "",
       unit_count: 0,
     });
+    setAddressQuery("");
+    setAddressLookupError(null);
+    setAddressLookupLoading(false);
+    setCcrFileName(null);
+    setCcrLoading(false);
+    setCcrError(null);
+    setCcrExtraction(null);
+  };
+
+  const handleCcrUpload = async (file: File) => {
+    if (file.size > 20 * 1024 * 1024) {
+      setCcrError(`${file.name} is over 20MB. Try a smaller file.`);
+      return;
+    }
+    setCcrError(null);
+    setCcrLoading(true);
+    setCcrFileName(file.name);
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+
+      const result = await extractCommunityFromGoverningDoc({
+        filename: file.name,
+        mimeType: file.type || "application/pdf",
+        base64,
+      });
+      if (!result.ok) {
+        setCcrError(result.error);
+        setCcrFileName(null);
+        return;
+      }
+      const e = result.extraction;
+      setCcrExtraction(e);
+      // Populate form fields. Take any non-null extraction value (regardless
+      // of confidence) — the operator will see + edit before submit. Confidence
+      // badges in the UI flag low-confidence pulls so they get verified.
+      setForm((f) => ({
+        ...f,
+        legal_name: e.community_name?.value ?? f.legal_name,
+        city: e.city?.value ?? f.city,
+        state: e.state?.value ?? f.state,
+        zip: e.zip?.value ?? f.zip,
+        community_type: e.community_type?.value ?? f.community_type,
+      }));
+      toast.success("CC&R parsed. Review the highlighted fields below.");
+    } catch (err) {
+      setCcrError(
+        err instanceof Error ? err.message : "Could not read this document."
+      );
+      setCcrFileName(null);
+    } finally {
+      setCcrLoading(false);
+    }
+  };
+
+  const handleAddressLookup = async () => {
+    const q = addressQuery.trim();
+    if (!q) return;
+    setAddressLookupError(null);
+    setAddressLookupLoading(true);
+    try {
+      const result = await lookupAddress(q);
+      if (!result.ok) {
+        setAddressLookupError(result.error);
+        return;
+      }
+      const a = result.address;
+      setForm((f) => ({
+        ...f,
+        city: a.city ?? f.city,
+        state: a.state ?? f.state,
+        zip: a.zip ?? f.zip,
+        // Suggest a legal name if the field is still empty — operator can edit.
+        legal_name:
+          f.legal_name.trim().length > 0
+            ? f.legal_name
+            : a.street
+              ? `${a.street} Community`
+              : f.legal_name,
+      }));
+      toast.success("Address autofilled. Review and edit if needed.");
+    } catch (err) {
+      setAddressLookupError(
+        err instanceof Error ? err.message : "Lookup failed."
+      );
+    } finally {
+      setAddressLookupLoading(false);
+    }
+  };
 
   const resolveOrgId = useCallback(async (supabase: ReturnType<typeof createClient>) => {
     const {
@@ -342,14 +451,111 @@ export default function DashboardCommunitiesPage() {
           </div>
         )}
 
-        {/* Table */}
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
+        {/* "More communities?" hint after first community */}
+        {!loading && tab === "active" && activeCount === 1 && !search && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-havn-cyan/30 bg-havn-cyan/10 px-4 py-2.5">
+            <p className="text-sm text-foreground">
+              <span className="font-medium">Have more communities?</span>{" "}
+              <span className="text-muted-foreground">
+                Bulk-load them, or have a Havn specialist do it for you.
+              </span>
+            </p>
+            <div className="flex items-center gap-3 text-sm font-medium">
+              <button
+                type="button"
+                onClick={() => setIsBulkOpen(true)}
+                className="text-foreground underline-offset-2 hover:underline"
+              >
+                Bulk import
+              </button>
+              <span className="text-muted-foreground">·</span>
+              <button
+                type="button"
+                onClick={() => setIsConciergeOpen(true)}
+                className="text-havn-cyan-deep underline-offset-2 hover:underline"
+              >
+                Have us do it
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Table or rich empty state */}
+        <div className={cn(
+          "overflow-hidden rounded-xl border border-border bg-card",
+          !loading && filtered.length === 0 && activeCount === 0 && tab === "active" && !search && "border-dashed bg-transparent"
+        )}>
           {loading ? (
             <div className="px-5 py-10 text-center text-sm text-muted-foreground">Loading…</div>
           ) : filtered.length === 0 ? (
-            <div className="px-5 py-10 text-center text-sm text-muted-foreground">
-              {search ? "No communities match your search." : `No ${tab} communities.`}
-            </div>
+            // Rich empty state for fresh orgs (no communities yet, no search active)
+            activeCount === 0 && tab === "active" && !search ? (
+              <div className="grid gap-4 p-6 md:grid-cols-3 md:p-8">
+                {/* Add one community */}
+                <button
+                  type="button"
+                  onClick={() => { resetForm(); setIsAddOpen(true); }}
+                  className="group flex h-full flex-col items-start rounded-xl border border-border bg-card p-6 text-left transition-all hover:border-havn-cyan hover:shadow-md"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-havn-cyan/15 text-havn-cyan-deep">
+                    <Plus className="h-5 w-5" />
+                  </div>
+                  <p className="mt-4 text-base font-semibold text-foreground">
+                    Add a community
+                  </p>
+                  <p className="mt-1.5 text-sm text-muted-foreground">
+                    You only need one to take your first order. Bulk-load the rest whenever you&rsquo;re ready.
+                  </p>
+                  <span className="mt-auto pt-4 inline-flex items-center gap-1 text-sm font-medium text-havn-cyan-deep underline-offset-2 group-hover:underline">
+                    Get started →
+                  </span>
+                </button>
+
+                {/* Bulk import a portfolio */}
+                <button
+                  type="button"
+                  onClick={() => setIsBulkOpen(true)}
+                  className="group flex h-full flex-col items-start rounded-xl border border-border bg-card p-6 text-left transition-all hover:border-havn-cyan hover:shadow-md"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-havn-cyan/15 text-havn-cyan-deep">
+                    <Upload className="h-5 w-5" />
+                  </div>
+                  <p className="mt-4 text-base font-semibold text-foreground">
+                    I have a portfolio to load
+                  </p>
+                  <p className="mt-1.5 text-sm text-muted-foreground">
+                    Upload a spreadsheet of your communities and we&rsquo;ll bulk-import the whole list at once.
+                  </p>
+                  <span className="mt-auto pt-4 inline-flex items-center gap-1 text-sm font-medium text-havn-cyan-deep underline-offset-2 group-hover:underline">
+                    Upload a CSV / Excel →
+                  </span>
+                </button>
+
+                {/* White glove concierge */}
+                <button
+                  type="button"
+                  onClick={() => setIsConciergeOpen(true)}
+                  className="group flex h-full flex-col items-start rounded-xl border border-border bg-card p-6 text-left transition-all hover:border-havn-cyan hover:shadow-md"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-havn-cyan/15 text-havn-cyan-deep">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <p className="mt-4 text-base font-semibold text-foreground">
+                    White glove setup
+                  </p>
+                  <p className="mt-1.5 text-sm text-muted-foreground">
+                    Tell us a bit about your portfolio and a Havn specialist will reach out, collect what we need, and load everything for you.
+                  </p>
+                  <span className="mt-auto pt-4 inline-flex items-center gap-1 text-sm font-medium text-havn-cyan-deep underline-offset-2 group-hover:underline">
+                    Have us do it →
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <div className="px-5 py-10 text-center text-sm text-muted-foreground">
+                {search ? "No communities match your search." : `No ${tab} communities.`}
+              </div>
+            )
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -474,6 +680,9 @@ export default function DashboardCommunitiesPage() {
         />
       )}
 
+      {/* Concierge Import Modal */}
+      <ConciergeModal open={isConciergeOpen} onOpenChange={setIsConciergeOpen} />
+
       {/* Add Community Modal */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -502,6 +711,97 @@ export default function DashboardCommunitiesPage() {
               onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
               className="space-y-4 p-5"
             >
+              {/* Address autofill — quick path. Manual fields below remain editable. */}
+              <div className="rounded-lg border border-havn-cyan/30 bg-havn-cyan/5 p-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-havn-cyan-deep" />
+                  <Label htmlFor="address-autofill" className="text-sm font-semibold text-foreground">
+                    Quick add — type the community address
+                  </Label>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  We&rsquo;ll fill city, state, and ZIP for you. Review the rest below.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Input
+                    id="address-autofill"
+                    value={addressQuery}
+                    onChange={(e) => setAddressQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void handleAddressLookup();
+                      }
+                    }}
+                    placeholder="1234 Maple Ave, Sammamish, WA"
+                    className="bg-background"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleAddressLookup()}
+                    disabled={addressLookupLoading || !addressQuery.trim()}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-havn-cyan-deep px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {addressLookupLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Looking up…
+                      </>
+                    ) : (
+                      "Autofill"
+                    )}
+                  </button>
+                </div>
+                {addressLookupError && (
+                  <p className="mt-2 text-xs text-destructive">{addressLookupError}</p>
+                )}
+              </div>
+
+              {/* CC&R upload — drop a governing document, AI fills everything. */}
+              <div className="rounded-lg border border-havn-cyan/30 bg-havn-cyan/5 p-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-havn-cyan-deep" />
+                  <Label htmlFor="ccr-upload" className="text-sm font-semibold text-foreground">
+                    Or upload your CC&amp;Rs to autofill everything
+                  </Label>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Drop your governing documents (PDF). We&rsquo;ll extract the legal
+                  name, address, type, dues, and board details.
+                </p>
+                <div className="mt-3">
+                  <input
+                    id="ccr-upload"
+                    type="file"
+                    accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleCcrUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Label
+                    htmlFor="ccr-upload"
+                    className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    {ccrLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Reading {ccrFileName ?? "document"}…
+                      </>
+                    ) : ccrExtraction ? (
+                      <>Replace document ({ccrFileName})</>
+                    ) : (
+                      <>Choose CC&amp;R file</>
+                    )}
+                  </Label>
+                </div>
+                {ccrError && (
+                  <p className="mt-2 text-xs text-destructive">{ccrError}</p>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="legal_name">Legal Name</Label>
                 <Input
@@ -607,6 +907,14 @@ export default function DashboardCommunitiesPage() {
                   onChange={(e) => setForm((f) => ({ ...f, unit_count: Number(e.target.value) }))}
                 />
               </div>
+
+              {/* Bonus details extracted from the CC&R — informational so the
+                  operator sees what we found. (Not saved to community_field_cache
+                  in this MVP; can be wired in a follow-up once the community is
+                  created.) */}
+              {ccrExtraction && (
+                <CcAndRPreview extraction={ccrExtraction} />
+              )}
 
               <div className="flex items-center gap-3 pt-2">
                 <button

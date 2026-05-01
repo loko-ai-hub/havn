@@ -56,6 +56,7 @@ export default function RequesterReviewPage() {
         portalDisplayName: rawOrg.portal_display_name ?? rawOrg.name,
         supportEmail: rawOrg.support_email,
         order: realOrder,
+        thirdPartyUpload: order.customFormUpload,
       });
       if ("error" in result) {
         setSubmitError(result.error ?? "Unable to submit your order. Please try again.");

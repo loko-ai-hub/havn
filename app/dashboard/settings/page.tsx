@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 import { DashboardSectionCard } from "../_lib/dashboard-section-card";
+import PaymentsSetupChecklist from "@/components/dashboard/payments-setup-checklist";
 import {
   getOrgTeam,
   removeTeamMember,
@@ -27,6 +28,7 @@ import type { PendingInvite, TeamMember } from "./actions";
 import {
   checkStripeOnboardingStatus,
   createStripeConnectLink,
+  createStripeDashboardLoginLink,
   getStripeBankLast4,
 } from "./stripe/actions";
 
@@ -43,6 +45,9 @@ type OrgRow = {
   logo_url: string | null;
   stripe_account_id: string | null;
   stripe_onboarding_complete: boolean | null;
+  stripe_payouts_enabled: boolean | null;
+  stripe_charges_enabled: boolean | null;
+  stripe_requirements_currently_due: string[] | null;
 };
 
 function splitName(meta: Record<string, unknown>): { first: string; last: string } {
@@ -150,8 +155,12 @@ export default function DashboardSettingsPage() {
   const [portalTagline, setPortalTagline] = useState("");
 
 
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [stripeAccountId, setStripeAccountId] = useState<string | null>(null);
   const [stripeComplete, setStripeComplete] = useState<boolean | null>(null);
+  const [stripePayoutsEnabled, setStripePayoutsEnabled] = useState<boolean | null>(null);
+  const [stripeChargesEnabled, setStripeChargesEnabled] = useState<boolean | null>(null);
+  const [stripeRequirementsDue, setStripeRequirementsDue] = useState<string[]>([]);
   const [stripeConnectLoading, setStripeConnectLoading] = useState(false);
   const [stripeBankLast4, setStripeBankLast4] = useState<string | null>(null);
   const stripeReturnHandled = useRef(false);
@@ -187,9 +196,21 @@ export default function DashboardSettingsPage() {
     setMetaPhone(typeof meta.phone === "string" ? meta.phone : "");
     const oid = await resolveOrgId(supabase);
     setOrgId(oid);
+
+    // Pull the current user's role so the UI can gate owner-only actions
+    // (e.g. opening the Stripe Express dashboard).
+    const { data: roleRow } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    setCurrentUserRole((roleRow?.role as string | null) ?? null);
     if (!oid) {
       setStripeAccountId(null);
       setStripeComplete(null);
+      setStripePayoutsEnabled(null);
+      setStripeChargesEnabled(null);
+      setStripeRequirementsDue([]);
       setLoading(false);
       return;
     }
@@ -198,7 +219,7 @@ export default function DashboardSettingsPage() {
       supabase
         .from("organizations")
         .select(
-          "id, name, support_email, support_phone, city, state, zip, website, street, brand_color, portal_tagline, logo_url, stripe_account_id, stripe_onboarding_complete"
+          "id, name, support_email, support_phone, city, state, zip, website, street, brand_color, portal_tagline, logo_url, stripe_account_id, stripe_onboarding_complete, stripe_payouts_enabled, stripe_charges_enabled, stripe_requirements_currently_due"
         )
         .eq("id", oid)
         .single(),
@@ -218,9 +239,15 @@ export default function DashboardSettingsPage() {
       setPortalTagline(o.portal_tagline ?? "");
       setStripeAccountId(o.stripe_account_id);
       setStripeComplete(o.stripe_onboarding_complete);
+      setStripePayoutsEnabled(o.stripe_payouts_enabled);
+      setStripeChargesEnabled(o.stripe_charges_enabled);
+      setStripeRequirementsDue(o.stripe_requirements_currently_due ?? []);
     } else {
       setStripeAccountId(null);
       setStripeComplete(null);
+      setStripePayoutsEnabled(null);
+      setStripeChargesEnabled(null);
+      setStripeRequirementsDue([]);
     }
 
     if (teamRes && "members" in teamRes) {
@@ -234,6 +261,24 @@ export default function DashboardSettingsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Refresh org state — including Stripe status — when the operator returns
+  // to this tab (e.g. after finishing setup in the Stripe tab).
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible" || !orgId) return;
+      void (async () => {
+        try {
+          await checkStripeOnboardingStatus(orgId);
+        } catch {
+          // non-fatal — fall through to load()
+        }
+        await load();
+      })();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [orgId, load]);
 
   useEffect(() => {
     if (!orgId || stripeComplete !== true) {
@@ -263,10 +308,20 @@ export default function DashboardSettingsPage() {
       })();
     } else if (stripe === "refresh") {
       stripeReturnHandled.current = true;
-      toast.error("Stripe onboarding incomplete — please try again");
+      toast.error("Stripe onboarding incomplete. Please try again.");
       router.replace("/dashboard/settings");
     }
   }, [orgId, router, load]);
+
+  const handleOpenStripeDashboard = async () => {
+    if (!orgId) return;
+    const result = await createStripeDashboardLoginLink(orgId);
+    if ("error" in result) {
+      toast.error(result.error);
+      return;
+    }
+    window.open(result.url, "_blank", "noopener,noreferrer");
+  };
 
   const handleStripeConnect = () => {
     if (!orgId) return;
@@ -279,7 +334,9 @@ export default function DashboardSettingsPage() {
           return;
         }
         if (result && "url" in result) {
-          window.location.href = result.url;
+          // New tab so the operator keeps the Havn settings view open. Tab-focus
+          // refresh below pulls fresh status from Stripe when they switch back.
+          window.open(result.url, "_blank", "noopener,noreferrer");
         }
       } finally {
         setStripeConnectLoading(false);
@@ -547,18 +604,28 @@ export default function DashboardSettingsPage() {
             <Label htmlFor="portal-logo">Logo</Label>
             {logoUrl && (
               <div className="flex items-center gap-4">
-                <img src={logoUrl} alt="Organization logo" className="h-16 w-16 rounded-lg border border-border object-contain" />
+                <img src={logoUrl} alt="Organization logo" className="h-16 w-16 rounded-full border border-border object-cover" />
                 <p className="text-xs text-muted-foreground">Current logo</p>
               </div>
             )}
-            <Input
+            <input
               id="portal-logo"
               type="file"
-              accept="image/*"
-              className="cursor-pointer bg-background"
+              accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+              className="sr-only"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (!file || !orgId) return;
+                // 2MB hard cap — anything larger is overkill for a logo and
+                // makes the page slow on the requester portal.
+                const MAX_BYTES = 2 * 1024 * 1024;
+                if (file.size > MAX_BYTES) {
+                  toast.error(
+                    `That file is ${(file.size / 1024 / 1024).toFixed(1)}MB. Logos must be 2MB or smaller.`
+                  );
+                  e.target.value = "";
+                  return;
+                }
                 void (async () => {
                   const path = `${orgId}/${Date.now()}-${file.name}`;
                   const { error: uploadErr } = await supabase.storage.from("logos").upload(path, file);
@@ -575,6 +642,21 @@ export default function DashboardSettingsPage() {
                 })();
               }}
             />
+            <Label
+              htmlFor="portal-logo"
+              className="inline-flex h-9 w-fit cursor-pointer items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              {logoUrl ? "Change logo" : "Choose logo"}
+            </Label>
+            <div className="rounded-md border border-havn-cyan/30 bg-havn-cyan/10 px-3 py-2.5">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                <span className="font-semibold text-foreground">Recommended:</span> a
+                square image at least <span className="font-medium text-foreground">512×512px</span>
+                . Your logo is displayed in a circle across the portal, dashboard, and
+                emails, so wide wordmarks will be cropped. PNG, JPG, SVG, or WebP, under
+                2MB.
+              </p>
+            </div>
             <p className="text-xs text-muted-foreground">Appears on your portal and generated documents.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 sm:items-end">
@@ -820,51 +902,19 @@ export default function DashboardSettingsPage() {
         </DashboardSectionCard>
 
         <DashboardSectionCard title="Payments">
-          {!stripeAccountId ? (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Connect Stripe to receive payouts from completed document orders.
-              </p>
-              <Button
-                type="button"
-                disabled={stripeConnectLoading || !orgId}
-                onClick={handleStripeConnect}
-              >
-                {stripeConnectLoading ? "Creating link…" : "Connect bank account"}
-              </Button>
-            </div>
-          ) : stripeComplete !== true ? (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-havn-amber/40 bg-havn-amber/15 px-4 py-3 text-sm text-foreground">
-                <p className="font-semibold">Finish Stripe onboarding</p>
-                <p className="mt-1 text-muted-foreground">
-                  Your Connect account is created but onboarding isn&apos;t complete. Use the button below to resume
-                  setup in Stripe.
-                </p>
-              </div>
-              <Button
-                type="button"
-                disabled={stripeConnectLoading || !orgId}
-                onClick={handleStripeConnect}
-              >
-                {stripeConnectLoading ? "Opening Stripe…" : "Complete setup"}
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3 rounded-lg border border-havn-success/40 bg-havn-success/15 px-4 py-4 text-sm text-foreground">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-semibold text-emerald-950 dark:text-emerald-100">You&apos;re all set</p>
-                <span className="inline-flex rounded-full border border-havn-success/50 bg-havn-success/25 px-2.5 py-0.5 text-xs font-semibold text-emerald-950 dark:text-emerald-100">
-                  Payouts enabled
-                </span>
-              </div>
-              <p className="text-muted-foreground">
-                {stripeBankLast4
-                  ? `Connected · Bank account ending in ${stripeBankLast4}`
-                  : "Connected — your payout account is linked with Stripe."}
-              </p>
-            </div>
-          )}
+          <PaymentsSetupChecklist
+            stripeAccountId={stripeAccountId}
+            stripeComplete={stripeComplete}
+            stripeChargesEnabled={stripeChargesEnabled}
+            stripePayoutsEnabled={stripePayoutsEnabled}
+            stripeBankLast4={stripeBankLast4}
+            stripeRequirementsDue={stripeRequirementsDue}
+            stripeConnectLoading={stripeConnectLoading}
+            disabled={!orgId}
+            canManageStripe={currentUserRole === "owner"}
+            onConnect={handleStripeConnect}
+            onOpenStripeDashboard={() => void handleOpenStripeDashboard()}
+          />
         </DashboardSectionCard>
       </div>
     </div>

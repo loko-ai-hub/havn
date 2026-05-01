@@ -1,6 +1,7 @@
 "use client";
 
 import { Inbox, Settings } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -100,7 +101,7 @@ export default function MyOrdersSettingsPage() {
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col bg-havn-navy md:flex">
         <div className="border-b border-white/10 p-6">
-          <p className="text-lg font-semibold tracking-tight text-havn-sand">Havn</p>
+          <Image src="/havn-lockup-dark.svg" alt="Havn" width={84} height={28} priority className="h-7 w-auto" />
         </div>
         <nav className="flex flex-1 flex-col gap-1 p-3">
           <Link href="/my-orders" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-white/70 hover:bg-white/5 hover:text-white">

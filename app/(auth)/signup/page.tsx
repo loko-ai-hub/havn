@@ -11,6 +11,8 @@ import { checkBlockedEmail } from "./actions";
 export default function SignupPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -49,11 +51,20 @@ export default function SignupPage() {
       return;
     }
 
+    const trimmedFirst = firstName.trim();
+    const trimmedLast = lastName.trim();
+    const fullName = `${trimmedFirst} ${trimmedLast}`.trim();
+
     const { error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
+        data: {
+          first_name: trimmedFirst || undefined,
+          last_name: trimmedLast || undefined,
+          full_name: fullName || undefined,
+        },
       },
     });
 
@@ -121,6 +132,37 @@ export default function SignupPage() {
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label htmlFor="signup-first" className="text-sm text-muted-foreground">
+              First name
+            </label>
+            <input
+              id="signup-first"
+              type="text"
+              autoComplete="given-name"
+              value={firstName}
+              onChange={(event) => setFirstName(event.target.value)}
+              required
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-ring/40 transition focus:ring-2"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="signup-last" className="text-sm text-muted-foreground">
+              Last name
+            </label>
+            <input
+              id="signup-last"
+              type="text"
+              autoComplete="family-name"
+              value={lastName}
+              onChange={(event) => setLastName(event.target.value)}
+              required
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-ring/40 transition focus:ring-2"
+            />
+          </div>
+        </div>
+
         <div className="space-y-1.5">
           <label htmlFor="email" className="text-sm text-muted-foreground">
             Email

@@ -1,11 +1,19 @@
 "use client";
 
-import { useState, useRef, type DragEvent } from "react";
+import { useState, useRef, useEffect, type DragEvent } from "react";
 import { Upload, ExternalLink, Pencil } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { RequesterPortalLanding } from "@/components/requester/RequesterPortalLanding";
+import { createClient } from "@/lib/supabase/client";
 
 export interface PortalSetupData {
   logoDataUrl: string | null;
@@ -28,8 +36,35 @@ const StepPortalSetup = ({ onContinue, onSkip, isSubmitting = false }: StepPorta
   const [brandColor, setBrandColor] = useState("#4f8eff");
   const [welcomeMessage, setWelcomeMessage] = useState(DEFAULT_WELCOME);
   const [isDragging, setIsDragging] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [orgMeta, setOrgMeta] = useState<{ name: string; slug: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
+
+  // Pull company name + slug (saved in step 2) so the preview shows the real
+  // values instead of a placeholder. Not blocking — if fetch fails, we fall
+  // back to generic "Your company" text so the preview still renders.
+  useEffect(() => {
+    void (async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const orgId = (user?.user_metadata as { organization_id?: string } | null)?.organization_id;
+      if (!orgId) return;
+      const { data } = await supabase
+        .from("organizations")
+        .select("name, portal_slug")
+        .eq("id", orgId)
+        .maybeSingle();
+      if (data?.name || data?.portal_slug) {
+        setOrgMeta({
+          name: (data?.name as string) ?? "Your company",
+          slug: (data?.portal_slug as string) ?? "preview",
+        });
+      }
+    })();
+  }, []);
 
   const processFile = (file: File) => {
     const ok =
@@ -200,15 +235,35 @@ const StepPortalSetup = ({ onContinue, onSkip, isSubmitting = false }: StepPorta
             </div>
           </div>
 
-          <a
-            href="/portal/demo"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
             className="flex items-center justify-center gap-2 rounded-lg border border-border bg-havn-surface/30 px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-havn-surface/60"
           >
             <ExternalLink className="h-4 w-4 text-muted-foreground" />
             Preview what your portal looks like
-          </a>
+          </button>
+
+          <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+            <DialogContent className="max-w-5xl p-0">
+              <div className="border-b border-border px-6 py-4">
+                <DialogTitle>Portal preview</DialogTitle>
+                <DialogDescription>
+                  Live preview of your requester-facing portal. Updates as you change the fields.
+                </DialogDescription>
+              </div>
+              <div className="max-h-[75vh] overflow-y-auto bg-background">
+                <RequesterPortalLanding
+                  slug={orgMeta?.slug ?? "preview"}
+                  startOrderHref="#"
+                  companyName={orgMeta?.name ?? "Your company"}
+                  primaryColor={brandColor}
+                  welcomeMessage={welcomeMessage || DEFAULT_WELCOME}
+                  logoUrl={logoDataUrl}
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <div className="flex gap-3 pt-2">
             <button

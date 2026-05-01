@@ -80,9 +80,17 @@ export default function RequesterDocumentsPage() {
         selected={selected}
         primaryColor={primaryColor}
         availableDocIds={orgDocIds ?? undefined}
+        customFormUpload={order.customFormUpload}
+        onCustomFormUploaded={(upload) => {
+          updateOrder({ customFormUpload: upload });
+        }}
         onToggle={(docId) => {
           setSelected((prev) => {
             if (requesterType === "lender_title") {
+              // Switching away from the custom form wipes any uploaded file.
+              if (docId !== "custom_company_form" && prev.includes("custom_company_form")) {
+                updateOrder({ customFormUpload: null });
+              }
               return [docId];
             }
             if (requesterType === "homeowner" && RESALE_IDS.includes(docId)) {

@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import resend, { RESEND_FROM_EMAIL } from "@/lib/resend";
 import {
@@ -9,6 +11,13 @@ import {
   formatCurrency,
   type PortalOrder,
 } from "@/lib/portal-data";
+
+const THIRD_PARTY_BUCKET = "third-party-templates";
+const MAX_THIRD_PARTY_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_THIRD_PARTY_MIME = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
 
 const DOC_TYPE_MAP: Record<string, string> = {
   resale_cert: "resale_certificate",
@@ -54,14 +63,68 @@ function getBaseFee(docId: string) {
   return PORTAL_DOCUMENTS.find((doc) => doc.id === docId)?.fee ?? 0;
 }
 
+export type ThirdPartyUploadDescriptor = {
+  path: string;
+  filename: string;
+  mimeType: string;
+};
+
+/**
+ * Uploads a requester's third-party form PDF/DOCX to Supabase Storage and
+ * returns the storage path so the client can reference it during
+ * `submitOrder`. Stored under a temporary UUID directory; the final
+ * `third_party_templates` row is created in `submitOrder` and linked via
+ * the order id.
+ */
+export async function uploadThirdPartyForm(
+  formData: FormData
+): Promise<{ upload: ThirdPartyUploadDescriptor } | { error: string }> {
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { error: "No file provided." };
+  }
+  if (file.size === 0) {
+    return { error: "File is empty." };
+  }
+  if (file.size > MAX_THIRD_PARTY_SIZE_BYTES) {
+    return { error: `File is larger than ${Math.round(MAX_THIRD_PARTY_SIZE_BYTES / 1024 / 1024)} MB.` };
+  }
+  const mimeType = file.type || "application/octet-stream";
+  if (!ALLOWED_THIRD_PARTY_MIME.has(mimeType)) {
+    return { error: "Only PDF or DOCX files are accepted." };
+  }
+
+  const ext = mimeType === "application/pdf" ? "pdf" : "docx";
+  const path = `pending/${randomUUID()}.${ext}`;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  const admin = createAdminClient();
+  const { error } = await admin.storage
+    .from(THIRD_PARTY_BUCKET)
+    .upload(path, bytes, { contentType: mimeType, upsert: false });
+
+  if (error) {
+    return { error: `Upload failed: ${error.message}` };
+  }
+
+  return {
+    upload: {
+      path,
+      filename: file.name,
+      mimeType,
+    },
+  };
+}
+
 export async function submitOrder(input: {
   slug: string;
   organizationId: string;
   portalDisplayName: string;
   supportEmail?: string | null;
   order: PortalOrder;
+  thirdPartyUpload?: ThirdPartyUploadDescriptor | null;
 }) {
-  const { slug, organizationId, portalDisplayName, supportEmail, order } = input;
+  const { slug, organizationId, portalDisplayName, supportEmail, order, thirdPartyUpload } = input;
   const selectedDocuments = order.documentsSelected.filter((id) => DOC_TYPE_MAP[id]);
 
   if (selectedDocuments.length === 0) {
@@ -113,6 +176,37 @@ export async function submitOrder(input: {
   const insertedIds = (data ?? []).map((row) => row.id as string);
   const firstId = insertedIds[0];
   const shortId = firstId ? firstId.slice(0, 8) : "unknown";
+
+  // If the requester uploaded a third-party form, create the template row
+  // and link it to the first order. Ingestion fires later, from the Stripe
+  // webhook, so we don't spend OCR budget on abandoned (unpaid) orders.
+  if (thirdPartyUpload && firstId) {
+    const { data: tplInsert, error: tplErr } = await supabase
+      .from("third_party_templates")
+      .insert({
+        order_id: firstId,
+        organization_id: organizationId,
+        storage_path_pdf: thirdPartyUpload.path,
+        original_filename: thirdPartyUpload.filename,
+        mime_type: thirdPartyUpload.mimeType,
+        ingest_status: "pending",
+        review_status: "pending",
+      })
+      .select("id")
+      .single();
+    if (tplErr) {
+      console.error("[submitOrder] third_party_templates insert failed:", tplErr.message);
+    } else if (tplInsert?.id) {
+      const tplId = tplInsert.id as string;
+      await supabase
+        .from("document_orders")
+        .update({
+          third_party_template_id: tplId,
+          third_party_review_status: "pending",
+        })
+        .eq("id", firstId);
+    }
+  }
   const totalFee = rows.reduce((sum, row) => sum + Number(row.total_fee ?? 0), 0);
   const documentNames = selectedDocuments
     .map((docId) =>

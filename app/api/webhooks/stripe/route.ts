@@ -47,6 +47,33 @@ export async function POST(request: Request) {
           // Return 500 so Stripe retries.
           return NextResponse.json({ error: result.error }, { status: 500 });
         }
+
+        // If the order has an attached third-party template, fire the
+        // ingestion pipeline. Dynamic import so a missing module doesn't
+        // break payment processing; errors are logged and caught — the
+        // cron will sweep stuck rows after the review window.
+        void (async () => {
+          try {
+            const { createAdminClient } = await import("@/lib/supabase/admin");
+            const admin = createAdminClient();
+            const { data: order } = await admin
+              .from("document_orders")
+              .select("third_party_template_id")
+              .eq("id", orderId)
+              .maybeSingle();
+            const tplId = order?.third_party_template_id as string | null;
+            if (tplId) {
+              const { runThirdPartyIngestion } = await import("@/lib/3p-template-pipeline");
+              const res = await runThirdPartyIngestion({ thirdPartyTemplateId: tplId });
+              if (!res.ok) {
+                console.error("[3p-ingest] pipeline failed:", res.error);
+              }
+            }
+          } catch (err) {
+            console.error("[3p-ingest] webhook hook failed:", err);
+          }
+        })();
+
         break;
       }
 
@@ -78,7 +105,13 @@ export async function POST(request: Request) {
         const supabase = createAdminClient();
         const { error } = await supabase
           .from("organizations")
-          .update({ stripe_onboarding_complete: Boolean(account.details_submitted) })
+          .update({
+            stripe_onboarding_complete: Boolean(account.details_submitted),
+            stripe_payouts_enabled: Boolean(account.payouts_enabled),
+            stripe_charges_enabled: Boolean(account.charges_enabled),
+            stripe_requirements_currently_due:
+              account.requirements?.currently_due ?? [],
+          })
           .eq("stripe_account_id", account.id);
         if (error) {
           console.error("account.updated: failed to sync organization:", error.message);

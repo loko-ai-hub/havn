@@ -45,6 +45,15 @@ export interface PortalOrderState {
   closingDate: string;
   additionalEmails: string[];
   lenderFormChoice: string;
+  /**
+   * Set after the lender requester successfully uploads their own form.
+   * `path` is the Supabase Storage key under `third-party-templates/`.
+   */
+  customFormUpload: {
+    path: string;
+    filename: string;
+    mimeType: string;
+  } | null;
 }
 
 const DEFAULT_ORDER_STATE: PortalOrderState = {
@@ -68,6 +77,7 @@ const DEFAULT_ORDER_STATE: PortalOrderState = {
   closingDate: "",
   additionalEmails: [],
   lenderFormChoice: "",
+  customFormUpload: null,
 };
 
 export function RequesterPortalOrgProvider({

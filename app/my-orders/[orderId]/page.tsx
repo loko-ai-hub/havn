@@ -1,5 +1,6 @@
 import { addBusinessDays, format, isValid, parseISO } from "date-fns";
 import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, Inbox, MapPin, Settings } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -55,10 +56,10 @@ function formatDeliverySpeed(speed: string | null | undefined): string {
   if (!speed) return "—";
   const map: Record<string, string> = {
     standard: "Standard (5 business days)",
-    rush_3_day: "Rush — 3 Day",
-    rush_3day: "Rush — 3 Day",
-    rush_next_day: "Rush — Next Day",
-    rush_same_day: "Rush — Same Day",
+    rush_3_day: "Rush · 3 Day",
+    rush_3day: "Rush · 3 Day",
+    rush_next_day: "Rush · Next Day",
+    rush_same_day: "Rush · Same Day",
   };
   return map[speed] ?? speed;
 }
@@ -159,7 +160,7 @@ export default async function MyOrderDetailPage({ params }: { params: Promise<{ 
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col bg-havn-navy md:flex">
         <div className="border-b border-white/10 p-6">
-          <p className="text-lg font-semibold tracking-tight text-havn-sand">Havn</p>
+          <Image src="/havn-lockup-dark.svg" alt="Havn" width={84} height={28} priority className="h-7 w-auto" />
         </div>
         <nav className="flex flex-1 flex-col gap-1 p-3">
           <Link href="/my-orders" className="flex items-center gap-3 rounded-lg bg-white/10 px-3 py-2.5 text-sm font-medium text-white">

@@ -96,7 +96,7 @@ export default function RequesterConfirmationPage() {
                 alt={`${orgName} logo`}
                 width={36}
                 height={36}
-                className="h-9 w-9 rounded object-cover"
+                className="h-9 w-9 rounded-full object-cover"
               />
             ) : null}
             <p className="text-sm font-medium text-foreground">{orgName}</p>
@@ -142,7 +142,7 @@ export default function RequesterConfirmationPage() {
 
         <p className="mt-5 text-sm text-muted-foreground">
           {isProcessing
-            ? "Your bank is finalizing the payment — you'll receive a confirmation email at "
+            ? "Your bank is finalizing the payment. You'll receive a confirmation email at "
             : "A confirmation email has been sent to "}
           <span className="font-medium text-foreground">{requesterEmail}</span>
           {isProcessing ? " once it clears." : "."}

@@ -51,6 +51,8 @@ type OrderDetail = {
   stripe_payment_intent_id: string | null;
   paid_at: string | null;
   fulfilled_at: string | null;
+  third_party_review_status: string | null;
+  third_party_template_id: string | null;
 };
 
 const AUTOFILL_TOTAL_FIELDS = 20;
@@ -183,6 +185,7 @@ export default async function DashboardRequestDetailPage({
             <StatusIcon className="h-3 w-3" />
             {statusCfg.label}
           </span>
+          <ThirdPartyReviewBadge status={row.third_party_review_status} />
           {days !== null && (
             <div className="ml-auto">
               <span
@@ -436,5 +439,36 @@ export default async function DashboardRequestDetailPage({
         )}
       </div>
     </div>
+  );
+}
+
+function ThirdPartyReviewBadge({ status }: { status: string | null }) {
+  if (!status) return null;
+  const cfg: Record<string, { label: string; cls: string }> = {
+    pending: {
+      label: "Awaiting 3P form review",
+      cls: "border-havn-amber/40 bg-havn-amber/10 text-havn-amber",
+    },
+    approved: {
+      label: "Using requester-supplied form",
+      cls: "border-havn-success/40 bg-havn-success/10 text-havn-success",
+    },
+    denied: {
+      label: "Default Havn form (3P denied)",
+      cls: "border-border bg-muted/50 text-muted-foreground",
+    },
+    auto_defaulted: {
+      label: "Default Havn form (3P timed out)",
+      cls: "border-border bg-muted/50 text-muted-foreground",
+    },
+  };
+  const entry = cfg[status];
+  if (!entry) return null;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${entry.cls}`}
+    >
+      {entry.label}
+    </span>
   );
 }

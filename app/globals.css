@@ -1,17 +1,36 @@
 @import "tailwindcss";
 @theme {
-  --color-havn-navy: #1a1715;
-  --color-havn-navy-light: #2a2420;
-  --color-havn-navy-muted: #8a7c70;
-  --color-havn-gold: #d9b36a;
-  --color-havn-taupe: #c7ab86;
-  --color-havn-sand: #e8dfd6;
-  --color-havn-surface: #f4f3f0;
-  --color-havn-success: #22c55e;
-  --color-havn-amber: #e7a93a;
+  /* Brand: Midnight + Cyan. Tokens retain legacy names so the codebase doesn't
+     need a 56-file rename; values below are the new palette. */
+  --color-havn-navy: #001526;         /* Midnight — dark-bg primary */
+  --color-havn-navy-light: #0e2436;   /* Lighter midnight for hover / borders on dark */
+  --color-havn-navy-muted: #5a7486;   /* Desaturated midnight for tertiary text on dark */
+  --color-havn-gold: #007fa8;         /* Cyan deep — accent on light bg (replaces gold) */
+  --color-havn-taupe: #00c6e2;        /* Cyan hero — vibrant accent on dark bg (replaces taupe) */
+  --color-havn-sand: #e5eef2;         /* Washed paper for subtle tints on light bg */
+  --color-havn-surface: #f7fbfc;      /* Paper — light-bg primary */
+  --color-havn-success: #22c55e;      /* Universal green — kept */
+  --color-havn-amber: #e7a93a;        /* Universal warning — kept */
+
+  /* Semantic aliases for the new brand — prefer these in new code. */
+  --color-havn-midnight: #001526;
+  --color-havn-paper: #f7fbfc;
+  --color-havn-cyan: #00c6e2;         /* Cyan hero */
+  --color-havn-cyan-deep: #007fa8;    /* Cyan deep */
 }
 @source "../components/**/*.{js,ts,jsx,tsx}";
 @source "../app/**/*.{js,ts,jsx,tsx}";
+
+@keyframes havn-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";

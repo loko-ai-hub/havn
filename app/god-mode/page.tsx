@@ -1,6 +1,7 @@
 "use client";
 
 import type { DateRange } from "react-day-picker";
+import Image from "next/image";
 import { format, parseISO, differenceInCalendarDays } from "date-fns";
 import {
   AlertTriangle,
@@ -17,6 +18,7 @@ import {
   LayoutTemplate,
   MoreHorizontal,
   Settings2,
+  Sparkles,
   Upload,
   Users2,
 } from "lucide-react";
@@ -49,6 +51,7 @@ import { OrderStatusBadge } from "../dashboard/_lib/status-badge";
 import { fulfillOrder } from "../dashboard/requests/actions";
 import {
   blockOrganization,
+  deleteStateService,
   loadCustomers,
   loadLatestLegalChecks,
   loadStateConfigs,
@@ -62,6 +65,11 @@ import {
   type StateConfig,
   type StateServiceRow,
 } from "./actions";
+import TemplateRegistryViewer from "./template-registry-viewer";
+import MergeTagDataViewer from "./merge-tag-data-viewer";
+import IngestExternalFormPanel from "./ingest-external-form-panel";
+import ThirdPartyTemplatesViewer from "./third-party-templates-viewer";
+import StateServiceGenerator from "./state-service-generator";
 
 const MOCK_ANALYTICS = {
   totalLifetimeOrders: 1247,
@@ -334,6 +342,7 @@ type TabId =
   | "customers"
   | "order-lookup"
   | "templates"
+  | "merge-tag-data"
   | "uploaded"
   | "document-review"
   | "state-config";
@@ -431,9 +440,6 @@ export default function GodModePage() {
   const [analyticsStatesAll, setAnalyticsStatesAll] = useState(true);
   const [analyticsStatePick, setAnalyticsStatePick] = useState<Set<string>>(() => new Set());
 
-  const [templateSearch, setTemplateSearch] = useState("");
-  const [expandedTemplateId, setExpandedTemplateId] = useState<string | null>(null);
-
   const [uploadedFilter, setUploadedFilter] = useState<"all" | "approved" | "rejected">("all");
   const [uploadedExpanded, setUploadedExpanded] = useState<string | null>(null);
   const [uploadedSort, setUploadedSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
@@ -477,6 +483,17 @@ export default function GodModePage() {
   const [unblockTarget, setUnblockTarget] = useState<CustomerRow | null>(null);
   const [unblockConfirming, setUnblockConfirming] = useState(false);
   const [auditShowAll, setAuditShowAll] = useState(false);
+  const [removeServiceTarget, setRemoveServiceTarget] = useState<
+    | {
+        state: string;
+        stateName: string;
+        masterTypeKey: string;
+        formalName: string;
+        serviceIndex: number;
+      }
+    | null
+  >(null);
+  const [removeServiceConfirming, setRemoveServiceConfirming] = useState(false);
 
   const scale = useMemo(
     () => analyticsScale(analyticsPreset, customRange),
@@ -490,7 +507,8 @@ export default function GodModePage() {
       { id: "customers", label: "Customers", icon: Users2 },
       { id: "order-lookup", label: "Order Lookup", icon: ClipboardList },
       { id: "templates", label: "Havn Templates", icon: LayoutTemplate },
-      { id: "uploaded", label: "Uploaded Templates", icon: Upload },
+      { id: "uploaded", label: "3P Templates", icon: Upload },
+      { id: "merge-tag-data", label: "Merge Tag Data", icon: Sparkles },
       { id: "document-review", label: "Document Review", icon: FileText },
       { id: "state-config", label: "State Config", icon: Settings2 },
     ],
@@ -615,17 +633,6 @@ export default function GodModePage() {
     });
   }, [orders, orderSearch]);
 
-  const filteredTemplates = useMemo(() => {
-    const q = templateSearch.trim().toLowerCase();
-    if (!q) return MOCK_TEMPLATES;
-    return MOCK_TEMPLATES.filter(
-      (t) =>
-        t.name.toLowerCase().includes(q) ||
-        t.type.toLowerCase().includes(q) ||
-        t.version.toLowerCase().includes(q)
-    );
-  }, [templateSearch]);
-
   const sortedUploaded = useMemo(() => {
     let rows: UploadedRow[] = [...MOCK_UPLOADED];
     if (uploadedFilter === "approved") rows = rows.filter((r) => r.status === "approved");
@@ -686,9 +693,9 @@ export default function GodModePage() {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="fixed left-0 top-0 z-30 flex h-screen w-64 shrink-0 flex-col bg-havn-navy text-white">
-        <div className="border-b border-white/10 px-5 py-4">
-          <span className="text-xl font-semibold tracking-tight text-white">Havn</span>
-          <span className="ml-2 rounded-md bg-havn-amber px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-black">God Mode</span>
+        <div className="flex items-center gap-2 border-b border-white/10 px-5 py-4">
+          <Image src="/havn-lockup-dark.svg" alt="Havn" width={84} height={28} priority className="h-7 w-auto" />
+          <span className="rounded-md bg-havn-amber px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-black">God Mode</span>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3">
           {navItems.map(({ id, label, icon: Icon }) => (
@@ -1500,293 +1507,18 @@ export default function GodModePage() {
           </div>
         ) : null}
 
-        {tab === "templates" ? (
-          <div className="space-y-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">Havn Templates</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Platform document templates (mock).</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Input
-                  placeholder="Search templates…"
-                  value={templateSearch}
-                  onChange={(e) => setTemplateSearch(e.target.value)}
-                  className="w-full sm:w-64"
-                />
-                <Button type="button" disabled>
-                  Create Template
-                </Button>
-              </div>
-            </div>
-            <div className="overflow-x-auto rounded-xl border border-border bg-card">
-              <Table className="min-w-[1100px]">
-                <TableHeader>
-                  <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableHead>Template Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Version</TableHead>
-                    <TableHead>Last Updated</TableHead>
-                    <TableHead>Updated By</TableHead>
-                    <TableHead>Fields</TableHead>
-                    <TableHead>Usage</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>States Live</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTemplates.map((t) => (
-                    <Fragment key={t.id}>
-                      <TableRow>
-                        <TableCell className="font-medium">{t.name}</TableCell>
-                        <TableCell>{t.type}</TableCell>
-                        <TableCell>{t.version}</TableCell>
-                        <TableCell className="text-muted-foreground">{t.lastUpdated}</TableCell>
-                        <TableCell>{t.lastUpdatedBy}</TableCell>
-                        <TableCell>{t.fieldsCount}</TableCell>
-                        <TableCell>{t.usageCount}</TableCell>
-                        <TableCell>
-                          {t.status === "active" ? (
-                            <PillBadge className="border-havn-success/40 bg-havn-success/15 text-emerald-900 dark:text-emerald-100">
-                              Active
-                            </PillBadge>
-                          ) : (
-                            <PillBadge className="border-havn-amber/50 bg-havn-amber/15 text-amber-900 dark:text-amber-100">
-                              Draft
-                            </PillBadge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <button
-                            type="button"
-                            onClick={() => setExpandedTemplateId((id) => (id === t.id ? null : t.id))}
-                            className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs font-semibold text-foreground hover:bg-muted"
-                          >
-                            {t.liveStates.length ? `${t.liveStates.length} states` : "No states"}
-                            {expandedTemplateId === t.id ? (
-                              <ChevronUp className="h-3 w-3" />
-                            ) : (
-                              <ChevronDown className="h-3 w-3" />
-                            )}
-                          </button>
-                        </TableCell>
-                      </TableRow>
-                      {expandedTemplateId === t.id ? (
-                        <TableRow className="bg-muted/20 hover:bg-muted/20">
-                          <TableCell colSpan={9} className="py-4">
-                            <p className="mb-2 text-xs font-medium text-muted-foreground">States live</p>
-                            <div className="flex flex-wrap gap-2">
-                              {t.liveStates.length ? (
-                                t.liveStates.map((s) => (
-                                  <PillBadge key={s} className="border-border bg-background text-foreground">
-                                    {s}
-                                  </PillBadge>
-                                ))
-                              ) : (
-                                <span className="text-sm text-muted-foreground">No states configured.</span>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ) : null}
-                    </Fragment>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        ) : null}
+        {tab === "templates" ? <TemplateRegistryViewer /> : null}
+
+        {tab === "merge-tag-data" ? <MergeTagDataViewer /> : null}
 
         {tab === "uploaded" ? (
           <div className="space-y-6">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Uploaded Templates</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">3P Templates</h1>
               <p className="mt-1 text-sm text-muted-foreground">Customer-supplied PDFs awaiting or after review.</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {(["all", "approved", "rejected"] as const).map((f) => (
-                <Button
-                  key={f}
-                  type="button"
-                  size="sm"
-                  variant={uploadedFilter === f ? "default" : "outline"}
-                  className={uploadedFilter === f ? "bg-havn-navy text-white hover:bg-havn-navy/90" : ""}
-                  onClick={() => setUploadedFilter(f)}
-                >
-                  {f === "all" ? "All" : f === "approved" ? "Approved" : "Rejected"}
-                </Button>
-              ))}
-            </div>
-            <div className="overflow-x-auto rounded-xl border border-border bg-card">
-              <Table className="min-w-[960px]">
-                <TableHeader>
-                  <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableHead className="w-8" />
-                    <TableHead>
-                      <button type="button" className="font-medium hover:underline" onClick={() => toggleUploadedSort("fileName")}>
-                        File Name {uploadedSort.key === "fileName" ? (uploadedSort.dir === "asc" ? "↑" : "↓") : ""}
-                      </button>
-                    </TableHead>
-                    <TableHead>
-                      <button type="button" className="font-medium hover:underline" onClick={() => toggleUploadedSort("companyName")}>
-                        Company {uploadedSort.key === "companyName" ? (uploadedSort.dir === "asc" ? "↑" : "↓") : ""}
-                      </button>
-                    </TableHead>
-                    <TableHead>
-                      <button type="button" className="font-medium hover:underline" onClick={() => toggleUploadedSort("documentType")}>
-                        Type {uploadedSort.key === "documentType" ? (uploadedSort.dir === "asc" ? "↑" : "↓") : ""}
-                      </button>
-                    </TableHead>
-                    <TableHead>
-                      <button type="button" className="font-medium hover:underline" onClick={() => toggleUploadedSort("uploadedBy")}>
-                        Uploaded By {uploadedSort.key === "uploadedBy" ? (uploadedSort.dir === "asc" ? "↑" : "↓") : ""}
-                      </button>
-                    </TableHead>
-                    <TableHead>
-                      <button type="button" className="font-medium hover:underline" onClick={() => toggleUploadedSort("uploadedAt")}>
-                        Date {uploadedSort.key === "uploadedAt" ? (uploadedSort.dir === "asc" ? "↑" : "↓") : ""}
-                      </button>
-                    </TableHead>
-                    <TableHead>
-                      <button type="button" className="font-medium hover:underline" onClick={() => toggleUploadedSort("status")}>
-                        Status {uploadedSort.key === "status" ? (uploadedSort.dir === "asc" ? "↑" : "↓") : ""}
-                      </button>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedUploaded.map((u) => {
-                    const domains = uploadedDomainsById[u.id] ?? u.emailDomains;
-                    const expanded = uploadedExpanded === u.id;
-                    return (
-                      <Fragment key={u.id}>
-                        <TableRow
-                          className="cursor-pointer hover:bg-muted/30"
-                          onClick={() => setUploadedExpanded((id) => (id === u.id ? null : u.id))}
-                        >
-                          <TableCell>{expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</TableCell>
-                          <TableCell className="font-medium">{u.fileName}</TableCell>
-                          <TableCell>{u.companyName}</TableCell>
-                          <TableCell>{u.documentType}</TableCell>
-                          <TableCell>
-                            <span className="block">{u.uploadedBy}</span>
-                            <span className="text-xs text-muted-foreground">{u.uploadedByEmail}</span>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{u.uploadedAt}</TableCell>
-                          <TableCell>
-                            {u.status === "approved" ? (
-                              <PillBadge className="border-havn-success/40 bg-havn-success/15 text-emerald-900 dark:text-emerald-100">
-                                Approved
-                              </PillBadge>
-                            ) : u.status === "pending" ? (
-                              <PillBadge className="border-havn-amber/50 bg-havn-amber/15 text-amber-900 dark:text-amber-100">
-                                Pending
-                              </PillBadge>
-                            ) : (
-                              <PillBadge className="border-destructive/40 bg-destructive/15 text-destructive">Rejected</PillBadge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                        {expanded ? (
-                          <TableRow className="bg-muted/15 hover:bg-muted/15">
-                            <TableCell colSpan={7} className="p-5">
-                              <div className="grid gap-4 md:grid-cols-2">
-                                <div>
-                                  <Label className="text-xs uppercase text-muted-foreground">Email domains</Label>
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    {domains.map((d) => (
-                                      <span
-                                        key={d}
-                                        className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-xs"
-                                      >
-                                        {d}
-                                        <button
-                                          type="button"
-                                          className="text-muted-foreground hover:text-foreground"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setUploadedDomainsById((prev) => ({
-                                              ...prev,
-                                              [u.id]: (prev[u.id] ?? domains).filter((x) => x !== d),
-                                            }));
-                                          }}
-                                        >
-                                          ×
-                                        </button>
-                                      </span>
-                                    ))}
-                                  </div>
-                                  <div className="mt-2 flex gap-2">
-                                    <Input
-                                      placeholder="domain.com"
-                                      value={uploadedDomainDraft[u.id] ?? ""}
-                                      onClick={(e) => e.stopPropagation()}
-                                      onChange={(e) =>
-                                        setUploadedDomainDraft((prev) => ({ ...prev, [u.id]: e.target.value }))
-                                      }
-                                    />
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        const raw = (uploadedDomainDraft[u.id] ?? "").trim().toLowerCase();
-                                        if (!raw) return;
-                                        setUploadedDomainsById((prev) => ({
-                                          ...prev,
-                                          [u.id]: [...new Set([...(prev[u.id] ?? domains), raw])],
-                                        }));
-                                        setUploadedDomainDraft((prev) => ({ ...prev, [u.id]: "" }));
-                                      }}
-                                    >
-                                      Add
-                                    </Button>
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    className="mt-3"
-                                    variant="secondary"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const email = u.uploadedByEmail;
-                                      const dom = email.includes("@") ? email.split("@")[1] : "";
-                                      if (dom)
-                                        setUploadedDomainsById((prev) => ({
-                                          ...prev,
-                                          [u.id]: [...new Set([...(prev[u.id] ?? domains), dom])],
-                                        }));
-                                      toast.success(dom ? `Added ${dom}` : "No domain on uploader");
-                                    }}
-                                  >
-                                    Auto-Assign from Uploader
-                                  </Button>
-                                </div>
-                                <div className="space-y-3">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    disabled
-                                  >
-                                    View Template
-                                  </Button>
-                                  <div className="rounded-lg border border-border bg-card p-3 text-sm">
-                                    <p className="text-xs font-semibold text-muted-foreground">Review</p>
-                                    <p className="mt-1 text-foreground">{u.notes || "—"}</p>
-                                    <p className="mt-2 text-xs text-muted-foreground">
-                                      Reviewed by {u.reviewedBy ?? "—"} · {u.reviewedAt ?? "—"}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ) : null}
-                      </Fragment>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+            <IngestExternalFormPanel />
+            <ThirdPartyTemplatesViewer />
           </div>
         ) : null}
 
@@ -1994,6 +1726,11 @@ export default function GodModePage() {
               <h1 className="text-2xl font-semibold tracking-tight">State Config</h1>
               <p className="mt-1 text-sm text-muted-foreground">Statutory caps, rules, and service defaults per state.</p>
             </div>
+            <StateServiceGenerator
+              onApplied={() => {
+                void loadConfigs();
+              }}
+            />
             {stateConfigsLoading ? (
               <p className="text-sm text-muted-foreground">Loading state configurations…</p>
             ) : (
@@ -2216,16 +1953,18 @@ export default function GodModePage() {
                             size="sm"
                             className="w-full text-destructive hover:text-destructive"
                             disabled={!selectedService || selectedStateConfig.services.length === 0}
-                            onClick={() =>
-                              applyStateConfigUpdate((draft) => {
-                                const idx = draft.findIndex((x) => x.state === selectedConfigState);
-                                if (idx < 0) return draft;
-                                draft[idx].services.splice(selectedServiceIndex, 1);
-                                const nl = draft[idx].services.length;
-                                setSelectedServiceIndex((s) => Math.min(Math.max(0, s), Math.max(0, nl - 1)));
-                                return draft;
-                              })
-                            }
+                            onClick={() => {
+                              if (!selectedService || !selectedStateConfig) return;
+                              setRemoveServiceTarget({
+                                state: selectedStateConfig.state,
+                                stateName: selectedStateConfig.stateName,
+                                masterTypeKey: selectedService.master_type_key,
+                                formalName:
+                                  selectedService.formalName ||
+                                  formatMasterTypeKey(selectedService.master_type_key),
+                                serviceIndex: selectedServiceIndex,
+                              });
+                            }}
                           >
                             Remove Service
                           </Button>
@@ -2588,6 +2327,104 @@ export default function GodModePage() {
                 )}
               </div>
             </div>
+            )}
+            {/* Remove-service confirmation dialog */}
+            {removeServiceTarget && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                onClick={() =>
+                  !removeServiceConfirming && setRemoveServiceTarget(null)
+                }
+              >
+                <div
+                  className="w-full max-w-md rounded-xl border border-destructive/30 bg-card p-6 shadow-lg"
+                  role="dialog"
+                  aria-modal="true"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h2 className="text-lg font-semibold text-foreground">
+                    Remove {removeServiceTarget.formalName}?
+                  </h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    This permanently deletes the{" "}
+                    <span className="font-mono">
+                      {removeServiceTarget.masterTypeKey}
+                    </span>{" "}
+                    service from the {removeServiceTarget.stateName} state
+                    config. Any associated statute reference, pricing cap, and
+                    turnaround data will be lost.
+                  </p>
+                  <p className="mt-3 text-sm font-medium text-destructive">
+                    This action cannot be undone.
+                  </p>
+                  <div className="mt-5 flex justify-end gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => setRemoveServiceTarget(null)}
+                      disabled={removeServiceConfirming}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={removeServiceConfirming}
+                      onClick={() => {
+                        const target = removeServiceTarget;
+                        setRemoveServiceConfirming(true);
+                        void (async () => {
+                          try {
+                            const result = await deleteStateService(
+                              target.state,
+                              target.masterTypeKey
+                            );
+                            if ("error" in result) {
+                              toast.error(result.error);
+                              return;
+                            }
+                            // Update local draft + baseline so the editor
+                            // reflects the deletion immediately.
+                            applyStateConfigUpdate((draft) => {
+                              const idx = draft.findIndex(
+                                (x) => x.state === target.state
+                              );
+                              if (idx < 0) return draft;
+                              draft[idx].services = draft[idx].services.filter(
+                                (s) => s.master_type_key !== target.masterTypeKey
+                              );
+                              const nl = draft[idx].services.length;
+                              setSelectedServiceIndex((s) =>
+                                Math.min(Math.max(0, s), Math.max(0, nl - 1))
+                              );
+                              return draft;
+                            });
+                            setStateConfigBaseline((prev) => {
+                              const copy = deepClone(prev);
+                              const idx = copy.findIndex(
+                                (x) => x.state === target.state
+                              );
+                              if (idx >= 0) {
+                                copy[idx].services = copy[idx].services.filter(
+                                  (s) =>
+                                    s.master_type_key !== target.masterTypeKey
+                                );
+                              }
+                              return copy;
+                            });
+                            toast.success(
+                              `Removed ${target.formalName} from ${target.stateName}.`
+                            );
+                            setRemoveServiceTarget(null);
+                          } finally {
+                            setRemoveServiceConfirming(false);
+                          }
+                        })();
+                      }}
+                    >
+                      {removeServiceConfirming ? "Removing…" : "Remove service"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         ) : null}

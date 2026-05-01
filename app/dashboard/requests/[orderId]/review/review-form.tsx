@@ -1,8 +1,14 @@
 "use client";
 
-import { CheckCircle2, Database, FileText, Save, Sparkles, User } from "lucide-react";
+import {
+  CheckCircle2,
+  Download,
+  Save,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -11,30 +17,16 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { DocumentTemplate } from "@/lib/document-templates";
-import type { FieldSource, MergedField } from "@/lib/document-fields";
+import type { MergedField } from "@/lib/document-fields";
 
-import { fulfillAndGenerate, saveDraftFields } from "../../actions";
-
-const SOURCE_BADGE: Record<
-  string,
-  { label: string; icon: typeof Sparkles; className: string }
-> = {
-  ocr: {
-    label: "OCR",
-    icon: FileText,
-    className: "bg-primary/10 text-primary border-primary/20",
-  },
-  cache: {
-    label: "Cached",
-    icon: Database,
-    className: "bg-havn-success/10 text-havn-success border-havn-success/20",
-  },
-  order: {
-    label: "Order",
-    icon: User,
-    className: "bg-havn-amber/10 text-havn-amber border-havn-amber/20",
-  },
-};
+import {
+  fulfillAndGenerate,
+  getVersionDownloadUrl,
+  listOrderDocumentVersions,
+  saveDraftFields,
+  type OrderDocumentVersion,
+  type SignaturePayload,
+} from "../../actions";
 
 type Props = {
   orderId: string;
@@ -44,6 +36,8 @@ type Props = {
   communityId: string | null;
   communities: { id: string; name: string }[];
   isFulfilled: boolean;
+  currentUserName?: string | null;
+  currentUserEmail?: string | null;
 };
 
 export default function ReviewForm({
@@ -54,12 +48,27 @@ export default function ReviewForm({
   communityId: initialCommunityId,
   communities,
   isFulfilled,
+  currentUserName,
+  currentUserEmail,
 }: Props) {
   const router = useRouter();
   const [fields, setFields] = useState<Record<string, MergedField>>(initialFields);
   const [selectedCommunity, setSelectedCommunity] = useState(initialCommunityId ?? "");
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [signatureOpen, setSignatureOpen] = useState(false);
+  const [versions, setVersions] = useState<OrderDocumentVersion[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listOrderDocumentVersions(orderId).then((result) => {
+      if (cancelled) return;
+      if (!("error" in result)) setVersions(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId]);
 
   const updateField = (key: string, value: string) => {
     setFields((prev) => ({
@@ -81,6 +90,7 @@ export default function ReviewForm({
   const filledRequired = template.fields.filter(
     (f) => f.required && fields[f.key]?.value?.trim()
   ).length;
+  const requiresSignature = !!template.requiresSignature;
 
   const handleSaveDraft = async () => {
     setSaving(true);
@@ -96,28 +106,50 @@ export default function ReviewForm({
     }
   };
 
-  const handleGenerate = async () => {
-    if (filledRequired < requiredCount) {
-      toast.error(`Please fill all required fields (${filledRequired}/${requiredCount} complete).`);
-      return;
-    }
+  const runGeneration = async (signature?: SignaturePayload) => {
     setGenerating(true);
     try {
       const result = await fulfillAndGenerate(
         orderId,
         toPlainValues(),
-        selectedCommunity || null
+        selectedCommunity || null,
+        signature
       );
       if ("error" in result) {
         toast.error(result.error);
         return;
       }
-      toast.success("Document generated and sent to requester.");
+      toast.success(
+        signature
+          ? `Signed as V${result.version} and delivered.`
+          : `V${result.version} generated and sent to requester.`
+      );
       router.push("/dashboard/requests");
       router.refresh();
     } finally {
       setGenerating(false);
     }
+  };
+
+  const handlePrimary = async () => {
+    if (filledRequired < requiredCount) {
+      toast.error(`Please fill all required fields (${filledRequired}/${requiredCount} complete).`);
+      return;
+    }
+    if (requiresSignature) {
+      setSignatureOpen(true);
+      return;
+    }
+    await runGeneration();
+  };
+
+  const handleVersionDownload = async (docId: string, label: string) => {
+    const result = await getVersionDownloadUrl(docId);
+    if ("error" in result) {
+      toast.error(`Download failed (${label}): ${result.error}`);
+      return;
+    }
+    window.open(result.url, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -158,6 +190,69 @@ export default function ReviewForm({
           })()}
         </div>
       </div>
+
+      {/* Version tabs */}
+      {versions.length > 0 && (
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Versions
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {versions.length} {versions.length === 1 ? "version" : "versions"} on file
+            </p>
+          </div>
+          <div className="mt-3 divide-y divide-border">
+            {versions.map((v) => {
+              const label = `V${v.version}`;
+              const genDate = v.generatedAt
+                ? new Date(v.generatedAt).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : null;
+              const expired = v.expiresAt ? new Date(v.expiresAt).getTime() < Date.now() : false;
+              return (
+                <div
+                  key={v.id}
+                  className="flex items-center justify-between gap-3 py-2.5 text-sm"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="inline-flex h-6 min-w-[32px] items-center justify-center rounded-md bg-havn-navy px-1.5 text-xs font-bold text-white">
+                      {label}
+                    </span>
+                    <span className="text-foreground">
+                      Generated {genDate ?? "—"}
+                    </span>
+                    {v.hasSignature && (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-havn-success/30 bg-havn-success/10 px-1.5 py-0.5 text-xs text-havn-success">
+                        <ShieldCheck className="h-3 w-3" />
+                        Signed
+                        {v.signerName ? ` · ${v.signerName}` : ""}
+                      </span>
+                    )}
+                    {expired && (
+                      <span className="rounded-md border border-destructive/30 bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">
+                        Expired
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleVersionDownload(v.id, label)}
+                  >
+                    <Download className="mr-2 h-3.5 w-3.5" />
+                    Download
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Community selector */}
       {communities.length > 0 && (
@@ -265,11 +360,159 @@ export default function ReviewForm({
           <Button
             type="button"
             disabled={saving || generating}
-            onClick={() => void handleGenerate()}
+            onClick={() => void handlePrimary()}
             className="bg-havn-success text-white hover:bg-havn-success/90"
           >
-            <CheckCircle2 className="mr-2 h-4 w-4" />
-            {generating ? "Generating..." : isFulfilled ? "Regenerate PDF" : "Approve & Generate PDF"}
+            {requiresSignature ? (
+              <ShieldCheck className="mr-2 h-4 w-4" />
+            ) : (
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+            )}
+            {generating
+              ? "Generating..."
+              : requiresSignature
+                ? isFulfilled
+                  ? "Sign & Regenerate"
+                  : "Approve & Sign"
+                : isFulfilled
+                  ? "Regenerate PDF"
+                  : "Approve & Generate PDF"}
+          </Button>
+        </div>
+      </div>
+
+      {signatureOpen && (
+        <SignatureModal
+          template={template}
+          defaultSignerName={currentUserName ?? ""}
+          defaultSignerEmail={currentUserEmail ?? ""}
+          onCancel={() => setSignatureOpen(false)}
+          onSign={async (payload) => {
+            setSignatureOpen(false);
+            await runGeneration(payload);
+          }}
+          generating={generating}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Signature modal (click-to-sign) ───────────────────────────────── */
+
+type SignatureModalProps = {
+  template: DocumentTemplate;
+  defaultSignerName: string;
+  defaultSignerEmail: string;
+  generating: boolean;
+  onCancel: () => void;
+  onSign: (payload: SignaturePayload) => Promise<void>;
+};
+
+function SignatureModal({
+  template,
+  defaultSignerName,
+  defaultSignerEmail,
+  generating,
+  onCancel,
+  onSign,
+}: SignatureModalProps) {
+  const [name, setName] = useState(defaultSignerName);
+  const [title, setTitle] = useState("");
+  const [email, setEmail] = useState(defaultSignerEmail);
+  const [certified, setCertified] = useState(false);
+
+  const canSubmit = name.trim().length > 0 && email.trim().length > 0 && certified;
+  const certificationText =
+    template.legalLanguage?.certificationText ??
+    "I certify that the information provided above is true and accurate to the best of my knowledge.";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-havn-success/10 p-2 text-havn-success">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <h2 className="text-lg font-semibold text-foreground">Sign & Certify</h2>
+        </div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          This document requires a signature before it can be delivered.
+        </p>
+
+        <div className="mt-5 space-y-3">
+          <div>
+            <Label htmlFor="sig-name" className="text-xs font-medium">
+              Your name <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="sig-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 h-9 text-sm"
+            />
+          </div>
+          <div>
+            <Label htmlFor="sig-title" className="text-xs font-medium">
+              Title
+            </Label>
+            <Input
+              id="sig-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Community Manager"
+              className="mt-1 h-9 text-sm"
+            />
+          </div>
+          <div>
+            <Label htmlFor="sig-email" className="text-xs font-medium">
+              Email <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="sig-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="mt-1 h-9 text-sm"
+            />
+          </div>
+          <label className="mt-2 flex items-start gap-2 rounded-md border border-border bg-background p-3 text-xs leading-relaxed text-foreground">
+            <input
+              type="checkbox"
+              checked={certified}
+              onChange={(e) => setCertified(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-havn-success"
+            />
+            <span>{certificationText}</span>
+          </label>
+        </div>
+
+        <div className="mt-6 flex items-center justify-end gap-3">
+          <Button type="button" variant="outline" disabled={generating} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={!canSubmit || generating}
+            onClick={() =>
+              void onSign({
+                signerName: name.trim(),
+                signerEmail: email.trim(),
+                signerTitle: title.trim() || null,
+                signedAt: new Date().toISOString(),
+                signatureData: "click-to-sign",
+              })
+            }
+            className="bg-havn-success text-white hover:bg-havn-success/90"
+          >
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            {generating ? "Signing..." : "Sign & Generate"}
           </Button>
         </div>
       </div>

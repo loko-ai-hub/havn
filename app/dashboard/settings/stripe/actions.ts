@@ -9,8 +9,12 @@ import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
 
 const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? "https://havnhq.com";
 
+// When called from onboarding, pass returnPath = "/dashboard?welcome=1" so the
+// user lands on the dashboard with the celebration confetti. Default return is
+// the settings page where the banner toggles to "Connected".
 export async function createStripeConnectLink(
-  orgId: string
+  orgId: string,
+  returnPath?: string
 ): Promise<{ url: string } | { error: string }> {
   try {
     const { organizationId } = await requireDashboardOrg();
@@ -31,6 +35,27 @@ export async function createStripeConnectLink(
     }
 
     let accountId = org.stripe_account_id as string | null;
+
+    // If we have a stored account ID, validate it's reachable on the current
+    // Stripe environment. A common failure mode is an `acct_test_...` saved
+    // before flipping to live keys — Stripe returns "account does not exist on
+    // your platform" when we try to mint an account link for it. Treat any
+    // retrieve failure as "stale ID — start fresh."
+    if (accountId) {
+      try {
+        await stripe.accounts.retrieve(accountId);
+      } catch (err) {
+        console.warn(
+          "createStripeConnectLink: stale or invalid stripe_account_id, recreating:",
+          err
+        );
+        accountId = null;
+        await supabase
+          .from("organizations")
+          .update({ stripe_account_id: null, stripe_onboarding_complete: false })
+          .eq("id", orgId);
+      }
+    }
 
     if (!accountId) {
       const account = await stripe.accounts.create({
@@ -54,10 +79,15 @@ export async function createStripeConnectLink(
       }
     }
 
+    const safeReturn =
+      returnPath && returnPath.startsWith("/")
+        ? `${appUrl()}${returnPath}`
+        : `${appUrl()}/dashboard/settings?stripe=success`;
+
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
       refresh_url: `${appUrl()}/dashboard/settings?stripe=refresh`,
-      return_url: `${appUrl()}/dashboard/settings?stripe=success`,
+      return_url: safeReturn,
       type: "account_onboarding",
     });
 
@@ -84,14 +114,56 @@ export async function checkStripeOnboardingStatus(orgId: string): Promise<void> 
 
   const account = await stripe.accounts.retrieve(org.stripe_account_id as string);
 
-  if (account.details_submitted) {
-    await supabase
-      .from("organizations")
-      .update({ stripe_onboarding_complete: true })
-      .eq("id", orgId);
-  }
+  // Pull every signal we care about. Webhook is the primary source of truth,
+  // but this on-demand sync covers cases where the webhook fires late or the
+  // operator finishes Stripe in another tab and comes back.
+  await supabase
+    .from("organizations")
+    .update({
+      stripe_onboarding_complete: Boolean(account.details_submitted),
+      stripe_payouts_enabled: Boolean(account.payouts_enabled),
+      stripe_charges_enabled: Boolean(account.charges_enabled),
+      stripe_requirements_currently_due: account.requirements?.currently_due ?? [],
+    })
+    .eq("id", orgId);
 
   revalidatePath("/dashboard/settings");
+  revalidatePath("/dashboard");
+}
+
+// Returns a one-time login link to the Stripe Express dashboard for the
+// connected account. Owner-only — non-owners get a clear error. The URL is
+// short-lived; we never store it server-side.
+export async function createStripeDashboardLoginLink(
+  orgId: string
+): Promise<{ url: string } | { error: string }> {
+  try {
+    const { organizationId, userRole } = await requireDashboardOrg();
+    if (organizationId !== orgId) {
+      return { error: "You cannot manage Stripe for this organization." };
+    }
+    if (userRole !== "owner") {
+      return { error: "Only the organization owner can open the Stripe dashboard." };
+    }
+
+    const supabase = createAdminClient();
+    const { data: org, error: orgError } = await supabase
+      .from("organizations")
+      .select("stripe_account_id")
+      .eq("id", orgId)
+      .single();
+
+    if (orgError || !org?.stripe_account_id) {
+      return { error: "No connected Stripe account on file yet." };
+    }
+
+    const link = await stripe.accounts.createLoginLink(org.stripe_account_id as string);
+    return { url: link.url };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Could not open Stripe dashboard.",
+    };
+  }
 }
 
 export async function getStripeBankLast4(

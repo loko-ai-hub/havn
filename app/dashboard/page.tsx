@@ -3,11 +3,13 @@
 import { format, parseISO } from "date-fns";
 import type { ReactNode } from "react";
 import {
+  Building2,
   ChevronDown,
   Clock,
   DollarSign,
   FileText,
   Link2,
+  MapPin,
   MoreHorizontal,
   Plus,
   Timer,
@@ -55,6 +57,8 @@ async function resolveOrg(supabase: ReturnType<typeof createClient>): Promise<{
   orgName: string;
   portalSlug: string | null;
   stripeConnected: boolean;
+  stripePayoutsEnabled: boolean | null;
+  stripeRequirementsDue: string[];
 } | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -73,15 +77,30 @@ async function resolveOrg(supabase: ReturnType<typeof createClient>): Promise<{
 
   const { data: org } = await supabase
     .from("organizations")
-    .select("name, portal_slug, stripe_account_id, stripe_onboarding_complete")
+    .select(
+      "name, portal_slug, stripe_account_id, stripe_onboarding_complete, stripe_payouts_enabled, stripe_requirements_currently_due"
+    )
     .eq("id", orgId)
     .single();
+
+  // Definition of "Stripe ready to take payments AND payout":
+  //   account exists + Stripe says payouts are enabled.
+  // Fall back to onboarding_complete only when payouts_enabled hasn't been
+  // synced yet (null = unknown — webhook hasn't fired for this org).
+  const payoutsEnabled = (org?.stripe_payouts_enabled ?? null) as boolean | null;
+  const stripeConnected =
+    Boolean(org?.stripe_account_id) &&
+    (payoutsEnabled === null
+      ? Boolean(org?.stripe_onboarding_complete)
+      : payoutsEnabled === true);
 
   return {
     orgId,
     orgName: (org?.name as string) ?? "",
     portalSlug: org?.portal_slug ?? null,
-    stripeConnected: !!(org?.stripe_account_id && org?.stripe_onboarding_complete),
+    stripeConnected,
+    stripePayoutsEnabled: payoutsEnabled,
+    stripeRequirementsDue: (org?.stripe_requirements_currently_due as string[] | null) ?? [],
   };
 }
 
@@ -104,6 +123,30 @@ function KpiCardWrapper({ href, children }: { href?: string; children: ReactNode
     return <Link href={href} className={className}>{children}</Link>;
   }
   return <div className={className}>{children}</div>;
+}
+
+function ChecklistSkeleton() {
+  return (
+    <div className="rounded-xl border border-border bg-card p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-7 w-7 rounded-md" />
+      </div>
+      <Skeleton className="mb-5 h-2 w-full rounded-full" />
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="flex items-start gap-3">
+            <Skeleton className="mt-0.5 h-5 w-5 rounded-full" />
+            <div className="flex-1 space-y-1.5">
+              <Skeleton className="h-4 w-3/5" />
+              <Skeleton className="h-3 w-4/5" />
+            </div>
+            <Skeleton className="h-7 w-20 rounded-md" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function RecentOrdersSection({
@@ -260,28 +303,78 @@ export default function DashboardHomePage() {
   // Org state
   const [portalSlug, setPortalSlug] = useState<string | null>(null);
   const [stripeConnected, setStripeConnected] = useState(true);
+  const [stripeRequirementsDue, setStripeRequirementsDue] = useState<string[]>([]);
+  const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
   const [communitiesCount, setCommunitiesCount] = useState(0);
   const [feesCount, setFeesCount] = useState(0);
   const [communities, setCommunities] = useState<{ id: string; name: string }[]>([]);
   const [selectedCommunity, setSelectedCommunity] = useState<string>("");
 
-  // Checklist dismissal
+  // Checklist dismissal — persisted per-user via profiles.checklist_dismissed_at.
+  // Optimistic local state; server is source of truth.
   const [checklistDismissed, setChecklistDismissed] = useState(false);
 
   const [recent, setRecent] = useState<OrderRow[]>([]);
 
+  // Read persisted dismissal from the user's profile on mount. Also clear any
+  // stale localStorage flag from before we moved to the per-user DB approach.
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setChecklistDismissed(localStorage.getItem("havn_checklist_dismissed") === "1");
+      localStorage.removeItem("havn_checklist_dismissed");
     }
+    void (async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("checklist_dismissed_at")
+        .eq("id", user.id)
+        .maybeSingle();
+      setChecklistDismissed(Boolean(data?.checklist_dismissed_at));
+    })();
   }, []);
 
   const handleDismissChecklist = () => {
     setChecklistDismissed(true);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("havn_checklist_dismissed", "1");
-    }
+    void (async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const { error } = await supabase
+        .from("profiles")
+        .update({ checklist_dismissed_at: new Date().toISOString() })
+        .eq("id", user.id);
+      if (error) {
+        console.warn("[checklist] dismiss failed:", error.message);
+        // Roll back optimistic state so the UI stays consistent.
+        setChecklistDismissed(false);
+      }
+    })();
+  };
+
+  const handleShowChecklist = () => {
+    setChecklistDismissed(false);
+    void (async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const { error } = await supabase
+        .from("profiles")
+        .update({ checklist_dismissed_at: null })
+        .eq("id", user.id);
+      if (error) {
+        console.warn("[checklist] re-show failed:", error.message);
+        setChecklistDismissed(true);
+      }
+    })();
   };
 
   const load = useCallback(async () => {
@@ -294,9 +387,17 @@ export default function DashboardHomePage() {
       setLoading(false);
       return;
     }
-    const { orgId, orgName: name, portalSlug: slug, stripeConnected: stripe } = resolved;
+    const {
+      orgId,
+      orgName: name,
+      portalSlug: slug,
+      stripeConnected: stripe,
+      stripeRequirementsDue: requirementsDue,
+    } = resolved;
+    setOrgId(orgId);
     setPortalSlug(slug);
     setStripeConnected(stripe);
+    setStripeRequirementsDue(requirementsDue);
     setOrgName(name);
 
     const cid = selectedCommunity || null;
@@ -359,6 +460,19 @@ export default function DashboardHomePage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Re-fetch dashboard data when the operator returns to this tab (e.g. after
+  // completing bank-account setup in the Stripe tab) so the payout banner and
+  // checklist update without a manual refresh.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void load();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [load]);
+
   const handleMarkFulfilled = async (orderId: string) => {
     const result = await fulfillOrder(orderId);
     if (result && "error" in result && result.error) {
@@ -401,32 +515,36 @@ export default function DashboardHomePage() {
       label: "Connect your bank account",
       completed: stripeConnected,
       actionLabel: "Set up payments →",
-      actionRoute: "/dashboard/settings/stripe",
-      subtext: "Payments are processing — but you won't receive any funds until your account is connected.",
+      actionRoute: "/dashboard/settings",
+      subtext: "Payments are processing, but you won't receive any funds until your account is connected.",
       statusColor: "amber",
     },
     {
       id: "communities",
-      label: "Add communities you manage",
+      label: "Upload your communities",
       completed: communitiesCount > 0,
-      actionLabel: "Do this →",
       actionRoute: "/dashboard/communities",
+      subtext: "Auto-fills future orders with property details.",
+      optional: true,
+      icon: Building2,
     },
     {
       id: "documents",
       label: "Upload association documents",
       completed: docsIndexed > 0,
-      actionLabel: "Do this →",
       actionRoute: "/dashboard/documents",
-      subtext: "This lets us auto-complete as much as possible for you.",
+      subtext: "Maximizes document auto-fill on every order.",
+      optional: true,
+      icon: FileText,
     },
     {
       id: "addresses",
-      label: "Upload addresses in the community",
+      label: "Upload addresses in your communities",
       completed: communitiesCount > 0,
-      actionLabel: "Do this →",
       actionRoute: "/dashboard/communities",
-      subtext: "This lets us automate as much as possible for you.",
+      subtext: "Auto-routes inbound requests to the right manager.",
+      optional: true,
+      icon: MapPin,
     },
   ];
 
@@ -436,8 +554,12 @@ export default function DashboardHomePage() {
     <div className="space-y-6">
       {/* Top bar */}
       <div className="sticky top-0 z-20 -mx-6 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        {orgName && (
-          <h1 className="mb-2 text-lg font-semibold tracking-tight text-foreground">{orgName}</h1>
+        {loading ? (
+          <Skeleton className="mb-2 h-5 w-48" />
+        ) : (
+          orgName && (
+            <h1 className="mb-2 text-lg font-semibold tracking-tight text-foreground">{orgName}</h1>
+          )
         )}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -478,7 +600,9 @@ export default function DashboardHomePage() {
       </div>
 
       {/* Payout banner */}
-      {!loading && !stripeConnected && <PayoutBanner />}
+      {!loading && !stripeConnected && orgId && (
+        <PayoutBanner orgId={orgId} requirementsDue={stripeRequirementsDue} />
+      )}
 
       {/* Error */}
       {error ? (
@@ -507,8 +631,8 @@ export default function DashboardHomePage() {
               value: String(openRequests),
               subtext: "Orders not yet completed",
               icon: Clock,
-              accent: "text-havn-amber",
-              iconBg: "bg-havn-amber/10",
+              accent: "text-havn-cyan",
+              iconBg: "bg-havn-cyan/10",
               href: "/dashboard/requests",
               delay: 0,
             },
@@ -517,8 +641,8 @@ export default function DashboardHomePage() {
               value: `${autoCompletedPct}%`,
               subtext: "Of uploaded documents",
               icon: Zap,
-              accent: autoCompletedPct >= 70 ? "text-havn-success" : autoCompletedPct >= 40 ? "text-havn-amber" : "text-destructive",
-              iconBg: autoCompletedPct >= 70 ? "bg-havn-success/10" : autoCompletedPct >= 40 ? "bg-havn-amber/10" : "bg-destructive/10",
+              accent: "text-havn-cyan",
+              iconBg: "bg-havn-cyan/10",
               delay: 60,
             },
             {
@@ -526,8 +650,8 @@ export default function DashboardHomePage() {
               value: pagesProcessed.toLocaleString(),
               subtext: "Total all time",
               icon: FileText,
-              accent: "text-primary",
-              iconBg: "bg-primary/10",
+              accent: "text-havn-cyan",
+              iconBg: "bg-havn-cyan/10",
               delay: 120,
             },
             {
@@ -535,8 +659,8 @@ export default function DashboardHomePage() {
               value: `${timeSavedHours}h`,
               subtext: "Estimated from auto-fill",
               icon: Timer,
-              accent: "text-havn-success",
-              iconBg: "bg-havn-success/10",
+              accent: "text-havn-cyan",
+              iconBg: "bg-havn-cyan/10",
               delay: 180,
             },
             {
@@ -544,8 +668,8 @@ export default function DashboardHomePage() {
               value: `$${Math.round(totalRevenue).toLocaleString("en-US")}`,
               subtext: "All time",
               icon: DollarSign,
-              accent: "text-havn-success",
-              iconBg: "bg-havn-success/10",
+              accent: "text-havn-cyan",
+              iconBg: "bg-havn-cyan/10",
               delay: 240,
             },
           ].map((card) => (
@@ -566,14 +690,37 @@ export default function DashboardHomePage() {
         </div>
       )}
 
-      {/* Main content — two-column when checklist visible */}
-      {showChecklist ? (
+      {/* Main content — two-column when checklist visible (or during initial load
+          since most new orgs will see the checklist on first paint, so matching
+          that layout up front avoids a jump after data resolves). */}
+      {loading ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <ChecklistSkeleton />
+          <RecentOrdersSection loading={loading} recent={recent} onMarkFulfilled={handleMarkFulfilled} />
+        </div>
+      ) : showChecklist ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <OnboardingChecklist tasks={tasks} onDismiss={handleDismissChecklist} />
           <RecentOrdersSection loading={loading} recent={recent} onMarkFulfilled={handleMarkFulfilled} />
         </div>
       ) : (
-        <RecentOrdersSection loading={loading} recent={recent} onMarkFulfilled={handleMarkFulfilled} />
+        <>
+          {/* Bring-it-back affordance: if the operator dismissed the checklist
+              but still has open tasks, give them a way to re-open it instead
+              of stranding the dismissal forever. */}
+          {checklistDismissed && tasks.some((t) => !t.completed) && (
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={handleShowChecklist}
+                className="text-xs font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+              >
+                Show setup checklist
+              </button>
+            </div>
+          )}
+          <RecentOrdersSection loading={loading} recent={recent} onMarkFulfilled={handleMarkFulfilled} />
+        </>
       )}
     </div>
   );

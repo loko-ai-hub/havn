@@ -10,6 +10,7 @@ import type { AccountType } from "./StepAccountType";
 import { US_STATES } from "@/lib/us-states";
 import { createClient } from "@/lib/supabase/client";
 import { loadEnabledStates } from "@/lib/enabled-states-action";
+import { saveOnboardingDraft, debounce } from "@/lib/onboarding-draft";
 
 export interface CompanyDetailsData {
   companyName: string;
@@ -82,6 +83,7 @@ const MANAGEMENT_SOFTWARE_OPTIONS = [
   { value: "enumerate", label: "Enumerate (Pillera)" },
   { value: "frontsteps", label: "Frontsteps (Caliber)" },
   { value: "jenark", label: "Jenark" },
+  { value: "payhoa", label: "PayHOA" },
   { value: "propertyware", label: "Propertyware" },
   { value: "realmanage", label: "RealManage" },
   { value: "smartwebs", label: "Smartwebs" },
@@ -133,15 +135,73 @@ const StepCompanyDetails = ({
   const [otherSoftware, setOtherSoftware] = useState("");
   const [slugStatus, setSlugStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
   const [enabledStates, setEnabledStates] = useState<Set<string> | null>(null);
+  const [existingOrgId, setExistingOrgId] = useState<string | null>(null);
+
+  // Persist partial form state so operators can see drop-off data (email, company,
+  // state, incumbent software) even when a user abandons before clicking Continue.
+  const debouncedDraftSave = useMemo(
+    () =>
+      debounce((...args: unknown[]) => {
+        void saveOnboardingDraft(args[0] as Parameters<typeof saveOnboardingDraft>[0]);
+      }, 500),
+    []
+  );
+
+  useEffect(() => {
+    debouncedDraftSave({
+      step: 2,
+      company_name: companyName || undefined,
+      portal_slug: portalSlug || undefined,
+      support_email: supportEmail || undefined,
+      support_phone: supportPhone || undefined,
+      city: city || undefined,
+      state: state || undefined,
+      zip: zip || undefined,
+      management_software: managementSoftware || undefined,
+      management_software_other:
+        managementSoftware === "other" ? otherSoftware || undefined : undefined,
+      is_multi_state: isMultiState ?? undefined,
+      additional_states: additionalStates.length > 0 ? additionalStates : undefined,
+    });
+  }, [
+    companyName,
+    portalSlug,
+    supportEmail,
+    supportPhone,
+    city,
+    state,
+    zip,
+    managementSoftware,
+    otherSoftware,
+    isMultiState,
+    additionalStates,
+    debouncedDraftSave,
+  ]);
 
   useEffect(() => {
     void loadEnabledStates().then((states) => setEnabledStates(new Set(states)));
-    // Pre-populate email from auth session
+    // Pre-populate email from auth session and fetch any existing org the user
+    // already owns (e.g. from a prior, interrupted onboarding attempt) so the
+    // slug availability check doesn't flag their own reserved slug as "taken".
     void (async () => {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.email && !supportEmail) {
         setSupportEmail(user.email);
+      }
+      const metadataOrgId = (user?.user_metadata as { organization_id?: string } | null)
+        ?.organization_id;
+      if (metadataOrgId) {
+        setExistingOrgId(metadataOrgId);
+      } else if (user?.id) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profile?.organization_id) {
+          setExistingOrgId(profile.organization_id as string);
+        }
       }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -155,11 +215,14 @@ const StepCompanyDetails = ({
     setSlugStatus("checking");
     const timer = window.setTimeout(async () => {
       const supabase = createClient();
-      const { data, error } = await supabase
+      let query = supabase
         .from("organizations")
         .select("id")
-        .eq("portal_slug", portalSlug)
-        .maybeSingle();
+        .eq("portal_slug", portalSlug);
+      if (existingOrgId) {
+        query = query.neq("id", existingOrgId);
+      }
+      const { data, error } = await query.maybeSingle();
 
       if (error) {
         setSlugStatus("available");
@@ -169,7 +232,7 @@ const StepCompanyDetails = ({
     }, 600);
 
     return () => window.clearTimeout(timer);
-  }, [portalSlug]);
+  }, [portalSlug, existingOrgId]);
 
   const handleCompanyNameChange = useCallback(
     (value: string) => {

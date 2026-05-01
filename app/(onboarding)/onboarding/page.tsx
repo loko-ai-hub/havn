@@ -14,6 +14,7 @@ import StepPortalSetup, { type PortalSetupData } from "@/components/onboarding/S
 import StepInviteAdmins from "@/components/onboarding/StepInviteAdmins";
 import ValuePropsList from "@/components/onboarding/ValuePropsList";
 import { createClient } from "@/lib/supabase/client";
+import { saveOnboardingDraft } from "@/lib/onboarding-draft";
 
 // Dev-only: bypasses org checks so onboarding steps can be tested individually
 const DEV_ONBOARDING_BYPASS = process.env.NODE_ENV === "development";
@@ -30,12 +31,29 @@ const OnboardingPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isStepVisible, setIsStepVisible] = useState(false);
 
-  // Verify the user is actually signed in before onboarding
+  // Verify the user is actually signed in and recover any org they already
+  // created in a prior, interrupted onboarding attempt so step 2 updates that
+  // row instead of trying to create a second one.
   useEffect(() => {
     void (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.replace("/login");
+        return;
+      }
+      const metadataOrgId = (user.user_metadata as { organization_id?: string } | null)
+        ?.organization_id;
+      if (metadataOrgId) {
+        setOrganizationId(metadataOrgId);
+        return;
+      }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("organization_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (profile?.organization_id) {
+        setOrganizationId(profile.organization_id as string);
       }
     })();
   }, [supabase, router]);
@@ -49,6 +67,7 @@ const OnboardingPage = () => {
   const handleAccountTypeSelect = (type: AccountType) => {
     setAccountType(type);
     setCurrentStep(2);
+    void saveOnboardingDraft({ account_type: type, step: 2 });
   };
 
   const handleCompanyDetailsContinue = async (data: CompanyDetailsData) => {
@@ -71,26 +90,45 @@ const OnboardingPage = () => {
         throw new Error(userError?.message ?? "Your session has expired. Please log in again.");
       }
 
-      const { data: org, error: orgError } = await supabase
-        .from("organizations")
-        .insert({
-          name: data.companyName,
-          account_type: accountType,
-          portal_slug: data.portalSlug,
-          support_email: data.supportEmail,
-          support_phone: data.supportPhone,
-          city: data.city.trim() || null,
-          state: data.state.trim() || null,
-          zip: data.zip.trim() || null,
-        })
-        .select("id")
-        .single();
-      if (orgError || !org) {
-        throw new Error(orgError?.message ?? "Failed creating organization.");
-      }
+      const orgPayload = {
+        name: data.companyName,
+        account_type: accountType,
+        portal_slug: data.portalSlug,
+        support_email: data.supportEmail,
+        support_phone: data.supportPhone,
+        city: data.city.trim() || null,
+        state: data.state.trim() || null,
+        zip: data.zip.trim() || null,
+        management_software: data.managementSoftware?.trim() || null,
+        management_software_other:
+          data.managementSoftware === "other"
+            ? data.managementSoftwareOther?.trim() || null
+            : null,
+      };
 
-      const organization_id = org.id as string;
-      setOrganizationId(organization_id);
+      let organization_id: string;
+      if (organizationId) {
+        // Recovery path — user already has an org from a prior interrupted attempt.
+        const { error: updateError } = await supabase
+          .from("organizations")
+          .update(orgPayload)
+          .eq("id", organizationId);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+        organization_id = organizationId;
+      } else {
+        const { data: org, error: orgError } = await supabase
+          .from("organizations")
+          .insert(orgPayload)
+          .select("id")
+          .single();
+        if (orgError || !org) {
+          throw new Error(orgError?.message ?? "Failed creating organization.");
+        }
+        organization_id = org.id as string;
+        setOrganizationId(organization_id);
+      }
 
       const { error: metadataError } = await supabase.auth.updateUser({
         data: { organization_id },
@@ -247,6 +285,12 @@ const OnboardingPage = () => {
         if (error) throw error;
       }
 
+      void saveOnboardingDraft({
+        invite_emails: emails,
+        completed_at: new Date().toISOString(),
+        step: 5,
+      });
+
       router.push("/onboarding/complete");
     } catch (error) {
       const message = error instanceof Error ? error.message : typeof error === "object" && error !== null && "message" in error ? String((error as { message: string }).message) : "Failed to send invitations.";
@@ -263,7 +307,7 @@ const OnboardingPage = () => {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
-      <div className="hidden w-1/3 shrink-0 md:block">
+      <div className="hidden w-80 shrink-0 md:block">
         <OnboardingSidebar
           currentStep={currentStep}
           totalSteps={5}
@@ -271,7 +315,7 @@ const OnboardingPage = () => {
           onStepClick={setCurrentStep}
         />
       </div>
-      <div className="relative flex-1 overflow-y-auto">
+      <div className="relative flex flex-1 flex-col overflow-y-auto">
         {currentStep > 1 && (
           <button
             onClick={() => setCurrentStep(currentStep - 1)}
@@ -283,7 +327,7 @@ const OnboardingPage = () => {
         )}
         <div
           key={currentStep}
-          className={`transition-all duration-200 ease-out ${
+          className={`flex flex-1 flex-col transition-all duration-200 ease-out ${
             isStepVisible ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
           }`}
         >

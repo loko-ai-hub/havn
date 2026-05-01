@@ -39,24 +39,24 @@ const options: {
 
 const StepAccountType = ({ onSelect }: StepAccountTypeProps) => {
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center px-8 py-10 md:h-full md:py-0">
-      <div className="w-full max-w-lg">
+    <div className="flex flex-1 items-center justify-center px-8 py-16 md:px-16 md:py-20">
+      <div className="w-full max-w-2xl">
         <div className="mb-10">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
             Who are you setting up Havn for?
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Based on your answer, we will setup your profile to support a single community or
+          <p className="mt-3 text-base text-muted-foreground">
+            Based on your answer, we&rsquo;ll set up your profile to support a single community or
             multiple.
           </p>
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-4">
           {options.map((opt) => (
             <button
               key={opt.type}
               onClick={() => onSelect(opt.type)}
-              className="group flex w-full items-start gap-5 rounded-xl border-2 border-border bg-card p-6 text-left transition-all hover:border-havn-navy-light hover:shadow-md"
+              className="group flex w-full items-start gap-6 rounded-xl border-2 border-border bg-card p-7 text-left transition-all hover:border-havn-navy-light hover:shadow-md"
             >
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-havn-surface text-foreground">
                 <opt.icon className="h-7 w-7" />

@@ -41,22 +41,31 @@ export async function getPrefilledFields(
   const masterTypeKey = order.master_type_key as string | null;
   if (!masterTypeKey) return { error: "Order has no document type." };
 
-  const template = getTemplate(masterTypeKey);
-  if (!template) return { error: `No template for document type: ${masterTypeKey}` };
-
   // Resolve community — use order.community_id or fall back to most recent for org
   let communityId = order.community_id as string | null;
+  let communityState: string | null = null;
   if (!communityId) {
     const { data: community } = await admin
       .from("communities")
-      .select("id")
+      .select("id, state")
       .eq("organization_id", order.organization_id)
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     communityId = (community?.id as string) ?? null;
+    communityState = (community?.state as string | null) ?? null;
+  } else {
+    const { data: community } = await admin
+      .from("communities")
+      .select("state")
+      .eq("id", communityId)
+      .maybeSingle();
+    communityState = (community?.state as string | null) ?? null;
   }
+
+  const template = getTemplate(masterTypeKey, communityState);
+  if (!template) return { error: `No template for document type: ${masterTypeKey}` };
 
   // If there's a saved draft, use it directly
   const draftFields = order.draft_fields as Record<string, string | null> | null;

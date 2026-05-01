@@ -14,7 +14,7 @@ export default async function DashboardRequestReviewPage({
   params: Promise<{ orderId: string }>;
 }) {
   const { orderId } = await params;
-  const { organizationId } = await requireDashboardOrg();
+  const { organizationId, userName, email } = await requireDashboardOrg();
   const admin = createAdminClient();
 
   // Verify order belongs to this org
@@ -75,6 +75,8 @@ export default async function DashboardRequestReviewPage({
             name: c.legal_name as string,
           }))}
           isFulfilled={isFulfilled}
+          currentUserName={userName}
+          currentUserEmail={email}
         />
       )}
     </div>

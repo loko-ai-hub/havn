@@ -1,29 +1,47 @@
 "use client";
 
 import * as React from "react";
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
 
-function TooltipProvider({ children }: { children: React.ReactNode; delayDuration?: number }) {
-  return <>{children}</>;
+function TooltipProvider({
+  delayDuration = 200,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
+  return <TooltipPrimitive.Provider delayDuration={delayDuration} {...props} />;
 }
 
-function Tooltip({ children }: { children: React.ReactNode }) {
-  return <span className="contents">{children}</span>;
+function Tooltip(props: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  return <TooltipPrimitive.Root {...props} />;
 }
 
-function TooltipTrigger({ children }: { children: React.ReactNode; asChild?: boolean }) {
-  return <>{children}</>;
+function TooltipTrigger(props: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  return <TooltipPrimitive.Trigger {...props} />;
 }
 
 function TooltipContent({
-  children,
   className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  side?: "top" | "right" | "bottom" | "left";
-}) {
-  return <span className={cn("hidden", className)}>{children}</span>;
+  sideOffset = 6,
+  children,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+  return (
+    <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Content
+        sideOffset={sideOffset}
+        className={cn(
+          "z-50 overflow-hidden rounded-md bg-havn-navy px-3 py-1.5 text-xs leading-relaxed text-white shadow-md",
+          "animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          "data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1",
+          className
+        )}
+        {...props}
+      >
+        {children}
+        <TooltipPrimitive.Arrow className="fill-havn-navy" />
+      </TooltipPrimitive.Content>
+    </TooltipPrimitive.Portal>
+  );
 }
 
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };

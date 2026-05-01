@@ -90,6 +90,7 @@ export async function createPaymentIntent(orderId: string) {
     .from("document_orders")
     .update({
       stripe_payment_intent_id: paymentIntent.id,
+      platform_fee_cents: applicationFeeAmount,
     })
     .eq("id", orderId);
 

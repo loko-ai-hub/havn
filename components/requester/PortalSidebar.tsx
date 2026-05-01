@@ -73,7 +73,7 @@ export default function PortalSidebar({
       style={{ backgroundColor: normalizeHex(primaryColor), color: textColor }}
     >
       <div className="mb-8 flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-lg bg-white/15">
+        <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-white/15">
           {logoUrl ? (
             <Image src={logoUrl} alt={`${companyName} logo`} width={44} height={44} className="h-full w-full object-cover" />
           ) : (

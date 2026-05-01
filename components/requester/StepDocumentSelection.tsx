@@ -5,7 +5,15 @@ import {
   getDocumentFee,
   type RequesterType,
 } from "@/lib/portal-data";
-import { ArrowRight, Check, FileText, Upload } from "lucide-react";
+import { ArrowRight, Check, FileText, Loader2, Upload } from "lucide-react";
+
+import { uploadThirdPartyForm } from "@/app/r/[slug]/actions";
+
+export type CustomFormUpload = {
+  path: string;
+  filename: string;
+  mimeType: string;
+};
 
 interface StepDocumentSelectionProps {
   requesterType: RequesterType;
@@ -13,7 +21,10 @@ interface StepDocumentSelectionProps {
   primaryColor: string;
   /** If provided, only show documents whose id is in this list */
   availableDocIds?: string[];
+  /** Most recent 3P upload descriptor — null when nothing uploaded yet. */
+  customFormUpload: CustomFormUpload | null;
   onToggle: (docId: string) => void;
+  onCustomFormUploaded: (upload: CustomFormUpload | null) => void;
   onContinue: () => void;
   onBack: () => void;
 }
@@ -21,11 +32,41 @@ interface StepDocumentSelectionProps {
 const RESALE_IDS = ["resale_cert", "resale_cert_update"];
 const LENDER_DOC_IDS = ["lender_questionnaire", "custom_company_form"] as const;
 
-const StepDocumentSelection = ({ requesterType, selected, primaryColor, availableDocIds, onToggle, onContinue, onBack }: StepDocumentSelectionProps) => {
+const StepDocumentSelection = ({ requesterType, selected, primaryColor, availableDocIds, customFormUpload, onToggle, onCustomFormUploaded, onContinue, onBack }: StepDocumentSelectionProps) => {
   const isHomeowner = requesterType === "homeowner";
   const isLender = requesterType === "lender_title";
-  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(customFormUpload?.filename ?? null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFilePick = async (file: File | null) => {
+    setUploadError(null);
+    if (!file) {
+      setUploadedFileName(null);
+      onCustomFormUploaded(null);
+      return;
+    }
+    setUploadedFileName(file.name);
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await uploadThirdPartyForm(formData);
+      if ("error" in result) {
+        setUploadError(result.error);
+        setUploadedFileName(null);
+        onCustomFormUploaded(null);
+        return;
+      }
+      onCustomFormUploaded(result.upload);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed.");
+      setUploadedFileName(null);
+      onCustomFormUploaded(null);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const availableDocs = isLender
     ? [
@@ -157,13 +198,25 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
                     type="file"
                     accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     className="mt-2 block w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+                    disabled={uploading}
                     onChange={(event) => {
-                      setUploadedFileName(event.target.files?.[0]?.name ?? null);
-                      if (uploadError) setUploadError(null);
+                      const picked = event.target.files?.[0] ?? null;
+                      void handleFilePick(picked);
                     }}
                   />
-                  {uploadedFileName ? (
-                    <p className="mt-2 text-xs text-muted-foreground">Selected: {uploadedFileName}</p>
+                  {uploading ? (
+                    <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Uploading…
+                    </p>
+                  ) : uploadedFileName && customFormUpload ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Uploaded: {uploadedFileName}
+                    </p>
+                  ) : uploadedFileName ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Selected: {uploadedFileName}
+                    </p>
                   ) : null}
                   {uploadError ? <p className="mt-2 text-xs text-destructive">{uploadError}</p> : null}
                 </div>
@@ -203,15 +256,22 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
         </button>
         <button
           onClick={() => {
-            if (isLender && selected.includes("custom_company_form") && !uploadedFileName) {
-              setUploadError("Please upload your questionnaire to continue.");
-              return;
+            if (isLender && selected.includes("custom_company_form")) {
+              if (uploading) {
+                setUploadError("Please wait for your file to finish uploading.");
+                return;
+              }
+              if (!customFormUpload) {
+                setUploadError("Please upload your questionnaire to continue.");
+                return;
+              }
             }
             setUploadError(null);
             onContinue();
           }}
-          className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg px-8 text-base font-semibold text-white transition-colors hover:opacity-90"
+          className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg px-8 text-base font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
           style={{ backgroundColor: primaryColor }}
+          disabled={uploading}
         >
           Continue
           <ArrowRight className="h-4 w-4" />
