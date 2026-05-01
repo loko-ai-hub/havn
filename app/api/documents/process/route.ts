@@ -539,6 +539,73 @@ export async function POST(request: Request) {
             }
           }
         }
+
+        // Insurance Certificate autofill: pull agent info from extractedFields
+        // and merge into community_contacts under contact_type='insurance_agent'.
+        // Only fill fields that are currently null/empty so manual entries
+        // aren't clobbered by what the OCR pulled.
+        if (finalCategory === "Insurance Certificate") {
+          try {
+            const fields = pipelineResult.extractedFields ?? {};
+            const pick = (k: string): string | null => {
+              const v = fields[k];
+              if (typeof v !== "string") return null;
+              const trimmed = v.trim();
+              return trimmed.length > 0 ? trimmed : null;
+            };
+
+            const extractedAgent = {
+              name: pick("insurance_agent_name"),
+              role:
+                pick("insurance_agent_company") ??
+                pick("insurance_company"),
+              address: pick("insurance_agent_address"),
+              phone: pick("insurance_agent_phone"),
+              email: pick("insurance_agent_email"),
+            };
+
+            const hasAnything = Object.values(extractedAgent).some((v) => v !== null);
+            if (hasAnything) {
+              const { data: existing } = await admin
+                .from("community_contacts")
+                .select("name, role, address, phone, email")
+                .eq("community_id", finalizedCommunityId)
+                .eq("contact_type", "insurance_agent")
+                .maybeSingle();
+
+              const merged = {
+                community_id: finalizedCommunityId,
+                contact_type: "insurance_agent" as const,
+                name: existing?.name || extractedAgent.name,
+                role: existing?.role || extractedAgent.role,
+                address: existing?.address || extractedAgent.address,
+                phone: existing?.phone || extractedAgent.phone,
+                email: existing?.email || extractedAgent.email,
+                updated_at: new Date().toISOString(),
+              };
+
+              const { error: contactError } = await admin
+                .from("community_contacts")
+                .upsert(merged, { onConflict: "community_id,contact_type" });
+
+              if (contactError) {
+                console.warn(
+                  "[DOC_PROCESS] insurance-agent autofill failed:",
+                  contactError.message
+                );
+              } else {
+                console.log(
+                  `[DOC_PROCESS] insurance-agent autofill applied for ${finalizedCommunityId}`
+                );
+              }
+            }
+          } catch (autofillErr) {
+            console.warn(
+              "[DOC_PROCESS] insurance-agent autofill exception (non-fatal):",
+              autofillErr
+            );
+          }
+        }
       }
     } catch (err) {
       console.error("[DOC_PROCESS] OCR pipeline failed:", err);

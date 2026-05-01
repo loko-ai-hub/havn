@@ -46,10 +46,15 @@ Extract these fields if present:
 - management_contact_name
 - management_contact_email
 - management_contact_phone
-- insurance_company
+- insurance_company (the underwriting carrier — e.g. "State Farm", "Travelers")
 - insurance_policy_number
 - insurance_expiry_date
 - insurance_liability_amount
+- insurance_agent_name (the broker / producer / agent listed on the COI as the contact, NOT the underwriter)
+- insurance_agent_company (the brokerage / agency that placed the policy — distinct from the underwriting carrier)
+- insurance_agent_email
+- insurance_agent_phone
+- insurance_agent_address (the agent's mailing address, if shown)
 - reserve_fund_balance
 - fiscal_year_end
 - total_units
