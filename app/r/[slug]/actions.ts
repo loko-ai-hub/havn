@@ -58,7 +58,17 @@ function buildAddress(order: PortalOrder) {
   return [first, second].filter(Boolean).join(", ");
 }
 
-function getBaseFee(docId: string) {
+// Server-side fee resolution. Looks up the org's configured base_fee in
+// document_request_fees first; falls back to the static PORTAL_DOCUMENTS
+// default only when the org hasn't priced that doc type yet.
+function getBaseFee(
+  docId: string,
+  feesByMasterType: Record<string, number | null>
+): number {
+  const masterKey = DOC_TYPE_MAP[docId];
+  if (masterKey && typeof feesByMasterType[masterKey] === "number") {
+    return feesByMasterType[masterKey] as number;
+  }
   if (docId === "custom_company_form") return 200;
   return PORTAL_DOCUMENTS.find((doc) => doc.id === docId)?.fee ?? 0;
 }
@@ -135,6 +145,21 @@ export async function submitOrder(input: {
   const deliveryFee = getDeliveryFee(order.deliveryType);
   const rushFeePerRow = deliveryFee / selectedDocuments.length;
   const propertyAddress = buildAddress(order);
+
+  // Pull the org's configured per-doc-type base fees so we charge what
+  // appears in the org's pricing settings, not the static defaults.
+  const adminForFees = createAdminClient();
+  const { data: feeRows } = await adminForFees
+    .from("document_request_fees")
+    .select("master_type_key, base_fee")
+    .eq("organization_id", organizationId);
+  const feesByMasterType: Record<string, number | null> = {};
+  for (const row of (feeRows ?? []) as Array<{
+    master_type_key: string;
+    base_fee: number | null;
+  }>) {
+    feesByMasterType[row.master_type_key] = row.base_fee;
+  }
   const baseNotes = order.addOns.length > 0 ? order.addOns.join(", ") : null;
   const closingDate = order.closingDate
     ? new Date(order.closingDate).toISOString().slice(0, 10)
@@ -186,7 +211,7 @@ export async function submitOrder(input: {
   }
 
   const rows = selectedDocuments.map((docId) => {
-    const baseFee = getBaseFee(docId);
+    const baseFee = getBaseFee(docId, feesByMasterType);
     const rushFee = Number(rushFeePerRow.toFixed(2));
     const isFreePayoff = docId === "demand_letter" && priorCert !== null;
     const finalBaseFee = isFreePayoff ? 0 : baseFee;

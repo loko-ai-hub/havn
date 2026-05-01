@@ -15,6 +15,21 @@ export type OrgPortalData = {
   is_active: boolean | null;
   /** master_type_key values the org has configured fees for */
   availableDocTypes: string[];
+  /**
+   * Per-master_type_key fee config keyed by master_type_key.
+   * Source of truth for what the requester portal charges; trumps any
+   * hardcoded defaults in `lib/portal-data.ts`.
+   */
+  feesByMasterType: Record<
+    string,
+    {
+      base_fee: number | null;
+      rush_3day_fee: number | null;
+      rush_next_day_fee: number | null;
+      rush_same_day_fee: number | null;
+      standard_turnaround_days: number | null;
+    }
+  >;
 };
 
 const RequesterPortalOrgContext = createContext<OrgPortalData | null>(null);
@@ -121,6 +136,7 @@ export function usePortalOrg() {
     logoUrl: org.logo_url,
     portalTagline: org.portal_tagline,
     availableDocTypes: org.availableDocTypes,
+    feesByMasterType: org.feesByMasterType,
   };
 }
 

@@ -35,13 +35,36 @@ export default async function RequesterPortalLayout({
 
   const { data: feeRows } = await supabase
     .from("document_request_fees")
-    .select("master_type_key")
+    .select(
+      "master_type_key, base_fee, rush_3day_fee, rush_next_day_fee, rush_same_day_fee, standard_turnaround_days"
+    )
     .eq("organization_id", org.id);
 
-  const availableDocTypes = (feeRows ?? []).map((f) => f.master_type_key as string);
+  type FeeRow = {
+    master_type_key: string;
+    base_fee: number | null;
+    rush_3day_fee: number | null;
+    rush_next_day_fee: number | null;
+    rush_same_day_fee: number | null;
+    standard_turnaround_days: number | null;
+  };
+  const rows = (feeRows ?? []) as FeeRow[];
+  const availableDocTypes = rows.map((f) => f.master_type_key);
+  const feesByMasterType: OrgPortalData["feesByMasterType"] = {};
+  for (const r of rows) {
+    feesByMasterType[r.master_type_key] = {
+      base_fee: r.base_fee,
+      rush_3day_fee: r.rush_3day_fee,
+      rush_next_day_fee: r.rush_next_day_fee,
+      rush_same_day_fee: r.rush_same_day_fee,
+      standard_turnaround_days: r.standard_turnaround_days,
+    };
+  }
 
   return (
-    <RequesterPortalOrgProvider org={{ ...(org as OrgPortalData), availableDocTypes }}>
+    <RequesterPortalOrgProvider
+      org={{ ...(org as OrgPortalData), availableDocTypes, feesByMasterType }}
+    >
       <RequesterPortalFrame slug={slug} org={org as OrgPortalData}>
         {children}
       </RequesterPortalFrame>

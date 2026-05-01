@@ -2,12 +2,26 @@ import { useState } from "react";
 import {
   PORTAL_DOCUMENTS,
   formatCurrency,
-  getDocumentFee,
   type RequesterType,
 } from "@/lib/portal-data";
 import { ArrowRight, Check, FileText, Loader2, Upload } from "lucide-react";
 
 import { uploadThirdPartyForm } from "@/app/r/[slug]/actions";
+import { usePortalOrg } from "@/components/requester/RequesterPortalOrgContext";
+
+// Maps the requester-portal `docId` (e.g. "demand_letter", "resale_cert")
+// to the canonical `master_type_key` used by document_request_fees and the
+// rest of the platform. Mirrors DOC_TYPE_MAP in app/r/[slug]/actions.ts —
+// keep them in sync.
+const PORTAL_ID_TO_MASTER_TYPE: Record<string, string> = {
+  resale_cert: "resale_certificate",
+  resale_cert_update: "certificate_update",
+  lender_questionnaire: "lender_questionnaire",
+  custom_company_form: "lender_questionnaire",
+  estoppel: "estoppel_letter",
+  governing_docs: "governing_documents",
+  demand_letter: "demand_letter",
+};
 
 export type CustomFormUpload = {
   path: string;
@@ -38,6 +52,19 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
   const isLender = requesterType === "lender_title";
   const isTitleCompany = requesterType === "title_company";
   const isFormUploadFlow = isLender || isTitleCompany;
+
+  // Org-configured fees from document_request_fees, exposed via the portal
+  // org context. Falls back to the static defaults in PORTAL_DOCUMENTS only
+  // when the org hasn't set a price yet for that doc type.
+  const portalOrg = usePortalOrg();
+  const feesByMasterType = portalOrg?.feesByMasterType ?? {};
+  const feeFor = (portalDocId: string, fallback: number): number => {
+    const masterKey = PORTAL_ID_TO_MASTER_TYPE[portalDocId];
+    if (!masterKey) return fallback;
+    const cfg = feesByMasterType[masterKey];
+    if (cfg && typeof cfg.base_fee === "number") return cfg.base_fee;
+    return fallback;
+  };
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(customFormUpload?.filename ?? null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -78,7 +105,7 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
           name: "Havn Lender Questionnaire",
           description:
             "Use Havn's standard lender questionnaire form, accepted by most lenders and agencies.",
-          fee: 150,
+          fee: feeFor("lender_questionnaire", 150),
           required: false,
           availableTo: ["lender_title"] as RequesterType[],
         },
@@ -87,7 +114,7 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
           name: "Upload Your Own Form",
           description:
             "Use your company's specific questionnaire. Upload a PDF or DOCX file.",
-          fee: 200,
+          fee: feeFor("custom_company_form", 200),
           required: false,
           availableTo: ["lender_title"] as RequesterType[],
         },
@@ -99,7 +126,7 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
             name: "Demand / Payoff Letter",
             description:
               "Payoff statement covering current dues, transfer fees, and amounts owed at closing.",
-            fee: 100,
+            fee: feeFor("demand_letter", 100),
             required: false,
             availableTo: ["title_company"] as RequesterType[],
           },
@@ -108,7 +135,7 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
             name: "Upload Your Own Form",
             description:
               "Use your title company's specific payoff/status format. Upload a PDF or DOCX file.",
-            fee: 200,
+            fee: feeFor("custom_company_form", 200),
             required: false,
             availableTo: ["title_company"] as RequesterType[],
           },
@@ -118,16 +145,20 @@ const StepDocumentSelection = ({ requesterType, selected, primaryColor, availabl
           if (!isHomeowner && d.id === "resale_cert_update") return false;
           if (availableDocIds && !availableDocIds.includes(d.id)) return false;
           return true;
-        });
+        }).map((d) => ({
+          ...d,
+          fee: feeFor(d.id, d.fee),
+        }));
 
   const handleToggle = (docId: string) => onToggle(docId);
 
-  const total = isFormUploadFlow
-    ? availableDocs.reduce(
-        (sum, doc) => (selected.includes(doc.id) ? sum + doc.fee : sum),
-        0
-      )
-    : getDocumentFee(selected.filter((id) => id !== "custom_company_form"));
+  // Sum fees from `availableDocs` directly — they already incorporate the
+  // org's configured prices via `feeFor()` so the running total matches what
+  // the requester sees per row.
+  const total = availableDocs.reduce(
+    (sum, doc) => (selected.includes(doc.id) ? sum + doc.fee : sum),
+    0
+  );
 
   const headingTitle = isLender
     ? "Lender Questionnaire"
