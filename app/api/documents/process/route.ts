@@ -392,6 +392,9 @@ export async function POST(request: Request) {
     let finalCategory: string | null = null;
     let finalOcrStatus: "complete" | "failed" = "failed";
     let inferredCategory: string | undefined;
+    // Track the renamed filename so the client can apply it optimistically
+    // without waiting on realtime (which has been flaky in prod).
+    let finalFilename: string | undefined;
     let pipelineErrorMessage: string | undefined;
 
     try {
@@ -489,6 +492,9 @@ export async function POST(request: Request) {
 
         await admin.from("community_documents").update(finalUpdate).eq("id", documentId);
         finalOcrStatus = "complete";
+        if (typeof finalUpdate.original_filename === "string") {
+          finalFilename = finalUpdate.original_filename;
+        }
 
         // Annual / periodic categories (Budget, Financial Reports, Reserve
         // Study, Insurance Certificate) auto-archive prior active versions
@@ -548,6 +554,7 @@ export async function POST(request: Request) {
       documentId,
       ocrStatus: finalOcrStatus,
       finalCategory,
+      finalFilename,
       inferredCategory,
       ocrError: pipelineErrorMessage,
       autoMatchedCommunityId: communityMatchConfidence ? communityId : null,

@@ -427,6 +427,7 @@ export default function CommunityDocumentsPage() {
           existingCategory?: string | null;
           inferredCategory?: string | null;
           finalCategory?: string | null;
+          finalFilename?: string | null;
           ocrStatus?: "complete" | "failed" | "processing" | "pending";
           ocrError?: string;
         };
@@ -475,6 +476,7 @@ export default function CommunityDocumentsPage() {
         ) {
           const finalRowOcrStatus = result.ocrStatus;
           const finalRowCategory = result.finalCategory ?? null;
+          const finalRowFilename = result.finalFilename ?? pf.file.name;
           const documentId = result.documentId;
           setDocuments((prev) => {
             const idx = prev.findIndex((d) => d.id === documentId);
@@ -484,6 +486,7 @@ export default function CommunityDocumentsPage() {
                 ...next[idx],
                 ocr_status: finalRowOcrStatus,
                 document_category: finalRowCategory,
+                original_filename: finalRowFilename,
               };
               return next;
             }
@@ -491,7 +494,7 @@ export default function CommunityDocumentsPage() {
               id: documentId,
               community_id: community.id,
               organization_id: community.organization_id,
-              original_filename: pf.file.name,
+              original_filename: finalRowFilename,
               document_category: finalRowCategory,
               ocr_status: finalRowOcrStatus,
               page_count: null,
