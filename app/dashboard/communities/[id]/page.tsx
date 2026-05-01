@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   FileText,
   MapPin,
+  Sparkles,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -302,15 +303,22 @@ export default async function CommunityDetailPage({
       </div>
 
       <div className="mt-6 space-y-6">
-        {/* Zero-units banner */}
-        {(!c.unit_count || c.unit_count === 0) && (
+        {/* Priority banner: documents first (required), then a softer
+            optional nudge for the property list. Mirrors the communities
+            list page so the experience is consistent across views. */}
+        {missingCount > 0 && (
           <div className="flex items-center justify-between gap-4 rounded-xl border border-havn-amber/40 bg-havn-amber/10 px-5 py-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
               <div>
-                <p className="text-sm font-semibold text-amber-800">Property addresses required</p>
+                <p className="text-sm font-semibold text-amber-800">
+                  {missingCount === 1
+                    ? "1 required document is missing"
+                    : `${missingCount} required documents are missing`}
+                </p>
                 <p className="mt-0.5 text-xs text-amber-700">
-                  Upload property addresses so future inbound requests are auto-assigned to the community manager.
+                  Upload governing docs so Havn can auto-fill order forms when
+                  requests come in for this community.
                 </p>
               </div>
             </div>
@@ -320,6 +328,25 @@ export default async function CommunityDetailPage({
             >
               Upload Documents
             </Link>
+          </div>
+        )}
+
+        {missingCount === 0 && (!c.unit_count || c.unit_count === 0) && (
+          <div className="flex items-start gap-3 rounded-xl border border-havn-cyan/30 bg-havn-cyan/5 px-5 py-4">
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-havn-cyan-deep" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Add a property list to enhance auto-routing{" "}
+                <span className="text-xs font-normal text-muted-foreground">
+                  (optional)
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                This community doesn&apos;t have a property list on file yet.
+                Adding addresses lets Havn route inbound requests to the right
+                manager automatically.
+              </p>
+            </div>
           </div>
         )}
 
