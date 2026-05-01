@@ -305,8 +305,14 @@ export default function BulkUploadModal({ orgId, onClose, onDone }: Props) {
         toast.error(result.error);
         return;
       }
+      const matched = "matched" in result ? result.matched : 0;
+      const total = "total" in result ? result.total : validRows.length;
+      const matchSuffix =
+        matched > 0
+          ? ` ${matched} of ${total} manager${total === 1 ? "" : "s"} auto-linked to a team member.`
+          : "";
       toast.success(
-        `${validRows.length} ${validRows.length === 1 ? "community" : "communities"} imported.`
+        `${validRows.length} ${validRows.length === 1 ? "community" : "communities"} imported.${matchSuffix}`
       );
       onDone();
     });

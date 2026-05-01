@@ -135,7 +135,7 @@ export async function bulkAddCommunities(
     community_type: string;
     manager_name: string;
   }>
-) {
+): Promise<{ ok: true; matched: number; total: number } | { error: string }> {
   const { organizationId } = await requireDashboardOrg();
   if (organizationId !== orgId) {
     return { error: "You cannot add communities for this organization." };
@@ -143,24 +143,79 @@ export async function bulkAddCommunities(
 
   const admin = createAdminClient();
 
-  const { error } = await admin.from("communities").insert(
-    rows.map((r) => ({
+  // Build a normalized lookup of org users so we can try to wire imported
+  // manager_name strings to a real user_id. Match priority:
+  //   1. Email match (if the imported name happens to be an email address)
+  //   2. Exact case-insensitive full-name match
+  // Anything that doesn't match cleanly stays as a free-text manager_name.
+  const { data: profiles } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("organization_id", orgId);
+  const profileIds = ((profiles ?? []) as Array<{ id: string }>).map((p) => p.id);
+
+  const userResults = await Promise.all(
+    profileIds.map((id) => admin.auth.admin.getUserById(id))
+  );
+
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+
+  const byName = new Map<string, { userId: string; fullName: string }>();
+  const byEmail = new Map<string, { userId: string; fullName: string }>();
+  for (const r of userResults) {
+    if (r.error || !r.data.user) continue;
+    const u = r.data.user;
+    const meta = (u.user_metadata ?? {}) as Record<string, unknown>;
+    const fullName =
+      String(meta.full_name ?? meta.name ?? "").trim() ||
+      u.email?.split("@")[0] ||
+      "";
+    if (fullName) {
+      byName.set(norm(fullName), { userId: u.id, fullName });
+    }
+    if (u.email) {
+      byEmail.set(norm(u.email), { userId: u.id, fullName });
+    }
+  }
+
+  let matched = 0;
+
+  const insertRows = rows.map((r) => {
+    const raw = (r.manager_name ?? "").trim();
+    let managerUserId: string | null = null;
+    let managerName: string | null = raw || null;
+
+    if (raw) {
+      const lower = norm(raw);
+      const hit = byEmail.get(lower) ?? byName.get(lower);
+      if (hit) {
+        managerUserId = hit.userId;
+        // Prefer the canonical full-name from the user's profile so display
+        // strings stay consistent across the app.
+        managerName = hit.fullName || raw;
+        matched++;
+      }
+    }
+
+    return {
       organization_id: orgId,
       legal_name: r.legal_name,
       city: r.city,
       state: r.state,
       zip: r.zip,
       community_type: r.community_type || "HOA",
-      manager_name: r.manager_name || null,
+      manager_user_id: managerUserId,
+      manager_name: managerName,
       unit_count: 0,
       status: "active",
-    }))
-  );
+    };
+  });
 
+  const { error } = await admin.from("communities").insert(insertRows);
   if (error) return { error: error.message };
 
   revalidatePath("/dashboard/communities");
-  return { ok: true };
+  return { ok: true, matched, total: rows.length };
 }
 
 export async function archiveCommunity(id: string, status: "active" | "archived") {
