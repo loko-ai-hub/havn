@@ -8,6 +8,7 @@ import {
   type ContactType,
 } from "@/lib/community-contact-mapping";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { parseVantacaWorkbook } from "@/lib/vantaca-import";
 
 import { revalidatePath } from "next/cache";
 
@@ -329,6 +330,103 @@ export async function listOrganizationUsers(): Promise<OrgUserOption[]> {
     })
     .filter((m): m is OrgUserOption => m !== null)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+// ─── Vantaca homeowner import ───────────────────────────────────────────────
+
+const VANTACA_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+
+export async function importVantacaProperties(input: {
+  communityId: string;
+  filename: string;
+  base64: string;
+}): Promise<
+  | { ok: true; imported: number; preview: string[] }
+  | { error: string }
+> {
+  const { organizationId } = await requireDashboardOrg();
+  const admin = createAdminClient();
+
+  const buffer = Buffer.from(input.base64, "base64");
+  if (buffer.length === 0) return { error: "Empty file." };
+  if (buffer.length > VANTACA_MAX_BYTES) {
+    return {
+      error: `File is ${(buffer.length / 1024 / 1024).toFixed(1)}MB. Limit is 10MB.`,
+    };
+  }
+
+  // Verify community ownership and pull its city/state/zip — Vantaca only
+  // gives us street; we inherit the rest from the community location.
+  const { data: community, error: commErr } = await admin
+    .from("communities")
+    .select("id, city, state, zip")
+    .eq("id", input.communityId)
+    .eq("organization_id", organizationId)
+    .single();
+  if (commErr || !community) return { error: "Community not found." };
+
+  let parsed: ReturnType<typeof parseVantacaWorkbook>;
+  try {
+    parsed = parseVantacaWorkbook(buffer);
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Could not read this file.",
+    };
+  }
+
+  if (parsed.length === 0) {
+    return {
+      error: "No homeowner rows found. Verify the file is a Vantaca homeowner export.",
+    };
+  }
+
+  // Replace-all semantics: nuke this community's existing units, then insert
+  // the freshly-parsed file. Replace-all keeps Vantaca authoritative.
+  const { error: delErr } = await admin
+    .from("community_units")
+    .delete()
+    .eq("community_id", input.communityId);
+  if (delErr) return { error: delErr.message };
+
+  const nowIso = new Date().toISOString();
+  const insertRows = parsed.map((u) => ({
+    community_id: input.communityId,
+    account_number: u.accountNumber,
+    property_street: u.propertyStreet || null,
+    property_city: community.city ?? null,
+    property_state: community.state ?? null,
+    property_zip: community.zip ?? null,
+    mailing_street: u.mailingStreet || null,
+    mailing_city: u.mailingSameAsProperty ? community.city ?? null : null,
+    mailing_state: u.mailingSameAsProperty ? community.state ?? null : null,
+    mailing_zip: u.mailingSameAsProperty ? community.zip ?? null : null,
+    mailing_same_as_property: u.mailingSameAsProperty,
+    owner_names: u.ownerNames,
+    primary_email: u.primaryEmail,
+    additional_emails: u.additionalEmails,
+    phone: u.phone,
+    lease_status: u.leaseStatus,
+    raw_import: u.rawRow,
+    imported_at: nowIso,
+  }));
+
+  const { error: insErr } = await admin
+    .from("community_units")
+    .insert(insertRows);
+  if (insErr) return { error: insErr.message };
+
+  revalidatePath(`/dashboard/communities/${input.communityId}`);
+
+  return {
+    ok: true,
+    imported: parsed.length,
+    preview: parsed
+      .slice(0, 3)
+      .map(
+        (u) =>
+          `${u.accountNumber ?? "?"} — ${u.ownerNames.join(" / ") || "?"} — ${u.propertyStreet || "?"}`
+      ),
+  };
 }
 
 export async function assignCommunityManager(

@@ -23,6 +23,7 @@ import ArchiveRestoreCommunityButton from "../archive-restore-button";
 import { listOrganizationUsers } from "./actions";
 import CommunityContactCard from "./contact-card";
 import ManagerAssignmentCard from "./manager-assignment-card";
+import CommunityPropertiesCard from "./properties-card";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,17 @@ export default async function CommunityDetailPage({
       .in("field_key", ALL_CONTACT_REGISTRY_KEYS),
     listOrganizationUsers(),
   ]);
+
+  // Property roster: count + most recent import timestamp.
+  const unitsRes = await admin
+    .from("community_units")
+    .select("id, imported_at", { count: "exact" })
+    .eq("community_id", id)
+    .order("imported_at", { ascending: false })
+    .limit(1);
+  const unitCountTotal = unitsRes.count ?? 0;
+  const lastImportedAt =
+    (unitsRes.data?.[0]?.imported_at as string | undefined) ?? null;
 
   const org = orgRes.data as {
     name: string | null;
@@ -404,6 +416,11 @@ export default async function CommunityDetailPage({
             communityId={id}
             initialManagerId={c.manager_user_id}
             orgUsers={orgUsers}
+          />
+          <CommunityPropertiesCard
+            communityId={id}
+            initialCount={unitCountTotal}
+            initialImportedAt={lastImportedAt}
           />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <CommunityContactCard
