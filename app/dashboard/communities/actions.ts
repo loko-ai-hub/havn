@@ -218,6 +218,41 @@ export async function bulkAddCommunities(
   return { ok: true, matched, total: rows.length };
 }
 
+// Server-side count of community_units per community for the org. Uses the
+// admin client so it bypasses RLS — the browser client's RLS for the new
+// community_units table can return 0 if policies aren't perfectly set up,
+// which made freshly-imported rosters show "Add Details" on the list page.
+export async function loadUnitCountsForOrg(
+  orgId: string
+): Promise<Record<string, number>> {
+  const { organizationId } = await requireDashboardOrg();
+  if (organizationId !== orgId) return {};
+  const admin = createAdminClient();
+
+  // Verify the requested communities are in the user's org, then count units.
+  const { data: communities } = await admin
+    .from("communities")
+    .select("id")
+    .eq("organization_id", orgId);
+  const ids = ((communities ?? []) as Array<{ id: string }>).map((c) => c.id);
+  if (ids.length === 0) return {};
+
+  const { data: units } = await admin
+    .from("community_units")
+    .select("community_id")
+    .in("community_id", ids);
+
+  const counts: Record<string, number> = Object.fromEntries(
+    ids.map((cid) => [cid, 0])
+  );
+  for (const row of (units ?? []) as Array<{ community_id: string | null }>) {
+    if (row.community_id) {
+      counts[row.community_id] = (counts[row.community_id] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
 export async function archiveCommunity(id: string, status: "active" | "archived") {
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();

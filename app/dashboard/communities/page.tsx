@@ -25,6 +25,7 @@ import {
   addCommunity,
   archiveCommunity,
   extractCommunityFromGoverningDoc,
+  loadUnitCountsForOrg,
   lookupAddress,
 } from "./actions";
 import { listOrganizationUsers, type OrgUserOption } from "./[id]/actions";
@@ -266,27 +267,35 @@ export default function DashboardCommunitiesPage() {
     let unitMap: Record<string, number> = {};
 
     if (communityIds.length > 0) {
-      const [docsResult, unitsResult] = await Promise.all([
+      // Docs: count individual rows (not unique categories) so the column
+      // matches what an operator would expect. Skip archived rows.
+      // Categories tracked separately for the "missing required" alert badge.
+      const [docsResult, unitCounts] = await Promise.all([
         supabase
           .from("community_documents")
-          .select("community_id, document_category")
+          .select("community_id, document_category, archived")
           .in("community_id", communityIds),
-        supabase
-          .from("community_units")
-          .select("community_id")
-          .in("community_id", communityIds),
+        loadUnitCountsForOrg(oid),
       ]);
 
-      type DocRow = { community_id: string | null; document_category: string | null };
+      type DocRow = {
+        community_id: string | null;
+        document_category: string | null;
+        archived: boolean | null;
+      };
+
+      const docCounter = new Map<string, number>();
       const categoryMap = new Map<string, Set<string>>();
       for (const row of (docsResult.data ?? []) as DocRow[]) {
-        if (row.community_id) {
-          if (!categoryMap.has(row.community_id)) categoryMap.set(row.community_id, new Set());
-          if (row.document_category) categoryMap.get(row.community_id)!.add(row.document_category);
-        }
+        if (row.archived) continue;
+        if (!row.community_id) continue;
+        docCounter.set(row.community_id, (docCounter.get(row.community_id) ?? 0) + 1);
+        if (!categoryMap.has(row.community_id)) categoryMap.set(row.community_id, new Set());
+        if (row.document_category) categoryMap.get(row.community_id)!.add(row.document_category);
       }
+
       docMap = Object.fromEntries(
-        communityIds.map((cid) => [cid, categoryMap.get(cid)?.size ?? 0])
+        communityIds.map((cid) => [cid, docCounter.get(cid) ?? 0])
       );
       alertMap = Object.fromEntries(
         communityIds.map((cid) => {
@@ -295,16 +304,10 @@ export default function DashboardCommunitiesPage() {
         })
       );
 
-      type UnitRowMin = { community_id: string | null };
-      const unitCounter = new Map<string, number>();
-      for (const row of (unitsResult.data ?? []) as UnitRowMin[]) {
-        if (row.community_id) {
-          unitCounter.set(row.community_id, (unitCounter.get(row.community_id) ?? 0) + 1);
-        }
-      }
-      unitMap = Object.fromEntries(
-        communityIds.map((cid) => [cid, unitCounter.get(cid) ?? 0])
-      );
+      // Unit counts come from a server action (admin-client backed) so they
+      // ignore any RLS that the browser client might trip on for the new
+      // community_units table.
+      unitMap = unitCounts ?? {};
     }
 
     setDocsByCommunity(docMap);
@@ -416,6 +419,12 @@ export default function DashboardCommunitiesPage() {
   const handleArchiveToggle = async (community: CommunityRow) => {
     const current = (community.status ?? "active").toString().toLowerCase();
     const nextStatus = current === "active" ? "archived" : "active";
+    if (current === "active") {
+      const ok = window.confirm(
+        `Archive "${community.legal_name}"? You can restore it from the archived tab later.`
+      );
+      if (!ok) return;
+    }
     const result = await archiveCommunity(community.id, nextStatus as "active" | "archived");
     if (result && "error" in result && result.error) { toast.error(result.error); return; }
     toast.success(nextStatus === "archived" ? "Community archived." : "Community restored.");
