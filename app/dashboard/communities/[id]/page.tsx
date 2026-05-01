@@ -10,6 +10,11 @@ import {
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import {
+  ALL_CONTACT_REGISTRY_KEYS,
+  CONTACT_FIELD_KEYS,
+  type ContactType,
+} from "@/lib/community-contact-mapping";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
@@ -67,7 +72,7 @@ export default async function CommunityDetailPage({
   const c = community as CommunityRow;
   if (c.organization_id !== organizationId) notFound();
 
-  const [orgRes, openRequestsRes, docsRes, contactsRes] = await Promise.all([
+  const [orgRes, openRequestsRes, docsRes, contactsRes, fieldCacheRes] = await Promise.all([
     admin
       .from("organizations")
       .select("name, support_email, support_phone")
@@ -86,6 +91,12 @@ export default async function CommunityDetailPage({
       .from("community_contacts")
       .select("contact_type, name, role, address, phone, email")
       .eq("community_id", id),
+    admin
+      .from("community_field_cache")
+      .select("field_key, field_value")
+      .eq("community_id", id)
+      .eq("document_type", "_shared")
+      .in("field_key", ALL_CONTACT_REGISTRY_KEYS),
   ]);
 
   const org = orgRes.data as { name: string | null; support_email: string | null; support_phone: string | null } | null;
@@ -93,18 +104,51 @@ export default async function CommunityDetailPage({
 
   type ContactRow = { contact_type: string; name: string | null; role: string | null; address: string | null; phone: string | null; email: string | null };
   const contacts = (contactsRes.data ?? []) as ContactRow[];
-  const emptyContact = { name: null, role: null, address: null, phone: null, email: null };
-  const insuranceContact = contacts.find((c) => c.contact_type === "insurance_agent") ?? emptyContact;
 
-  // Pre-populate management contact from org + assigned manager
-  const savedMgmt = contacts.find((c) => c.contact_type === "management_company");
-  const mgmtContact = savedMgmt ?? {
-    name: c.manager_name ?? null,
-    role: org?.name ?? null,
-    address: null,
-    phone: org?.support_phone ?? null,
-    email: org?.support_email ?? null,
+  // Build a registry-key → value lookup of cached merge-tag values so the
+  // contact card can fall back on cache entries (typically OCR-sourced) when
+  // the dedicated community_contacts row has no value yet.
+  type CacheRow = { field_key: string; field_value: string | null };
+  const cacheMap = new Map<string, string>();
+  for (const row of (fieldCacheRes.data ?? []) as CacheRow[]) {
+    if (row.field_value && row.field_value.trim().length > 0) {
+      cacheMap.set(row.field_key, row.field_value);
+    }
+  }
+
+  const mergeContact = (
+    saved: ContactRow | undefined,
+    contactType: ContactType
+  ) => {
+    const keys = CONTACT_FIELD_KEYS[contactType];
+    const fromCache = (key: string | null) => (key ? cacheMap.get(key) ?? null : null);
+    return {
+      name: saved?.name ?? fromCache(keys.name),
+      role: saved?.role ?? fromCache(keys.role),
+      address: saved?.address ?? fromCache(keys.address),
+      phone: saved?.phone ?? fromCache(keys.phone),
+      email: saved?.email ?? fromCache(keys.email),
+    };
   };
+
+  const insuranceContact = mergeContact(
+    contacts.find((c) => c.contact_type === "insurance_agent"),
+    "insurance_agent"
+  );
+
+  const savedMgmt = contacts.find((c) => c.contact_type === "management_company");
+  const mergedMgmt = mergeContact(savedMgmt, "management_company");
+  // Pre-populate management contact from org + assigned manager when nothing
+  // has been saved (or auto-extracted) yet.
+  const mgmtContact = savedMgmt
+    ? mergedMgmt
+    : {
+        name: mergedMgmt.name ?? c.manager_name ?? null,
+        role: mergedMgmt.role ?? org?.name ?? null,
+        address: mergedMgmt.address ?? null,
+        phone: mergedMgmt.phone ?? org?.support_phone ?? null,
+        email: mergedMgmt.email ?? org?.support_email ?? null,
+      };
 
   type DocRow = { document_category: string | null };
   const presentCategories = new Set(
