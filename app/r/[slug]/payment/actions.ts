@@ -26,7 +26,7 @@ export async function createPaymentIntent(orderId: string) {
 
   const { data: org, error: orgError } = await supabase
     .from("organizations")
-    .select("stripe_account_id")
+    .select("stripe_account_id, stripe_charges_enabled, name")
     .eq("id", order.organization_id)
     .single();
 
@@ -36,10 +36,25 @@ export async function createPaymentIntent(orderId: string) {
 
   const stripeAccountId = org.stripe_account_id as string | null;
   if (!stripeAccountId) {
-    return { error: "Missing Stripe destination account for this organization." };
+    return {
+      error: `${(org as { name?: string }).name ?? "This organization"} hasn't finished setting up payments yet. Please reach out to them to complete this order.`,
+    };
+  }
+
+  if (!(org as { stripe_charges_enabled?: boolean | null }).stripe_charges_enabled) {
+    return {
+      error: `${(org as { name?: string }).name ?? "This organization"}'s Stripe account isn't ready to accept charges yet (onboarding incomplete). Please reach out to them.`,
+    };
   }
 
   const amount = Math.round(Number(order.total_fee) * 100); // cents
+  // Stripe's USD card minimum is $0.50. Below that the PaymentIntent creation
+  // call will 400 before the customer ever sees the form.
+  if (amount < 50) {
+    return {
+      error: `Stripe doesn't accept charges below $0.50. This order totals $${(amount / 100).toFixed(2)}. Adjust the per-doc fee in dashboard pricing and try again.`,
+    };
+  }
   const applicationFeeAmount = calcApplicationFee(amount);
 
   const existingIntentId = order.stripe_payment_intent_id as string | null;
@@ -59,28 +74,39 @@ export async function createPaymentIntent(orderId: string) {
     }
   }
 
-  const paymentIntent = await stripe.paymentIntents.create(
-    {
-      amount,
-      currency: "usd",
-      // Surface whatever payment methods are enabled at the platform level
-      // (cards, Link, Apple Pay, Google Pay, etc.) without hard-coding a list.
-      automatic_payment_methods: { enabled: true },
-      application_fee_amount: applicationFeeAmount,
-      transfer_data: {
-        destination: stripeAccountId,
+  let paymentIntent;
+  try {
+    paymentIntent = await stripe.paymentIntents.create(
+      {
+        amount,
+        currency: "usd",
+        // Surface whatever payment methods are enabled at the platform level
+        // (cards, Link, Apple Pay, Google Pay, etc.) without hard-coding a list.
+        automatic_payment_methods: { enabled: true },
+        application_fee_amount: applicationFeeAmount,
+        transfer_data: {
+          destination: stripeAccountId,
+        },
+        metadata: {
+          orderId,
+        },
       },
-      metadata: {
-        orderId,
-      },
-    },
-    {
-      // Safe against double-clicks / page re-renders.
-      // Include amount so that a legitimate amount change cuts a fresh intent instead of
-      // hitting Stripe's 24h idempotency cache and returning a stale one.
-      idempotencyKey: `order_${orderId}_${amount}_v1`,
-    }
-  );
+      {
+        // Safe against double-clicks / page re-renders.
+        // Include amount so that a legitimate amount change cuts a fresh intent instead of
+        // hitting Stripe's 24h idempotency cache and returning a stale one.
+        idempotencyKey: `order_${orderId}_${amount}_v1`,
+      }
+    );
+  } catch (stripeErr) {
+    // Surface the actual Stripe error so we can debug 400s from the platform
+    // (account-not-ready, currency mismatch, fee too high, etc.) instead of
+    // returning a generic "unable to initialize."
+    const message =
+      stripeErr instanceof Error ? stripeErr.message : "Stripe rejected the charge.";
+    console.error("[createPaymentIntent] Stripe rejected:", stripeErr);
+    return { error: `Payment couldn't be set up: ${message}` };
+  }
 
   if (!paymentIntent.client_secret) {
     return { error: "Unable to initialize payment." };

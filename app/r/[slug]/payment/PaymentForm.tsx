@@ -14,6 +14,11 @@ import { confirmPayment } from "./actions";
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
+type LoadErrorContext = {
+  message: string;
+  code?: string;
+} | null;
+
 function PaymentCardForm({
   slug,
   orderId,
@@ -45,6 +50,8 @@ function PaymentCardForm({
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [elementLoadError, setElementLoadError] = useState<LoadErrorContext>(null);
+  const [elementReady, setElementReady] = useState(false);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -155,7 +162,42 @@ function PaymentCardForm({
           </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <PaymentElement options={{ layout: "tabs" }} />
+          <PaymentElement
+            options={{ layout: "tabs" }}
+            onReady={() => setElementReady(true)}
+            onLoadError={(event) => {
+              const err = event?.error as
+                | { message?: string; code?: string }
+                | undefined;
+              setElementLoadError({
+                message:
+                  err?.message ??
+                  "Stripe couldn't load the payment form. Try refreshing.",
+                code: err?.code,
+              });
+            }}
+          />
+
+          {elementLoadError ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
+              <p className="text-sm font-semibold text-destructive">
+                Payment form unavailable
+              </p>
+              <p className="mt-0.5 text-sm text-destructive">
+                {elementLoadError.message}
+              </p>
+              {elementLoadError.code ? (
+                <p className="mt-1 text-xs text-destructive/80">
+                  Code: {elementLoadError.code}
+                </p>
+              ) : null}
+              <p className="mt-2 text-xs text-muted-foreground">
+                If this keeps happening, the merchant may need to finish
+                setting up their Stripe account or adjust the amount. Reach
+                out to them with the order ID.
+              </p>
+            </div>
+          ) : null}
 
           {submitError ? (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
@@ -175,16 +217,24 @@ function PaymentCardForm({
             </Button>
             <Button
               type="submit"
-              disabled={isProcessing || !stripe || !elements}
+              disabled={
+                isProcessing ||
+                !stripe ||
+                !elements ||
+                !elementReady ||
+                elementLoadError !== null
+              }
               className="h-12 flex-1 text-base font-semibold text-white hover:opacity-90"
               style={{ backgroundColor: primaryColor }}
             >
               <CreditCard className="mr-2 h-4 w-4" />
-              {!stripe || !elements
-                ? "Loading…"
-                : isProcessing
-                  ? "Processing…"
-                  : `Pay ${formatCurrency(totalFee)}`}
+              {elementLoadError
+                ? "Payment unavailable"
+                : !stripe || !elements || !elementReady
+                  ? "Loading…"
+                  : isProcessing
+                    ? "Processing…"
+                    : `Pay ${formatCurrency(totalFee)}`}
             </Button>
           </div>
         </form>
