@@ -49,7 +49,7 @@ function getSteps(): SidebarStep[] {
     { number: 4, label: "Documents", segment: "documents" },
     { number: 5, label: "Delivery", segment: "delivery" },
     { number: 6, label: "Add-ons", segment: "addons" },
-    { number: 7, label: "Review & Pay", segment: "review" },
+    { number: 7, label: "Review Order", segment: "review" },
     { number: 8, label: "Payment", segment: "payment" },
     { number: 9, label: "Confirmation", segment: "confirmation" },
   ];

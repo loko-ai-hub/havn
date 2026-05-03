@@ -127,7 +127,7 @@ export default function StepReview({
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-12 md:py-16">
-      <h1 className="text-3xl font-semibold tracking-tight text-foreground">Review &amp; Pay</h1>
+      <h1 className="text-3xl font-semibold tracking-tight text-foreground">Review Order</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Confirm your order details before proceeding to secure payment.
       </p>
