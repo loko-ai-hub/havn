@@ -11,7 +11,42 @@ const REUSABLE_INTENT_STATUSES = new Set([
   "processing",
 ]);
 
+// Detect a test/live key mismatch (or different Stripe accounts entirely)
+// before calling Stripe. The secret key creates the PaymentIntent; the
+// publishable key is what the browser uses to load it. Mismatched keys
+// produce a confusing client-side "client_secret does not match any
+// associated PaymentIntent" error — catching it server-side is much clearer.
+function detectStripeKeyMismatch(): string | null {
+  const secret = process.env.STRIPE_SECRET_KEY ?? "";
+  const pub = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+  if (!secret) return "STRIPE_SECRET_KEY is not configured.";
+  if (!pub) return "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not configured.";
+  const secretMode = secret.startsWith("sk_live_")
+    ? "live"
+    : secret.startsWith("sk_test_")
+      ? "test"
+      : "unknown";
+  const pubMode = pub.startsWith("pk_live_")
+    ? "live"
+    : pub.startsWith("pk_test_")
+      ? "test"
+      : "unknown";
+  if (secretMode === "unknown" || pubMode === "unknown") {
+    return `Stripe key format unrecognized (secret=${secretMode}, publishable=${pubMode}). Re-paste the keys from Stripe Dashboard → Developers → API keys.`;
+  }
+  if (secretMode !== pubMode) {
+    return `Stripe key mode mismatch — STRIPE_SECRET_KEY is ${secretMode}, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is ${pubMode}. Both must be from the same Stripe account and mode (both test or both live). Update in Vercel env vars and redeploy.`;
+  }
+  return null;
+}
+
 export async function createPaymentIntent(orderId: string) {
+  const keyMismatch = detectStripeKeyMismatch();
+  if (keyMismatch) {
+    console.error("[createPaymentIntent] " + keyMismatch);
+    return { error: keyMismatch };
+  }
+
   const supabase = createAdminClient();
 
   const { data: order, error: orderError } = await supabase
