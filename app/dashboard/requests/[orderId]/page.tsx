@@ -158,6 +158,29 @@ export default async function DashboardRequestDetailPage({
     ? `/dashboard/communities/${communityId}/documents`
     : "/dashboard/communities";
 
+  // 3P upload: signed URL to the pristine PDF the requester uploaded,
+  // before any pipeline output. Used to render the "View original upload"
+  // button. Skipped when the order has no 3P template attached.
+  let originalUploadUrl: string | null = null;
+  let originalUploadFilename: string | null = null;
+  {
+    const { data: tpl3p } = await admin
+      .from("third_party_templates")
+      .select("storage_path_pdf, original_filename")
+      .eq("order_id", row.id)
+      .maybeSingle();
+    const tplRow = tpl3p as
+      | { storage_path_pdf: string | null; original_filename: string | null }
+      | null;
+    if (tplRow?.storage_path_pdf) {
+      const { data: signed } = await admin.storage
+        .from("third-party-templates")
+        .createSignedUrl(tplRow.storage_path_pdf, 60 * 60); // 1h
+      originalUploadUrl = signed?.signedUrl ?? null;
+      originalUploadFilename = tplRow.original_filename ?? null;
+    }
+  }
+
   // Add-ons: notes is a comma-joined string from the portal
   const addOns = row.notes
     ? row.notes
@@ -350,13 +373,31 @@ export default async function DashboardRequestDetailPage({
                 </div>
                 <p className="mt-0.5 text-[10px] text-muted-foreground">complete</p>
               </div>
-              <Link
-                href={`/dashboard/requests/${row.id}/review`}
-                className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Review Document
-              </Link>
+              <div className="flex flex-wrap items-center gap-2">
+                {originalUploadUrl && (
+                  <a
+                    href={originalUploadUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                    title={
+                      originalUploadFilename
+                        ? `Open ${originalUploadFilename} in a new tab — the file as the requester uploaded it, before any Havn processing.`
+                        : "Open the original uploaded file in a new tab — before any Havn processing."
+                    }
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    View original upload
+                  </a>
+                )}
+                <Link
+                  href={`/dashboard/requests/${row.id}/review`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Review Document
+                </Link>
+              </div>
             </div>
           </div>
           {/* Fee breakdown */}
