@@ -63,7 +63,7 @@ export default async function RequesterPaymentPage({
 
   const { data: org, error: orgError } = await supabase
     .from("organizations")
-    .select("stripe_account_id,brand_color")
+    .select("brand_color")
     .eq("id", order.organization_id)
     .single();
 

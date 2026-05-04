@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { stripe } from "@/lib/stripe";
+import {
+  stripe,
+  activeConnectColumns,
+  ALL_CONNECT_COLUMNS,
+  getActiveConnectAccount,
+} from "@/lib/stripe";
 
 import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
 
@@ -22,11 +27,12 @@ export async function createStripeConnectLink(
       return { error: "You cannot manage Stripe for this organization." };
     }
 
+    const cols = activeConnectColumns();
     const supabase = createAdminClient();
 
     const { data: org, error: orgError } = await supabase
       .from("organizations")
-      .select("stripe_account_id, name, support_email")
+      .select(`name, support_email, ${cols.accountId}`)
       .eq("id", orgId)
       .single();
 
@@ -34,25 +40,30 @@ export async function createStripeConnectLink(
       return { error: "Organization not found" };
     }
 
-    let accountId = org.stripe_account_id as string | null;
+    let accountId = (org as Record<string, unknown>)[cols.accountId] as
+      | string
+      | null;
 
     // If we have a stored account ID, validate it's reachable on the current
-    // Stripe environment. A common failure mode is an `acct_test_...` saved
-    // before flipping to live keys — Stripe returns "account does not exist on
-    // your platform" when we try to mint an account link for it. Treat any
-    // retrieve failure as "stale ID — start fresh."
+    // Stripe environment. Stale IDs (e.g. test acct stored before flipping to
+    // live) trigger "account does not exist on your platform" — wipe and
+    // start fresh. Note we only wipe the *active* mode's columns, leaving
+    // the other mode's account untouched.
     if (accountId) {
       try {
         await stripe.accounts.retrieve(accountId);
       } catch (err) {
         console.warn(
-          "createStripeConnectLink: stale or invalid stripe_account_id, recreating:",
+          `createStripeConnectLink: stale or invalid ${cols.accountId}, recreating:`,
           err
         );
         accountId = null;
         await supabase
           .from("organizations")
-          .update({ stripe_account_id: null, stripe_onboarding_complete: false })
+          .update({
+            [cols.accountId]: null,
+            [cols.onboardingComplete]: false,
+          })
           .eq("id", orgId);
       }
     }
@@ -71,7 +82,7 @@ export async function createStripeConnectLink(
 
       const { error: updateError } = await supabase
         .from("organizations")
-        .update({ stripe_account_id: accountId })
+        .update({ [cols.accountId]: accountId })
         .eq("id", orgId);
 
       if (updateError) {
@@ -103,16 +114,21 @@ export async function checkStripeOnboardingStatus(orgId: string): Promise<void> 
     return;
   }
 
+  const cols = activeConnectColumns();
   const supabase = createAdminClient();
   const { data: org, error } = await supabase
     .from("organizations")
-    .select("stripe_account_id")
+    .select(cols.accountId)
     .eq("id", orgId)
     .single();
 
-  if (error || !org?.stripe_account_id) return;
+  const accountId = (org as Record<string, unknown> | null)?.[cols.accountId] as
+    | string
+    | null
+    | undefined;
+  if (error || !accountId) return;
 
-  const account = await stripe.accounts.retrieve(org.stripe_account_id as string);
+  const account = await stripe.accounts.retrieve(accountId);
 
   // Pull every signal we care about. Webhook is the primary source of truth,
   // but this on-demand sync covers cases where the webhook fires late or the
@@ -120,10 +136,11 @@ export async function checkStripeOnboardingStatus(orgId: string): Promise<void> 
   await supabase
     .from("organizations")
     .update({
-      stripe_onboarding_complete: Boolean(account.details_submitted),
-      stripe_payouts_enabled: Boolean(account.payouts_enabled),
-      stripe_charges_enabled: Boolean(account.charges_enabled),
-      stripe_requirements_currently_due: account.requirements?.currently_due ?? [],
+      [cols.onboardingComplete]: Boolean(account.details_submitted),
+      [cols.payoutsEnabled]: Boolean(account.payouts_enabled),
+      [cols.chargesEnabled]: Boolean(account.charges_enabled),
+      [cols.requirementsCurrentlyDue]:
+        account.requirements?.currently_due ?? [],
     })
     .eq("id", orgId);
 
@@ -146,18 +163,23 @@ export async function createStripeDashboardLoginLink(
       return { error: "Only the organization owner can open the Stripe dashboard." };
     }
 
+    const cols = activeConnectColumns();
     const supabase = createAdminClient();
     const { data: org, error: orgError } = await supabase
       .from("organizations")
-      .select("stripe_account_id")
+      .select(cols.accountId)
       .eq("id", orgId)
       .single();
 
-    if (orgError || !org?.stripe_account_id) {
-      return { error: "No connected Stripe account on file yet." };
+    const accountId = (org as Record<string, unknown> | null)?.[cols.accountId] as
+      | string
+      | null
+      | undefined;
+    if (orgError || !accountId) {
+      return { error: "No connected Stripe account on file for the active mode yet." };
     }
 
-    const link = await stripe.accounts.createLoginLink(org.stripe_account_id as string);
+    const link = await stripe.accounts.createLoginLink(accountId);
     return { url: link.url };
   } catch (err) {
     return {
@@ -178,15 +200,20 @@ export async function getStripeBankLast4(
     const supabase = createAdminClient();
     const { data: org, error } = await supabase
       .from("organizations")
-      .select("stripe_account_id, stripe_onboarding_complete")
+      .select(ALL_CONNECT_COLUMNS)
       .eq("id", orgId)
       .single();
 
-    if (error || !org?.stripe_account_id || !org.stripe_onboarding_complete) {
+    if (error || !org) {
       return { last4: null };
     }
 
-    const account = await stripe.accounts.retrieve(org.stripe_account_id as string, {
+    const active = getActiveConnectAccount(org as unknown as Record<string, unknown>);
+    if (!active.accountId || !active.onboardingComplete) {
+      return { last4: null };
+    }
+
+    const account = await stripe.accounts.retrieve(active.accountId, {
       expand: ["external_accounts"],
     });
 

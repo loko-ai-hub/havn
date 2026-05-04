@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 
-import { stripe } from "@/lib/stripe";
+import { stripe, activeConnectColumns } from "@/lib/stripe";
 import { markOrderPaid, markOrderRefunded } from "@/lib/stripe-orders";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -103,16 +103,21 @@ export async function POST(request: Request) {
       case "account.updated": {
         const account = event.data.object as Stripe.Account;
         const supabase = createAdminClient();
+        // Webhook signature already proved this event came from the platform
+        // mode whose secret signed it, so we trust activeConnectColumns()
+        // and write into the matching column set. Filter the row by the
+        // same mode's account_id column to avoid touching the other mode's row.
+        const cols = activeConnectColumns();
         const { error } = await supabase
           .from("organizations")
           .update({
-            stripe_onboarding_complete: Boolean(account.details_submitted),
-            stripe_payouts_enabled: Boolean(account.payouts_enabled),
-            stripe_charges_enabled: Boolean(account.charges_enabled),
-            stripe_requirements_currently_due:
+            [cols.onboardingComplete]: Boolean(account.details_submitted),
+            [cols.payoutsEnabled]: Boolean(account.payouts_enabled),
+            [cols.chargesEnabled]: Boolean(account.charges_enabled),
+            [cols.requirementsCurrentlyDue]:
               account.requirements?.currently_due ?? [],
           })
-          .eq("stripe_account_id", account.id);
+          .eq(cols.accountId, account.id);
         if (error) {
           console.error("account.updated: failed to sync organization:", error.message);
           return NextResponse.json({ error: error.message }, { status: 500 });

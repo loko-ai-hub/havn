@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isStripeTestModeClient } from "@/lib/stripe";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -78,20 +79,36 @@ async function resolveOrg(supabase: ReturnType<typeof createClient>): Promise<{
   const { data: org } = await supabase
     .from("organizations")
     .select(
-      "name, portal_slug, stripe_account_id, stripe_onboarding_complete, stripe_payouts_enabled, stripe_requirements_currently_due"
+      "name, portal_slug, stripe_account_id, stripe_onboarding_complete, stripe_payouts_enabled, stripe_requirements_currently_due, stripe_test_account_id, stripe_test_onboarding_complete, stripe_test_payouts_enabled, stripe_test_requirements_currently_due"
     )
     .eq("id", orgId)
     .single();
+
+  const isTest = isStripeTestModeClient();
+  const accountId = (
+    isTest ? org?.stripe_test_account_id : org?.stripe_account_id
+  ) as string | null | undefined;
+  const onboardingComplete = (
+    isTest ? org?.stripe_test_onboarding_complete : org?.stripe_onboarding_complete
+  ) as boolean | null | undefined;
+  const payoutsEnabledRaw = (
+    isTest ? org?.stripe_test_payouts_enabled : org?.stripe_payouts_enabled
+  ) as boolean | null | undefined;
+  const requirementsDue = (
+    isTest
+      ? org?.stripe_test_requirements_currently_due
+      : org?.stripe_requirements_currently_due
+  ) as string[] | null | undefined;
 
   // Definition of "Stripe ready to take payments AND payout":
   //   account exists + Stripe says payouts are enabled.
   // Fall back to onboarding_complete only when payouts_enabled hasn't been
   // synced yet (null = unknown — webhook hasn't fired for this org).
-  const payoutsEnabled = (org?.stripe_payouts_enabled ?? null) as boolean | null;
+  const payoutsEnabled = (payoutsEnabledRaw ?? null) as boolean | null;
   const stripeConnected =
-    Boolean(org?.stripe_account_id) &&
+    Boolean(accountId) &&
     (payoutsEnabled === null
-      ? Boolean(org?.stripe_onboarding_complete)
+      ? Boolean(onboardingComplete)
       : payoutsEnabled === true);
 
   return {
@@ -100,7 +117,7 @@ async function resolveOrg(supabase: ReturnType<typeof createClient>): Promise<{
     portalSlug: org?.portal_slug ?? null,
     stripeConnected,
     stripePayoutsEnabled: payoutsEnabled,
-    stripeRequirementsDue: (org?.stripe_requirements_currently_due as string[] | null) ?? [],
+    stripeRequirementsDue: requirementsDue ?? [],
   };
 }
 

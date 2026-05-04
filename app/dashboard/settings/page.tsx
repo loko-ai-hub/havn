@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
+import { isStripeTestModeClient } from "@/lib/stripe";
 import { cn } from "@/lib/utils";
 
 import { DashboardSectionCard } from "../_lib/dashboard-section-card";
@@ -48,6 +49,11 @@ type OrgRow = {
   stripe_payouts_enabled: boolean | null;
   stripe_charges_enabled: boolean | null;
   stripe_requirements_currently_due: string[] | null;
+  stripe_test_account_id: string | null;
+  stripe_test_onboarding_complete: boolean | null;
+  stripe_test_payouts_enabled: boolean | null;
+  stripe_test_charges_enabled: boolean | null;
+  stripe_test_requirements_currently_due: string[] | null;
 };
 
 function splitName(meta: Record<string, unknown>): { first: string; last: string } {
@@ -219,7 +225,7 @@ export default function DashboardSettingsPage() {
       supabase
         .from("organizations")
         .select(
-          "id, name, support_email, support_phone, city, state, zip, website, street, brand_color, portal_tagline, logo_url, stripe_account_id, stripe_onboarding_complete, stripe_payouts_enabled, stripe_charges_enabled, stripe_requirements_currently_due"
+          "id, name, support_email, support_phone, city, state, zip, website, street, brand_color, portal_tagline, logo_url, stripe_account_id, stripe_onboarding_complete, stripe_payouts_enabled, stripe_charges_enabled, stripe_requirements_currently_due, stripe_test_account_id, stripe_test_onboarding_complete, stripe_test_payouts_enabled, stripe_test_charges_enabled, stripe_test_requirements_currently_due"
         )
         .eq("id", oid)
         .single(),
@@ -228,6 +234,7 @@ export default function DashboardSettingsPage() {
 
     if (!orgRes.error && orgRes.data) {
       const o = orgRes.data as OrgRow;
+      const isTest = isStripeTestModeClient();
       setOfficePhone(o.support_phone ?? "");
       setWebsite((o as Record<string, unknown>).website as string ?? "");
       setStreet((o as Record<string, unknown>).street as string ?? "");
@@ -237,11 +244,21 @@ export default function DashboardSettingsPage() {
       setBrandColor(o.brand_color && o.brand_color.length > 0 ? o.brand_color : "#0f172a");
       setLogoUrl(o.logo_url ?? null);
       setPortalTagline(o.portal_tagline ?? "");
-      setStripeAccountId(o.stripe_account_id);
-      setStripeComplete(o.stripe_onboarding_complete);
-      setStripePayoutsEnabled(o.stripe_payouts_enabled);
-      setStripeChargesEnabled(o.stripe_charges_enabled);
-      setStripeRequirementsDue(o.stripe_requirements_currently_due ?? []);
+      setStripeAccountId(isTest ? o.stripe_test_account_id : o.stripe_account_id);
+      setStripeComplete(
+        isTest ? o.stripe_test_onboarding_complete : o.stripe_onboarding_complete
+      );
+      setStripePayoutsEnabled(
+        isTest ? o.stripe_test_payouts_enabled : o.stripe_payouts_enabled
+      );
+      setStripeChargesEnabled(
+        isTest ? o.stripe_test_charges_enabled : o.stripe_charges_enabled
+      );
+      setStripeRequirementsDue(
+        (isTest
+          ? o.stripe_test_requirements_currently_due
+          : o.stripe_requirements_currently_due) ?? []
+      );
     } else {
       setStripeAccountId(null);
       setStripeComplete(null);

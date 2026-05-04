@@ -1,7 +1,13 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { stripe, calcApplicationFee } from "@/lib/stripe";
+import {
+  stripe,
+  calcApplicationFee,
+  ALL_CONNECT_COLUMNS,
+  getActiveConnectAccount,
+  isStripeTestMode,
+} from "@/lib/stripe";
 import { markOrderPaid } from "@/lib/stripe-orders";
 
 const REUSABLE_INTENT_STATUSES = new Set([
@@ -61,7 +67,7 @@ export async function createPaymentIntent(orderId: string) {
 
   const { data: org, error: orgError } = await supabase
     .from("organizations")
-    .select("stripe_account_id, stripe_charges_enabled, name")
+    .select(`name, ${ALL_CONNECT_COLUMNS}`)
     .eq("id", order.organization_id)
     .single();
 
@@ -69,18 +75,23 @@ export async function createPaymentIntent(orderId: string) {
     return { error: orgError?.message ?? "Unable to load organization." };
   }
 
-  const stripeAccountId = org.stripe_account_id as string | null;
-  if (!stripeAccountId) {
+  const orgName = (org as { name?: string }).name ?? "This organization";
+  const active = getActiveConnectAccount(org as unknown as Record<string, unknown>);
+  const modeLabel = isStripeTestMode() ? "test" : "live";
+
+  if (!active.accountId) {
     return {
-      error: `${(org as { name?: string }).name ?? "This organization"} hasn't finished setting up payments yet. Please reach out to them to complete this order.`,
+      error: `${orgName} hasn't connected a ${modeLabel}-mode Stripe account yet. Have them sign in and finish Stripe setup at /dashboard/settings.`,
     };
   }
 
-  if (!(org as { stripe_charges_enabled?: boolean | null }).stripe_charges_enabled) {
+  if (!active.chargesEnabled) {
     return {
-      error: `${(org as { name?: string }).name ?? "This organization"}'s Stripe account isn't ready to accept charges yet (onboarding incomplete). Please reach out to them.`,
+      error: `${orgName}'s ${modeLabel}-mode Stripe account isn't ready to accept charges yet (onboarding incomplete). Have them finish Stripe setup at /dashboard/settings.`,
     };
   }
+
+  const stripeAccountId = active.accountId;
 
   const amount = Math.round(Number(order.total_fee) * 100); // cents
   // Stripe's USD card minimum is $0.50. Below that the PaymentIntent creation
