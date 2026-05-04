@@ -35,6 +35,7 @@ import {
 import {
   applyMatch,
   autoPopulateFields,
+  rerunIngestion,
   runMatchExtraction,
 } from "./actions";
 import type { OverlayField, OverlayPage } from "./pdf-overlay";
@@ -110,7 +111,9 @@ export default function ReviewForm({
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [versions, setVersions] = useState<OrderDocumentVersion[]>([]);
   const [match, setMatch] = useState<MatchCard | null>(matchCard);
-  const [matchBusy, setMatchBusy] = useState<"none" | "rerun" | "apply" | "fill">("none");
+  const [matchBusy, setMatchBusy] = useState<
+    "none" | "rerun" | "apply" | "fill" | "reprocess"
+  >("none");
   const [highlightKeys, setHighlightKeys] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"form" | "pdf">(overlay ? "pdf" : "form");
 
@@ -246,6 +249,26 @@ export default function ReviewForm({
       if (match?.suggestedCommunityId) {
         setSelectedCommunity(match.suggestedCommunityId);
       }
+      router.refresh();
+    } finally {
+      setMatchBusy("none");
+    }
+  };
+
+  const handleReprocess = async () => {
+    setMatchBusy("reprocess");
+    try {
+      const result = await rerunIngestion(orderId);
+      if ("error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      const layoutNote = result.capturedLayout
+        ? "PDF layout captured."
+        : "No PDF layout captured (Form Parser not configured or non-PDF source).";
+      toast.success(
+        `Re-processed: ${result.mappedCount} mapped / ${result.unmappedCount} unmapped (${result.autoFillCoveragePct}% coverage). ${layoutNote}`
+      );
       router.refresh();
     } finally {
       setMatchBusy("none");
@@ -394,6 +417,7 @@ export default function ReviewForm({
           busy={matchBusy}
           onApply={() => void handleApplyMatch()}
           onRerun={() => void handleRerunMatch()}
+          onReprocess={() => void handleReprocess()}
           onAutoPopulate={() => void handleAutoPopulate()}
         />
       )}
@@ -640,9 +664,10 @@ function confidenceTone(confidence: string | null): string {
 
 type MatchStatusCardProps = {
   match: MatchCard;
-  busy: "none" | "rerun" | "apply" | "fill";
+  busy: "none" | "rerun" | "apply" | "fill" | "reprocess";
   onApply: () => void;
   onRerun: () => void;
+  onReprocess: () => void;
   onAutoPopulate: () => void;
 };
 
@@ -651,6 +676,7 @@ function MatchStatusCard({
   busy,
   onApply,
   onRerun,
+  onReprocess,
   onAutoPopulate,
 }: MatchStatusCardProps) {
   const isApplied =
@@ -712,7 +738,23 @@ function MatchStatusCard({
             Document → property match
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy !== "none"}
+            onClick={onReprocess}
+            title="Re-runs the full ingestion pipeline: OCR, Claude extraction, Form Parser layout, and match resolution."
+          >
+            <Sparkles
+              className={cn(
+                "mr-2 h-3.5 w-3.5",
+                busy === "reprocess" && "animate-pulse"
+              )}
+            />
+            {busy === "reprocess" ? "Re-processing..." : "Re-process upload"}
+          </Button>
           <Button
             type="button"
             variant="outline"

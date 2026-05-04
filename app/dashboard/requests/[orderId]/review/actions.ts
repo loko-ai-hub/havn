@@ -7,6 +7,7 @@ import { extractTextFromBuffer } from "@/lib/pdf-text";
 import { extractFormContext } from "@/lib/extract-form-context";
 import { matchOrderProperty } from "@/lib/match-order-property";
 import { hydrateDraftFields } from "@/lib/hydrate-draft-fields";
+import { runThirdPartyIngestion } from "@/lib/3p-template-pipeline";
 import type { MatchLevel } from "@/lib/match-order-property";
 
 import { requireDashboardOrg } from "../../../_lib/require-dashboard-org";
@@ -313,6 +314,74 @@ export async function autoPopulateFields(
     ok: true,
     newlyFilledKeys: result.newlyFilledKeys,
     coverage: result.coverage,
+  };
+}
+
+/* ── rerunIngestion ─────────────────────────────────────────────────────
+ * Fires the FULL 3P pipeline against an existing upload: OCR → Claude
+ * label-mapping → universal context extractor → Form Parser layout →
+ * match resolver. Overwrites the prior `third_party_templates` row.
+ *
+ * Use this to re-process documents that were uploaded before the Form
+ * Parser pass landed — running it captures pdf_pages + field_layout so
+ * the PDF view toggle has data to render against.
+ *
+ * Note: pipeline may auto-apply the match to the order at high
+ * confidence and may email staff a "review needed" notification —
+ * same behavior as a fresh upload.
+ */
+export async function rerunIngestion(
+  orderId: string
+): Promise<
+  | {
+      ok: true;
+      mappedCount: number;
+      unmappedCount: number;
+      autoFillCoveragePct: number;
+      capturedLayout: boolean;
+    }
+  | { error: string }
+> {
+  const loaded = await loadOrderForOrg(orderId);
+  if (!loaded.ok) return { error: loaded.error };
+  const { admin } = loaded;
+
+  const { data: tpl } = await admin
+    .from("third_party_templates")
+    .select("id")
+    .eq("order_id", orderId)
+    .maybeSingle();
+
+  if (!tpl) {
+    return { error: "No third-party template uploaded for this order." };
+  }
+
+  const result = await runThirdPartyIngestion({
+    thirdPartyTemplateId: (tpl as { id: string }).id,
+  });
+
+  if (!result.ok) {
+    return { error: result.error ?? "Ingestion failed." };
+  }
+
+  const { data: refreshed } = await admin
+    .from("third_party_templates")
+    .select("field_layout")
+    .eq("id", (tpl as { id: string }).id)
+    .maybeSingle();
+
+  const capturedLayout =
+    !!(refreshed as { field_layout: unknown } | null)?.field_layout;
+
+  revalidatePath(`/dashboard/requests/${orderId}/review`);
+  revalidatePath(`/dashboard/requests/${orderId}`);
+
+  return {
+    ok: true,
+    mappedCount: result.mappedCount ?? 0,
+    unmappedCount: result.unmappedCount ?? 0,
+    autoFillCoveragePct: result.autoFillCoveragePct ?? 0,
+    capturedLayout,
   };
 }
 
