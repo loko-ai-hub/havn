@@ -10,6 +10,10 @@ import {
   type PdfMeta,
   type SignatureInfo,
 } from "../../../lib/pdf-generator";
+import {
+  stampValuesOntoPdf,
+  type OverlayFieldEntry,
+} from "../../../lib/pdf-overlay-generator";
 import { packageDocumentBundle, type PackageAttachment } from "../../../lib/pdf-packager";
 import {
   dbAliasesForCategories,
@@ -22,6 +26,54 @@ import { stripe } from "../../../lib/stripe";
 
 /** 30 days, in seconds — used for every order-document signed URL. */
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 30;
+
+/**
+ * If this order has a 3P upload with a captured Form Parser layout,
+ * download the original PDF and stamp the supplied values onto it.
+ * Returns null when there's no 3P upload, no layout, or any source
+ * data is missing — the caller falls back to the templated generator.
+ */
+async function tryGenerateOverlayPdf(
+  admin: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  values: Record<string, string | null>
+): Promise<Uint8Array | null> {
+  const { data: tpl } = await admin
+    .from("third_party_templates")
+    .select("storage_path_pdf, field_layout")
+    .eq("order_id", orderId)
+    .maybeSingle();
+
+  const tplRow = tpl as
+    | {
+        storage_path_pdf: string | null;
+        field_layout: OverlayFieldEntry[] | null;
+      }
+    | null;
+
+  if (!tplRow?.storage_path_pdf) return null;
+  if (!tplRow.field_layout || tplRow.field_layout.length === 0) return null;
+
+  const { data: blob, error: dlErr } = await admin.storage
+    .from("third-party-templates")
+    .download(tplRow.storage_path_pdf);
+  if (dlErr || !blob) {
+    console.warn("[fulfillAndGenerate] could not download original PDF:", dlErr?.message);
+    return null;
+  }
+
+  const buf = Buffer.from(await blob.arrayBuffer());
+  const cleanValues: Record<string, string> = {};
+  for (const [k, v] of Object.entries(values)) {
+    if (typeof v === "string" && v.trim().length > 0) cleanValues[k] = v;
+  }
+
+  return await stampValuesOntoPdf({
+    originalPdfBuffer: buf,
+    fieldLayout: tplRow.field_layout,
+    values: cleanValues,
+  });
+}
 
 export async function fulfillOrder(orderId: string) {
   const { organizationId } = await requireDashboardOrg();
@@ -232,7 +284,20 @@ export async function fulfillAndGenerate(
       }
     : undefined;
 
-  const mainPdfBytes = await generateDocumentPdf(
+  // If this order originated from a 3P upload with a captured form
+  // layout, stamp the values onto a copy of the original PDF instead
+  // of generating from a templated layout — staff edits in the overlay
+  // come right back on the same form the requester sent in.
+  const overlayBytes = await tryGenerateOverlayPdf(
+    admin,
+    orderId,
+    finalFields
+  ).catch((err) => {
+    console.warn("[fulfillAndGenerate] overlay generation failed:", err);
+    return null;
+  });
+
+  const mainPdfBytes = overlayBytes ?? (await generateDocumentPdf(
     template,
     finalFields,
     {
@@ -246,7 +311,7 @@ export async function fulfillAndGenerate(
       accountType,
     },
     signatureInfo
-  );
+  ));
 
   // 6. Bundle attachments when the template + community have them.
   let deliveredPdfBytes: Uint8Array = mainPdfBytes;

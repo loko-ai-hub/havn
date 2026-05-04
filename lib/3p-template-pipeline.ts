@@ -15,10 +15,13 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { extractTextFromBuffer } from "@/lib/pdf-text";
+import { extractFormContext } from "@/lib/extract-form-context";
 import {
   ingestExternalTemplate,
   type ExternalTemplateIngestion,
 } from "@/lib/ingest-external-template";
+import { matchOrderProperty } from "@/lib/match-order-property";
+import { parseFormLayout, attachRegistryKeys } from "@/lib/pdf-form-layout";
 import { proposeRegistryFields } from "@/lib/propose-registry-fields";
 import { send3pReviewNeeded } from "@/lib/resend";
 import { GOD_MODE_EMAILS } from "@/app/god-mode/constants";
@@ -91,8 +94,65 @@ export async function runThirdPartyIngestion(params: {
       console.warn(`[3p-pipeline] raw text upload failed: ${textUpErr.message}`);
     }
 
-    // 4. Map to the registry.
+    // 4. Load the order so we have organization_id + master_type_key for the
+    //    universal extractor + match resolver below.
+    const { data: orderForCtx } = await admin
+      .from("document_orders")
+      .select("id, organization_id, master_type_key, community_id, notes")
+      .eq("id", row.order_id as string)
+      .maybeSingle();
+    const orderCtx = orderForCtx as {
+      id: string;
+      organization_id: string;
+      master_type_key: string | null;
+      community_id: string | null;
+      notes: string | null;
+    } | null;
+
+    // 4a. Map to the registry (existing behavior — Claude maps form labels).
     const ingestion: ExternalTemplateIngestion = await ingestExternalTemplate(rawText);
+
+    // 4b. Universal context + field extractor. Pulls association name,
+    //     property address, owner names, parcel — and confirms each form
+    //     field's registry-key mapping. Failures fall through with empty
+    //     context so the rest of the pipeline still completes.
+    const extracted = orderCtx
+      ? await extractFormContext(rawText, orderCtx.master_type_key).catch((err) => {
+          console.warn("[3p-pipeline] extractFormContext failed:", err);
+          return null;
+        })
+      : null;
+
+    // 4b-form. Form Parser pass for coordinate capture. Lets the staff
+    //         review page render the original PDF with HTML inputs
+    //         overlaid on each blank, and lets the delivery flow stamp
+    //         values onto the PDF at the same coords. Falls through with
+    //         null layout if the form parser isn't configured or the
+    //         document isn't a PDF.
+    const formLayout = mimeType === "application/pdf"
+      ? await parseFormLayout(fileBuffer, mimeType).catch((err) => {
+          console.warn("[3p-pipeline] parseFormLayout failed:", err);
+          return null;
+        })
+      : null;
+
+    const fieldLayout = formLayout
+      ? attachRegistryKeys(formLayout, ingestion.fields.map((f) => ({
+          label: f.externalLabel,
+          registryKey: f.registryKey,
+        })))
+      : null;
+
+    // 4c. Match the extracted context to a community + unit.
+    const match = orderCtx && extracted
+      ? await matchOrderProperty({
+          context: extracted.context,
+          organizationId: orderCtx.organization_id,
+        }).catch((err) => {
+          console.warn("[3p-pipeline] matchOrderProperty failed:", err);
+          return null;
+        })
+      : null;
 
     // 5. Propose new registry fields for unmapped labels.
     const unmappedLabels = ingestion.fields
@@ -117,7 +177,7 @@ export async function runThirdPartyIngestion(params: {
     const autoFillCoveragePct =
       total > 0 ? Math.round((ingestion.mappedCount / total) * 1000) / 10 : 0;
 
-    // 8. Write results.
+    // 8. Write results — including the extracted context + match suggestion.
     await admin
       .from("third_party_templates")
       .update({
@@ -132,8 +192,44 @@ export async function runThirdPartyIngestion(params: {
         ingest_status: "ready",
         ingest_error: null,
         updated_at: new Date().toISOString(),
+        extracted_context: extracted?.context ?? null,
+        match_level: match?.level ?? null,
+        match_confidence: match?.confidence ?? null,
+        match_reasoning: match?.reasoning ?? null,
+        suggested_community_id: match?.communityId ?? null,
+        suggested_unit_id: match?.unitId ?? null,
+        pdf_pages: formLayout?.pages ?? null,
+        field_layout: fieldLayout ?? null,
       })
       .eq("id", id);
+
+    // 8a. Auto-apply when all three signals (community + unit + owner) line
+    //     up at high confidence. Below that bar, the match stays as a
+    //     suggestion the staff confirms via the review page.
+    if (
+      match &&
+      orderCtx &&
+      match.level === "community_unit_owner" &&
+      match.confidence === "high"
+    ) {
+      const today = new Date();
+      const dateStr = today.toLocaleDateString("en-US");
+      const auditNote = `Matched by Havn — community + unit + owner all confirmed (${dateStr})`;
+      const mergedNotes = [orderCtx.notes, auditNote]
+        .filter((s): s is string => typeof s === "string" && s.length > 0)
+        .join(" · ");
+
+      await admin
+        .from("document_orders")
+        .update({
+          community_id: match.communityId,
+          community_unit_id: match.unitId,
+          match_source: "havn_auto",
+          match_applied_at: today.toISOString(),
+          notes: mergedNotes,
+        })
+        .eq("id", orderCtx.id);
+    }
 
     // 9. Insert proposals.
     if (proposals.length > 0) {

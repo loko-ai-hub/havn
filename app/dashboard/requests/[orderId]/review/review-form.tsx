@@ -3,10 +3,15 @@
 import {
   CheckCircle2,
   Download,
+  FileText,
+  LayoutList,
+  RefreshCw,
   Save,
   ShieldCheck,
   Sparkles,
+  Wand2,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -27,6 +32,44 @@ import {
   type OrderDocumentVersion,
   type SignaturePayload,
 } from "../../actions";
+import {
+  applyMatch,
+  autoPopulateFields,
+  runMatchExtraction,
+} from "./actions";
+import type { OverlayField, OverlayPage } from "./pdf-overlay";
+
+// pdf.js worker can't run server-side. Lazy-load the overlay component
+// so SSR isn't dragged into the pdfjs bundle.
+const PdfOverlay = dynamic(() => import("./pdf-overlay"), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-xl border border-border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
+      Loading PDF view…
+    </div>
+  ),
+});
+
+export type MatchCard = {
+  level: string | null;
+  confidence: string | null;
+  reasoning: string | null;
+  suggestedCommunityId: string | null;
+  suggestedCommunityName: string | null;
+  suggestedUnitId: string | null;
+  suggestedUnitStreet: string | null;
+  suggestedUnitOwners: string[] | null;
+  appliedAt: string | null;
+  matchSource: string | null;
+  extractedContext: {
+    associationName: string | null;
+    propertyAddress: string | null;
+    ownerNames: string[];
+  } | null;
+  mappedCount: number;
+  unmappedCount: number;
+  appliedUnitId: string | null;
+};
 
 type Props = {
   orderId: string;
@@ -38,6 +81,12 @@ type Props = {
   isFulfilled: boolean;
   currentUserName?: string | null;
   currentUserEmail?: string | null;
+  matchCard: MatchCard | null;
+  overlay: {
+    pdfUrl: string;
+    pages: OverlayPage[];
+    fields: OverlayField[];
+  } | null;
 };
 
 export default function ReviewForm({
@@ -50,6 +99,8 @@ export default function ReviewForm({
   isFulfilled,
   currentUserName,
   currentUserEmail,
+  matchCard,
+  overlay,
 }: Props) {
   const router = useRouter();
   const [fields, setFields] = useState<Record<string, MergedField>>(initialFields);
@@ -58,6 +109,10 @@ export default function ReviewForm({
   const [generating, setGenerating] = useState(false);
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [versions, setVersions] = useState<OrderDocumentVersion[]>([]);
+  const [match, setMatch] = useState<MatchCard | null>(matchCard);
+  const [matchBusy, setMatchBusy] = useState<"none" | "rerun" | "apply" | "fill">("none");
+  const [highlightKeys, setHighlightKeys] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<"form" | "pdf">(overlay ? "pdf" : "form");
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +124,14 @@ export default function ReviewForm({
       cancelled = true;
     };
   }, [orderId]);
+
+  useEffect(() => {
+    setMatch(matchCard);
+  }, [matchCard]);
+
+  useEffect(() => {
+    setFields(initialFields);
+  }, [initialFields]);
 
   const updateField = (key: string, value: string) => {
     setFields((prev) => ({
@@ -150,6 +213,76 @@ export default function ReviewForm({
       return;
     }
     window.open(result.url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleRerunMatch = async () => {
+    setMatchBusy("rerun");
+    try {
+      const result = await runMatchExtraction(orderId);
+      if ("error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        result.level && result.level !== "none"
+          ? `Match refreshed: ${formatLevel(result.level)} (${result.confidence ?? "—"} confidence).`
+          : "Match refreshed — no community matched the document."
+      );
+      router.refresh();
+    } finally {
+      setMatchBusy("none");
+    }
+  };
+
+  const handleApplyMatch = async () => {
+    setMatchBusy("apply");
+    try {
+      const result = await applyMatch(orderId);
+      if ("error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Match applied to order.");
+      if (match?.suggestedCommunityId) {
+        setSelectedCommunity(match.suggestedCommunityId);
+      }
+      router.refresh();
+    } finally {
+      setMatchBusy("none");
+    }
+  };
+
+  const handleAutoPopulate = async () => {
+    setMatchBusy("fill");
+    try {
+      const result = await autoPopulateFields(orderId);
+      if ("error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      const filled = result.coverage.filled;
+      const requested = result.coverage.requested;
+      const missing = result.coverage.skippedNoSource.length;
+      toast.success(
+        missing > 0
+          ? `Filled ${filled} of ${requested} fields. ${missing} couldn't be filled — no data on file yet.`
+          : `Filled ${filled} of ${requested} fields.`
+      );
+      if (result.newlyFilledKeys.length > 0) {
+        setHighlightKeys(new Set(result.newlyFilledKeys));
+        // Optimistically merge into local state so the user sees the values
+        // immediately; router.refresh() will re-sync canonical state.
+        setFields((prev) => {
+          const next = { ...prev };
+          // The server-side update already wrote to draft_fields; refresh
+          // the page so the merged values come back through the normal load.
+          return next;
+        });
+      }
+      router.refresh();
+    } finally {
+      setMatchBusy("none");
+    }
   };
 
   return (
@@ -254,6 +387,17 @@ export default function ReviewForm({
         </div>
       )}
 
+      {/* Match status card (3P uploads only) */}
+      {match && (
+        <MatchStatusCard
+          match={match}
+          busy={matchBusy}
+          onApply={() => void handleApplyMatch()}
+          onRerun={() => void handleRerunMatch()}
+          onAutoPopulate={() => void handleAutoPopulate()}
+        />
+      )}
+
       {/* Community selector */}
       {communities.length > 0 && (
         <div className="rounded-xl border border-border bg-card p-4">
@@ -276,8 +420,51 @@ export default function ReviewForm({
         </div>
       )}
 
+      {/* View toggle (only when overlay is available) */}
+      {overlay && (
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={view === "pdf" ? "default" : "outline"}
+            onClick={() => setView("pdf")}
+            className={view === "pdf" ? "bg-havn-navy text-white hover:bg-havn-navy/90" : ""}
+          >
+            <FileText className="mr-2 h-3.5 w-3.5" />
+            PDF view
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={view === "form" ? "default" : "outline"}
+            onClick={() => setView("form")}
+            className={view === "form" ? "bg-havn-navy text-white hover:bg-havn-navy/90" : ""}
+          >
+            <LayoutList className="mr-2 h-3.5 w-3.5" />
+            Form view
+          </Button>
+          <p className="ml-auto text-xs text-muted-foreground">
+            Edit either way — values stay in sync.
+          </p>
+        </div>
+      )}
+
+      {/* PDF overlay */}
+      {overlay && view === "pdf" && (
+        <PdfOverlay
+          pdfUrl={overlay.pdfUrl}
+          pages={overlay.pages}
+          fields={overlay.fields}
+          values={Object.fromEntries(
+            Object.entries(fields).map(([k, v]) => [k, v?.value ?? ""])
+          )}
+          onChange={(key, value) => updateField(key, value)}
+          highlightKeys={highlightKeys}
+        />
+      )}
+
       {/* Sections */}
-      {template.sections.map((sectionName) => {
+      {(!overlay || view === "form") && template.sections.map((sectionName) => {
         const sectionFields = template.fields.filter((f) => f.section === sectionName);
         if (sectionFields.length === 0) return null;
 
@@ -292,6 +479,7 @@ export default function ReviewForm({
               {sectionFields.map((fieldDef) => {
                 const merged = fields[fieldDef.key];
                 const isTextarea = fieldDef.type === "textarea";
+                const wasJustFilled = highlightKeys.has(fieldDef.key);
 
                 return (
                   <div
@@ -311,6 +499,11 @@ export default function ReviewForm({
                           <span className="ml-0.5 text-destructive">*</span>
                         )}
                       </Label>
+                      {wasJustFilled && (
+                        <span className="inline-flex items-center rounded-md border border-havn-success/30 bg-havn-success/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-havn-success">
+                          Auto-filled
+                        </span>
+                      )}
                     </div>
                     {isTextarea ? (
                       <Textarea
@@ -319,7 +512,10 @@ export default function ReviewForm({
                         onChange={(e) => updateField(fieldDef.key, e.target.value)}
                         disabled={false}
                         rows={3}
-                        className="text-sm disabled:opacity-50"
+                        className={cn(
+                          "text-sm disabled:opacity-50",
+                          wasJustFilled && "ring-2 ring-havn-success/40"
+                        )}
                       />
                     ) : (
                       <Input
@@ -330,7 +526,8 @@ export default function ReviewForm({
                         disabled={false}
                         className={cn(
                           "h-9 text-sm disabled:opacity-50",
-                          fieldDef.required && !merged?.value?.trim() && "border-destructive/40"
+                          fieldDef.required && !merged?.value?.trim() && "border-destructive/40",
+                          wasJustFilled && "ring-2 ring-havn-success/40"
                         )}
                       />
                     )}
@@ -394,6 +591,220 @@ export default function ReviewForm({
           generating={generating}
         />
       )}
+    </div>
+  );
+}
+
+/* ── Match status card ───────────────────────────────────────────────── */
+
+function formatLevel(level: string | null): string {
+  switch (level) {
+    case "community_unit_owner":
+      return "Community + Unit + Owner";
+    case "community_unit":
+      return "Community + Unit";
+    case "community":
+      return "Community only";
+    case "none":
+      return "No match";
+    default:
+      return "Pending";
+  }
+}
+
+function levelTone(level: string | null): string {
+  switch (level) {
+    case "community_unit_owner":
+      return "border-havn-success/30 bg-havn-success/10 text-havn-success";
+    case "community_unit":
+      return "border-havn-amber/30 bg-havn-amber/10 text-havn-amber";
+    case "community":
+      return "border-havn-navy/30 bg-havn-navy/5 text-havn-navy";
+    default:
+      return "border-muted bg-muted/40 text-muted-foreground";
+  }
+}
+
+function confidenceTone(confidence: string | null): string {
+  switch (confidence) {
+    case "high":
+      return "border-havn-success/30 bg-havn-success/10 text-havn-success";
+    case "medium":
+      return "border-havn-amber/30 bg-havn-amber/10 text-havn-amber";
+    case "low":
+      return "border-destructive/30 bg-destructive/10 text-destructive";
+    default:
+      return "border-muted bg-muted/40 text-muted-foreground";
+  }
+}
+
+type MatchStatusCardProps = {
+  match: MatchCard;
+  busy: "none" | "rerun" | "apply" | "fill";
+  onApply: () => void;
+  onRerun: () => void;
+  onAutoPopulate: () => void;
+};
+
+function MatchStatusCard({
+  match,
+  busy,
+  onApply,
+  onRerun,
+  onAutoPopulate,
+}: MatchStatusCardProps) {
+  const isApplied =
+    !!match.appliedAt &&
+    match.appliedUnitId !== null &&
+    match.suggestedUnitId === match.appliedUnitId;
+  const auditStr = match.appliedAt
+    ? new Date(match.appliedAt).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+  const auditLabel =
+    match.matchSource === "havn_auto"
+      ? `Matched by Havn — community + unit + owner all confirmed${auditStr ? ` (${auditStr})` : ""}`
+      : match.matchSource === "staff_manual"
+        ? `Match applied by staff${auditStr ? ` (${auditStr})` : ""}`
+        : null;
+
+  const canApply = !!match.suggestedCommunityId && !isApplied;
+  const ownerString =
+    match.suggestedUnitOwners && match.suggestedUnitOwners.length > 0
+      ? match.suggestedUnitOwners.filter(Boolean).join(" & ")
+      : null;
+  const extracted = match.extractedContext;
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold",
+                levelTone(match.level)
+              )}
+            >
+              {formatLevel(match.level)}
+            </span>
+            {match.confidence && (
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium",
+                  confidenceTone(match.confidence)
+                )}
+              >
+                {match.confidence} confidence
+              </span>
+            )}
+            {auditLabel && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-havn-success/30 bg-havn-success/10 px-2 py-0.5 text-xs font-medium text-havn-success">
+                <ShieldCheck className="h-3 w-3" />
+                {auditLabel}
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-sm font-medium text-foreground">
+            Document → property match
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy !== "none"}
+            onClick={onRerun}
+          >
+            <RefreshCw
+              className={cn(
+                "mr-2 h-3.5 w-3.5",
+                busy === "rerun" && "animate-spin"
+              )}
+            />
+            {busy === "rerun" ? "Re-running..." : "Re-run match"}
+          </Button>
+          {canApply && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy !== "none"}
+              onClick={onApply}
+              className="bg-havn-navy text-white hover:bg-havn-navy/90"
+            >
+              <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
+              {busy === "apply" ? "Applying..." : "Apply match"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Suggested community
+          </p>
+          <p className="mt-1 text-foreground">
+            {match.suggestedCommunityName ?? "—"}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Suggested unit
+          </p>
+          <p className="mt-1 text-foreground">
+            {match.suggestedUnitStreet ?? "—"}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Owner on file
+          </p>
+          <p className="mt-1 text-foreground">{ownerString ?? "—"}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Owner on document
+          </p>
+          <p className="mt-1 text-foreground">
+            {extracted?.ownerNames && extracted.ownerNames.length > 0
+              ? extracted.ownerNames.join(" & ")
+              : "—"}
+          </p>
+        </div>
+      </div>
+
+      {match.reasoning && (
+        <p className="mt-3 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          {match.reasoning}
+        </p>
+      )}
+
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
+        <p className="text-xs text-muted-foreground">
+          Auto-populate fills draft fields from the cache + roster, scoped to
+          the match level above. Existing entries are never overwritten.
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy !== "none" || !match.level || match.level === "none"}
+          onClick={onAutoPopulate}
+        >
+          <Wand2
+            className={cn(
+              "mr-2 h-3.5 w-3.5",
+              busy === "fill" && "animate-spin"
+            )}
+          />
+          {busy === "fill" ? "Filling..." : "Auto-populate fields"}
+        </Button>
+      </div>
     </div>
   );
 }
