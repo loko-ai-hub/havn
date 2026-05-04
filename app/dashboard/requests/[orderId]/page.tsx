@@ -41,6 +41,7 @@ type OrderDetail = {
   requester_email: string | null;
   requester_phone: string | null;
   requester_role: string | null;
+  requester_company: string | null;
   property_address: string | null;
   unit_number: string | null;
   closing_date: string | null;
@@ -262,7 +263,9 @@ export default async function DashboardRequestDetailPage({
               <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
                 <p className="text-xs text-muted-foreground">Company</p>
-                <p className="text-sm text-foreground">—</p>
+                <p className="text-sm text-foreground">
+                  {row.requester_company || "—"}
+                </p>
               </div>
             </div>
             <div className="flex gap-3">

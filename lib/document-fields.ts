@@ -16,6 +16,13 @@ export type MergedFieldSet = {
   communityId: string | null;
 };
 
+function formatMasterTypeLabel(key: string): string {
+  return key
+    .split("_")
+    .map((s) => (s.length ? s[0].toUpperCase() + s.slice(1) : s))
+    .join(" ");
+}
+
 /**
  * Build pre-filled fields for an order by merging 3 sources:
  *   1. Order data (highest priority)
@@ -64,8 +71,29 @@ export async function getPrefilledFields(
     communityState = (community?.state as string | null) ?? null;
   }
 
-  const template = getTemplate(masterTypeKey, communityState);
-  if (!template) return { error: `No template for document type: ${masterTypeKey}` };
+  let template = getTemplate(masterTypeKey, communityState);
+  if (!template) {
+    // No native Havn template — but if the requester uploaded a 3P form,
+    // the staff still needs the review surface for the PDF overlay,
+    // match card, and extracted-context view. Return a synthetic empty
+    // template so the page renders the 3P workflow instead of bailing.
+    const { data: tpl3p } = await admin
+      .from("third_party_templates")
+      .select("id")
+      .eq("order_id", orderId)
+      .maybeSingle();
+    if (tpl3p) {
+      template = {
+        key: masterTypeKey,
+        title: formatMasterTypeLabel(masterTypeKey),
+        documentType: masterTypeKey,
+        sections: [],
+        fields: [],
+      };
+    } else {
+      return { error: `No template for document type: ${masterTypeKey}` };
+    }
+  }
 
   // If there's a saved draft, use it directly
   const draftFields = order.draft_fields as Record<string, string | null> | null;
