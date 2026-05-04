@@ -61,6 +61,9 @@ export default function StepYourInfo({
     if (!name.trim()) nextErrors.name = "Name is required.";
     if (!email.trim()) nextErrors.email = "Email is required.";
     else if (!isValidEmail(email)) nextErrors.email = "Please enter a valid email.";
+    if (order.requesterType === "title_company" && !companyName.trim()) {
+      nextErrors.companyName = "Company name is required.";
+    }
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors);
       return;
@@ -206,6 +209,42 @@ export default function StepYourInfo({
                 value={mlsId}
                 onChange={(event) => setMlsId(event.target.value)}
                 placeholder="MLS-10001"
+                className="bg-white"
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {order.requesterType === "title_company" ? (
+          <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+            <p className="text-sm font-medium text-foreground">Title company details</p>
+            <div className="space-y-2">
+              <Label htmlFor="companyName">Title company name</Label>
+              <Input
+                id="companyName"
+                value={companyName}
+                onChange={(event) => {
+                  setCompanyName(event.target.value);
+                  if (fieldErrors.companyName) {
+                    setFieldErrors((prev) => ({ ...prev, companyName: undefined }));
+                  }
+                }}
+                placeholder="Acme Title & Escrow"
+                className="bg-white"
+              />
+              {fieldErrors.companyName ? (
+                <p className="text-xs text-destructive">{fieldErrors.companyName}</p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="titleFileNumber">
+                File / order number <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="titleFileNumber"
+                value={nmlsNumber}
+                onChange={(event) => setNmlsNumber(event.target.value)}
+                placeholder="Title file or escrow reference"
                 className="bg-white"
               />
             </div>

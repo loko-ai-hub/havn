@@ -252,6 +252,7 @@ export async function submitOrder(input: {
       requester_email: order.requesterEmail,
       requester_phone: order.requesterPhone || null,
       requester_role: order.requesterType,
+      requester_company: order.companyName?.trim() || null,
       property_address: propertyAddress,
       unit_number: order.unitNumber || null,
       closing_date: closingDate,
