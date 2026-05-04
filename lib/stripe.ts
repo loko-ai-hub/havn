@@ -17,17 +17,6 @@ export function isStripeTestMode(): boolean {
 }
 
 /**
- * Client-safe mode check — derived from the publishable key, which is the
- * NEXT_PUBLIC_ env var the browser already has. Use this in client
- * components; use isStripeTestMode in server code.
- */
-export function isStripeTestModeClient(): boolean {
-  return (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "").startsWith(
-    "pk_test_"
-  );
-}
-
-/**
  * Pair of column names that hold a connected account's state for the
  * current platform key mode. Reads/writes against organizations should
  * route through this so test and live data don't bleed into each other.

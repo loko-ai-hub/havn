@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
-import { isStripeTestModeClient } from "@/lib/stripe";
+import { isStripeTestModeClient } from "@/lib/stripe-client";
 import { cn } from "@/lib/utils";
 
 import { DashboardSectionCard } from "../_lib/dashboard-section-card";

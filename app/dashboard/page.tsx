@@ -33,7 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { isStripeTestModeClient } from "@/lib/stripe";
+import { isStripeTestModeClient } from "@/lib/stripe-client";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
