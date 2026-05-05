@@ -65,6 +65,10 @@ Extract these fields if present:
 - pet_restrictions
 - rental_restrictions
 - parking_restrictions
+- assessment_frequency (how often dues are billed: one of "Monthly", "Quarterly", "Semi-Annually", "Annually", or another label found in the bylaws/declaration)
+- first_right_of_refusal (true/false — whether the association has a right of first refusal to purchase units before a third-party sale. Look in the declaration / CC&Rs.)
+- fha_va_approved (true/false — whether the association is FHA or VA approved for mortgage purposes. Look on FHA/VA certification documents.)
+- fidelity_bond (the fidelity bond / crime policy coverage amount. Look in the bylaws or insurance certificate.)
 - website
 - mailing_address
 - meeting_date (if this is meeting minutes: the date of the meeting in YYYY-MM-DD format; if the document covers multiple meetings use the most prominent/recent date)
