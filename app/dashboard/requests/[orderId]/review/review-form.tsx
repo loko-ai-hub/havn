@@ -88,6 +88,12 @@ type Props = {
     pages: OverlayPage[];
     fields: OverlayField[];
   } | null;
+  detectedFields: Array<{
+    externalLabel: string;
+    registryKey: string | null;
+    confidence: number | null;
+    fieldKind?: string | null;
+  }>;
 };
 
 export default function ReviewForm({
@@ -102,6 +108,7 @@ export default function ReviewForm({
   currentUserEmail,
   matchCard,
   overlay,
+  detectedFields,
 }: Props) {
   const router = useRouter();
   const [fields, setFields] = useState<Record<string, MergedField>>(initialFields);
@@ -312,33 +319,51 @@ export default function ReviewForm({
     <div className="space-y-6">
       {/* Completion bar */}
       {(() => {
-        // For 3P uploads with a captured layout, the meaningful denominator
-        // is "fields detected in the document" (every blank Form Parser
-        // found), not the native-template field count (which is 0 for doc
-        // types Havn doesn't ship a template for). Fall back to the native
-        // template count when no overlay exists.
-        const has3p = !!overlay && overlay.fields.length > 0;
-        const totalFields = has3p ? overlay.fields.length : template.fields.length;
-        const populatedFields = has3p
-          ? overlay.fields.filter((f) => {
-              const isCheckbox = f.kind === "checkbox";
-              const liveVal = f.registryKey
-                ? fields[f.registryKey]?.value ?? ""
-                : "";
-              if (isCheckbox) {
-                // Populated only when explicitly checked. Unchecked is the
-                // default Form Parser state and isn't a meaningful answer.
-                if (liveVal === "true" || liveVal === "1") return true;
-                if (!liveVal && f.currentValue === "true") return true;
-                return false;
+        // For 3P uploads, the meaningful denominator is the full list of
+        // questions Claude found in the form (detectedFields) — including
+        // ones Form Parser couldn't position. Falls back to overlay.fields
+        // when detectedFields is empty (older ingestion runs), and to
+        // template.fields when there's no 3P upload at all.
+        const has3p = detectedFields.length > 0 || (!!overlay && overlay.fields.length > 0);
+        const useDetected = detectedFields.length > 0;
+        const totalFields = useDetected
+          ? detectedFields.length
+          : has3p
+            ? overlay!.fields.length
+            : template.fields.length;
+        const populatedFields = useDetected
+          ? detectedFields.filter((f, idx) => {
+              const key =
+                f.registryKey ?? `__detected:${(f.externalLabel || "")
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, "_")
+                  .replace(/^_+|_+$/g, "")
+                  .slice(0, 40) || `idx${idx}`}`;
+              const v = fields[key]?.value ?? "";
+              const kind = (f.fieldKind ?? "text").toLowerCase();
+              if (kind === "checkbox" || kind === "boolean") {
+                return v === "true" || v === "1";
               }
-              if (liveVal.trim().length > 0) return true;
-              return (
-                typeof f.currentValue === "string" &&
-                f.currentValue.trim().length > 0
-              );
+              return v.trim().length > 0;
             }).length
-          : filledCount;
+          : has3p
+            ? overlay!.fields.filter((f) => {
+                const isCheckbox = f.kind === "checkbox";
+                const liveVal = f.registryKey
+                  ? fields[f.registryKey]?.value ?? ""
+                  : "";
+                if (isCheckbox) {
+                  if (liveVal === "true" || liveVal === "1") return true;
+                  if (!liveVal && f.currentValue === "true") return true;
+                  return false;
+                }
+                if (liveVal.trim().length > 0) return true;
+                return (
+                  typeof f.currentValue === "string" &&
+                  f.currentValue.trim().length > 0
+                );
+              }).length
+            : filledCount;
         const livePct = totalFields > 0
           ? Math.min(100, Math.round((populatedFields / totalFields) * 100))
           : 0;
@@ -531,13 +556,13 @@ export default function ReviewForm({
         />
       )}
 
-      {/* Form view for 3P uploads — flat list of every detected blank
-          grouped by page. Each field becomes a labeled input or
-          checkbox; values stay in sync with PDF view via the same
-          underlying fields state. */}
+      {/* Form view for 3P uploads — every question Claude found in the
+          form, including ones Form Parser couldn't position spatially.
+          PDF view shows the spatial subset; Form view is the complete
+          fillable list. */}
       {overlay && view === "form" && (
         <ThreePartyFormView
-          fields={overlay.fields}
+          detectedFields={detectedFields}
           values={Object.fromEntries(
             Object.entries(fields).map(([k, v]) => [k, v?.value ?? ""])
           )}
@@ -691,88 +716,113 @@ function unmappedKeyFor(field: OverlayField, idx: number): string {
   return `__unmapped:${field.page}:${norm || `idx${idx}`}`;
 }
 
+/** Synthetic key for detectedFields entries without a registry key.
+ * Same shape as unmappedKeyFor but page is implicit (not always known
+ * from text-based extraction). */
+function detectedUnmappedKey(label: string, idx: number): string {
+  const norm = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+  return `__detected:${norm || `idx${idx}`}`;
+}
+
+type DetectedField = {
+  externalLabel: string;
+  registryKey: string | null;
+  confidence: number | null;
+  fieldKind?: string | null;
+};
+
 function ThreePartyFormView({
-  fields,
+  detectedFields,
   values,
   onChange,
   highlightKeys,
 }: {
-  fields: OverlayField[];
+  detectedFields: DetectedField[];
   values: Record<string, string>;
   onChange: (key: string, value: string) => void;
   highlightKeys: Set<string>;
 }) {
-  const byPage = new Map<number, OverlayField[]>();
-  fields.forEach((f) => {
-    const list = byPage.get(f.page) ?? [];
-    list.push(f);
-    byPage.set(f.page, list);
-  });
-  const sortedPages = Array.from(byPage.entries()).sort(([a], [b]) => a - b);
+  if (detectedFields.length === 0) {
+    return (
+      <div className="rounded-xl border border-border bg-card px-5 py-8 text-center text-sm text-muted-foreground">
+        No fields detected yet. Try Re-process upload to re-run extraction.
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      {sortedPages.map(([pageNum, pageFields]) => (
-        <div
-          key={pageNum}
-          className="overflow-hidden rounded-xl border border-border bg-card"
-        >
-          <div className="bg-havn-navy px-5 py-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
-              Page {pageNum}
-            </h2>
-          </div>
-          <div className="grid gap-4 p-5">
-            {pageFields.map((f, idx) => {
-              const effectiveKey = f.registryKey ?? unmappedKeyFor(f, idx);
-              const liveVal = values[effectiveKey] ?? "";
-              const isCheckbox = f.kind === "checkbox";
-              const wasJustFilled = !!(
-                f.registryKey && highlightKeys.has(f.registryKey)
-              );
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="bg-havn-navy px-5 py-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
+          Form questions
+        </h2>
+      </div>
+      <div className="grid gap-4 p-5">
+        {detectedFields.map((f, idx) => {
+          const effectiveKey =
+            f.registryKey ?? detectedUnmappedKey(f.externalLabel, idx);
+          const liveVal = values[effectiveKey] ?? "";
+          const kind = (f.fieldKind ?? "text").toLowerCase();
+          const isCheckbox = kind === "checkbox" || kind === "boolean";
+          const isTextarea = kind === "textarea";
+          const isCurrency = kind === "currency";
+          const isDate = kind === "date";
+          const wasJustFilled = !!(
+            f.registryKey && highlightKeys.has(f.registryKey)
+          );
 
-              return (
-                <div key={`${effectiveKey}-${idx}`} className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs font-medium text-muted-foreground">
-                      {f.label}
-                    </Label>
-                    {wasJustFilled && (
-                      <span className="inline-flex items-center rounded-md border border-havn-success/30 bg-havn-success/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-havn-success">
-                        Auto-filled
-                      </span>
-                    )}
-                  </div>
-                  {isCheckbox ? (
-                    <label className="inline-flex items-center gap-2 text-sm text-foreground">
-                      <input
-                        type="checkbox"
-                        checked={liveVal === "true" || liveVal === "1"}
-                        onChange={(e) =>
-                          onChange(
-                            effectiveKey,
-                            e.target.checked ? "true" : "false"
-                          )
-                        }
-                        className="h-4 w-4 rounded border-input"
-                      />
-                      <span className="text-muted-foreground">
-                        {liveVal === "true" || liveVal === "1" ? "Yes" : "No"}
-                      </span>
-                    </label>
-                  ) : (
-                    <Input
-                      value={liveVal}
-                      onChange={(e) => onChange(effectiveKey, e.target.value)}
-                      placeholder={f.label}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+          return (
+            <div key={`${effectiveKey}-${idx}`} className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs font-medium text-muted-foreground">
+                  {f.externalLabel}
+                </Label>
+                {wasJustFilled && (
+                  <span className="inline-flex items-center rounded-md border border-havn-success/30 bg-havn-success/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-havn-success">
+                    Auto-filled
+                  </span>
+                )}
+              </div>
+              {isCheckbox ? (
+                <label className="inline-flex items-center gap-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={liveVal === "true" || liveVal === "1"}
+                    onChange={(e) =>
+                      onChange(
+                        effectiveKey,
+                        e.target.checked ? "true" : "false"
+                      )
+                    }
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  <span className="text-muted-foreground">
+                    {liveVal === "true" || liveVal === "1" ? "Yes" : "No"}
+                  </span>
+                </label>
+              ) : isTextarea ? (
+                <Textarea
+                  value={liveVal}
+                  rows={3}
+                  onChange={(e) => onChange(effectiveKey, e.target.value)}
+                  placeholder={f.externalLabel}
+                />
+              ) : (
+                <Input
+                  type={isDate ? "date" : "text"}
+                  value={liveVal}
+                  onChange={(e) => onChange(effectiveKey, e.target.value)}
+                  placeholder={isCurrency ? "$" : f.externalLabel}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

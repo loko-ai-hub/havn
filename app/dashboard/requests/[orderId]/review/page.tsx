@@ -43,7 +43,7 @@ export default async function DashboardRequestReviewPage({
   const { data: tpl } = await admin
     .from("third_party_templates")
     .select(
-      "match_level, match_confidence, match_reasoning, suggested_community_id, suggested_unit_id, extracted_context, mapped_count, unmapped_count, storage_path_pdf, pdf_pages, field_layout"
+      "match_level, match_confidence, match_reasoning, suggested_community_id, suggested_unit_id, extracted_context, mapped_count, unmapped_count, storage_path_pdf, pdf_pages, field_layout, detected_fields"
     )
     .eq("order_id", orderId)
     .maybeSingle();
@@ -73,6 +73,13 @@ export default async function DashboardRequestReviewPage({
           labelBbox: { x: number; y: number; w: number; h: number } | null;
           currentValue: string;
         }> | null;
+        detected_fields: Array<{
+          externalLabel: string;
+          registryKey: string | null;
+          confidence: number | null;
+          fieldKind?: string | null;
+          reasoning?: string | null;
+        }> | null;
       }
     | null;
 
@@ -94,6 +101,18 @@ export default async function DashboardRequestReviewPage({
           fields: tplRow.field_layout,
         }
       : null;
+
+  // Claude's text-based extraction. Catches everything Form Parser
+  // misses (especially the underline-blank text fields most HOA forms
+  // use for response questions). Form view renders these as a flat
+  // editable list; PDF view stays on overlay.fields for spatial
+  // accuracy.
+  const detectedFields = (tplRow?.detected_fields ?? []) as Array<{
+    externalLabel: string;
+    registryKey: string | null;
+    confidence: number | null;
+    fieldKind?: string | null;
+  }>;
 
   // Resolve names for the suggested community + unit so the card can show
   // them without a second round-trip on the client.
@@ -181,6 +200,7 @@ export default async function DashboardRequestReviewPage({
           currentUserEmail={email}
           matchCard={matchCard}
           overlay={overlay}
+          detectedFields={detectedFields}
         />
       )}
     </div>
