@@ -37,7 +37,10 @@ function isBlankToken(t: OcrToken): boolean {
   const t2 = t.text.trim();
   if (t2.length === 0) return true;
   if (/^_+$/.test(t2)) return true;
-  if (/^[\-/$.,]+$/.test(t2)) return true;
+  // Punctuation + currency markers commonly between a label and its blank.
+  // Without `:` the synthesis stops one token after the label and produces
+  // a 4%-wide minimum box right on top of the label-end colon.
+  if (/^[\-/$.,:;=]+$/.test(t2)) return true;
   return false;
 }
 

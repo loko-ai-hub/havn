@@ -142,33 +142,14 @@ export async function runThirdPartyIngestion(params: {
         })
       : null;
 
-    // Filter pre-printed sender info + requester context out of the
-    // detected fields. Form Parser tags every form-shaped slot it sees,
-    // including the form-issuer's return address block and the
-    // requester's already-filled context fields at the top of the form.
-    // Only blanks the management company response should fill survive
-    // this pass.
-    const filteredLayout = formLayout
-      ? {
-          pages: formLayout.pages,
-          fields: await filterFillableFields(formLayout, {
-            issuer: ingestion.issuer,
-            formTitle: ingestion.formTitle,
-          }).catch((err) => {
-            console.warn("[3p-pipeline] filterFillableFields failed:", err);
-            return formLayout.fields;
-          }),
-        }
-      : null;
-
     // Synthesize bounding boxes for detected_fields entries Form Parser
     // missed. Form Parser frequently fails on underline-style blanks
     // ("Amount of Maintenance Fee: $___") on HOA forms; the OCR token
     // stream still has the labels with positions, so we project forward
-    // on the same line to estimate where the value blank sits. Result
-    // gets merged into the layout so PDF view can render inputs over
-    // every detected question, not just the ones Form Parser found.
-    const synthesizedFields = filteredLayout
+    // on the same line to estimate where the value blank sits. Existing
+    // Form Parser entries with the same label are skipped so we don't
+    // duplicate.
+    const synthesizedFields = formLayout
       ? synthesizeFieldLayout({
           ocrPages,
           detectedFields: ingestion.fields.map((f) => ({
@@ -176,19 +157,37 @@ export async function runThirdPartyIngestion(params: {
             registryKey: f.registryKey,
             fieldKind: (f as { fieldKind?: string | null }).fieldKind ?? null,
           })),
-          formParserFields: filteredLayout.fields,
+          formParserFields: formLayout.fields,
         })
       : [];
 
-    const mergedLayout = filteredLayout
+    // Merge Form Parser + synthesis, then filter — running the filter
+    // pass *after* synthesis means requester-context labels (Date,
+    // Owner, Property) get caught regardless of which source produced
+    // them. Running it before synthesis would just re-add them via the
+    // detected_fields pass.
+    const mergedLayout = formLayout
       ? {
-          pages: filteredLayout.pages,
-          fields: [...filteredLayout.fields, ...synthesizedFields],
+          pages: formLayout.pages,
+          fields: [...formLayout.fields, ...synthesizedFields],
         }
       : null;
 
-    const fieldLayout = mergedLayout
-      ? attachRegistryKeys(mergedLayout, ingestion.fields.map((f) => ({
+    const filteredLayout = mergedLayout
+      ? {
+          pages: mergedLayout.pages,
+          fields: await filterFillableFields(mergedLayout, {
+            issuer: ingestion.issuer,
+            formTitle: ingestion.formTitle,
+          }).catch((err) => {
+            console.warn("[3p-pipeline] filterFillableFields failed:", err);
+            return mergedLayout.fields;
+          }),
+        }
+      : null;
+
+    const fieldLayout = filteredLayout
+      ? attachRegistryKeys(filteredLayout, ingestion.fields.map((f) => ({
           label: f.externalLabel,
           registryKey: f.registryKey,
         })))
