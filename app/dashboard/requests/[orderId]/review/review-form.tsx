@@ -12,7 +12,7 @@ import {
   Wand2,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -125,15 +125,12 @@ export default function ReviewForm({
   const [highlightKeys, setHighlightKeys] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"form" | "pdf">(overlay ? "pdf" : "form");
   // Layout-edit mode lets staff drag inputs in PDF view to fix
-  // alignment when synthesis got the position wrong (e.g. labels that
-  // sit below their blanks). Overrides accumulate locally; Save writes
-  // them onto the third_party_templates row. Pre-enabled via
-  // ?editLayout=1 — God Mode form-library Refine button uses this so
-  // staff lands directly in the editor.
-  const searchParams = useSearchParams();
-  const [editingLayout, setEditingLayout] = useState(
-    searchParams?.get("editLayout") === "1" && !!overlay
-  );
+  // alignment for THIS order only (per-order tweak). Overrides
+  // accumulate locally; Save writes them onto the third_party_templates
+  // row. For canonical templates that benefit every future order of
+  // the same form variant, Havn staff uses the dedicated God Mode
+  // editor at /god-mode/form-templates/[orderId] instead.
+  const [editingLayout, setEditingLayout] = useState(false);
   const [layoutOverrides, setLayoutOverrides] = useState<
     Record<string, { x: number; y: number; w: number; h: number }>
   >({});

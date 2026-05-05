@@ -1,14 +1,12 @@
 "use client";
 
 import { CheckCircle2, Clock, ExternalLink, FileQuestion } from "lucide-react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 
 import {
-  impersonateForOrder,
   listFormVariants,
   type FormVariantRow,
 } from "./form-templates-actions";
@@ -22,29 +20,9 @@ import {
  * saving as a template is one click away.
  */
 export default function FormLibraryPanel() {
-  const router = useRouter();
   const [rows, setRows] = useState<FormVariantRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [opening, setOpening] = useState<string | null>(null);
-
-  const handleRefine = async (orderId: string) => {
-    setOpening(orderId);
-    try {
-      const result = await impersonateForOrder(orderId);
-      if ("error" in result) {
-        toast.error(result.error);
-        return;
-      }
-      router.push(`/dashboard/requests/${orderId}/review?editLayout=1`);
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Could not open editor."
-      );
-    } finally {
-      setOpening(null);
-    }
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -146,15 +124,13 @@ export default function FormLibraryPanel() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     {r.latestOrderId && (
-                      <button
-                        type="button"
-                        onClick={() => void handleRefine(r.latestOrderId!)}
-                        disabled={opening === r.latestOrderId}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                      <Link
+                        href={`/god-mode/form-templates/${r.latestOrderId}`}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                       >
                         <ExternalLink className="h-3 w-3" />
-                        {opening === r.latestOrderId ? "Opening…" : "Refine"}
-                      </button>
+                        {r.templateSaved ? "Update" : "Curate"}
+                      </Link>
                     )}
                   </td>
                 </tr>
