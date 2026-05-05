@@ -331,8 +331,6 @@ export default function ReviewForm({
         const livePct = totalFields > 0
           ? Math.min(100, Math.round((populatedFields / totalFields) * 100))
           : 0;
-        const mapped = match?.mappedCount ?? 0;
-        const unmapped = match?.unmappedCount ?? 0;
 
         return (
           <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
@@ -355,10 +353,10 @@ export default function ReviewForm({
                   {livePct}%
                 </span>
               </div>
-              {has3p && (mapped > 0 || unmapped > 0) && (
+              {has3p && totalFields - populatedFields > 0 && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {totalFields} detected in the document · {mapped} mapped to merge tags
-                  {unmapped > 0 ? ` · ${unmapped} unmapped` : ""}
+                  {totalFields - populatedFields}{" "}
+                  {totalFields - populatedFields === 1 ? "answer requires" : "answers require"} your attention
                 </p>
               )}
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-border">
