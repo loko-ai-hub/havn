@@ -27,6 +27,7 @@ import { parseFormLayout, attachRegistryKeys } from "@/lib/pdf-form-layout";
 import { extractAcroFormLayout } from "@/lib/acroform-extractor";
 import { filterFillableFieldsWithClassification } from "@/lib/filter-fillable-fields";
 import { synthesizeFieldLayout } from "@/lib/synthesize-field-layout";
+import { visionPositionFields } from "@/lib/vision-field-positioner";
 import { proposeRegistryFields } from "@/lib/propose-registry-fields";
 import { send3pReviewNeeded } from "@/lib/resend";
 import { GOD_MODE_EMAILS } from "@/app/god-mode/constants";
@@ -185,14 +186,39 @@ export async function runThirdPartyIngestion(params: {
       );
     }
 
-    // Synthesize bounding boxes for detected_fields entries Form Parser
-    // missed. Skipped entirely when cache or AcroForm gave us positions
-    // (those carry the authoritative field set; synthesis would only
-    // hallucinate extras). Otherwise: Form Parser frequently fails on
-    // underline-style blanks; the OCR token stream still has the labels
-    // with positions, so we project forward on the same line to estimate
-    // where the value blank sits.
-    const synthesizedFields = !cachedTemplate && !acroformLayout && formLayout
+    // 4b-vision. When the form is a flat scan (no AcroForm) AND the
+    //   vendor template cache missed, ask Claude vision to position the
+    //   detected_fields labels by SEEING the rendered page images. This
+    //   is the positioning workhorse for novel forms — vision actually
+    //   resolves underline blanks and signature lines that the OCR
+    //   token stream can't reach. Result is merged with Form Parser's
+    //   layout (vision-found fields fill gaps; Form Parser's stay).
+    //   Skipped when AcroForm already gave us positions.
+    const visionLayout = !cachedTemplate && !acroformLayout && mimeType === "application/pdf"
+      ? await visionPositionFields({
+          pdfBuffer: fileBuffer,
+          detectedFields: ingestion.fields.map((f) => ({
+            externalLabel: f.externalLabel,
+            registryKey: f.registryKey,
+            fieldKind: (f as { fieldKind?: string | null }).fieldKind ?? null,
+          })),
+        }).catch((err) => {
+          console.warn("[3p-pipeline] visionPositionFields failed:", err);
+          return null;
+        })
+      : null;
+
+    if (visionLayout) {
+      console.log(
+        `[3p-pipeline] vision positioner: ${visionLayout.fields.length} fields`
+      );
+    }
+
+    // Heuristic synthesis is the LAST-RESORT fallback now. Skipped when
+    // any of the higher-leverage positioners (cache / AcroForm / vision)
+    // produced fields. Kept as a final safety net for edge cases where
+    // vision fails entirely (network blip, image render failure, etc.).
+    const synthesizedFields = !cachedTemplate && !acroformLayout && !visionLayout && formLayout
       ? synthesizeFieldLayout({
           ocrPages,
           detectedFields: ingestion.fields.map((f) => ({
@@ -204,15 +230,20 @@ export async function runThirdPartyIngestion(params: {
         })
       : [];
 
-    // Merge Form Parser + synthesis, then filter — running the filter
-    // pass *after* synthesis means requester-context labels (Date,
-    // Owner, Property) get caught regardless of which source produced
-    // them. Running it before synthesis would just re-add them via the
-    // detected_fields pass.
-    const mergedLayout = formLayout
+    // Merge whichever positioners produced fields, then filter — running
+    // the filter pass *after* synthesis means requester-context labels
+    // (Date, Owner, Property) get caught regardless of which source
+    // produced them. Form Parser fields (when present) provide the
+    // already-filled context fields the filter then routes to the
+    // requester-draft harvest below.
+    const mergedLayout = formLayout || visionLayout
       ? {
-          pages: formLayout.pages,
-          fields: [...formLayout.fields, ...synthesizedFields],
+          pages: visionLayout?.pages ?? formLayout?.pages ?? [],
+          fields: [
+            ...(formLayout?.fields ?? []),
+            ...(visionLayout?.fields ?? []),
+            ...synthesizedFields,
+          ],
         }
       : null;
 
