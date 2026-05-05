@@ -14,7 +14,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { extractTextFromBuffer } from "@/lib/pdf-text";
+import { extractTextWithLayout } from "@/lib/pdf-text";
 import { extractFormContext } from "@/lib/extract-form-context";
 import {
   ingestExternalTemplate,
@@ -23,6 +23,7 @@ import {
 import { matchOrderProperty } from "@/lib/match-order-property";
 import { parseFormLayout, attachRegistryKeys } from "@/lib/pdf-form-layout";
 import { filterFillableFields } from "@/lib/filter-fillable-fields";
+import { synthesizeFieldLayout } from "@/lib/synthesize-field-layout";
 import { proposeRegistryFields } from "@/lib/propose-registry-fields";
 import { send3pReviewNeeded } from "@/lib/resend";
 import { GOD_MODE_EMAILS } from "@/app/god-mode/constants";
@@ -77,8 +78,12 @@ export async function runThirdPartyIngestion(params: {
     const fileBuffer = Buffer.from(await blob.arrayBuffer());
     const mimeType = (row.mime_type as string | null) ?? "application/pdf";
 
-    // 3. Extract text.
-    const { rawText } = await extractTextFromBuffer(fileBuffer, mimeType);
+    // 3. Extract text + per-token positions. Positions feed the bounding-
+    //    box synthesis pass below for fields Form Parser misses.
+    const { rawText, pages: ocrPages } = await extractTextWithLayout(
+      fileBuffer,
+      mimeType
+    );
     if (!rawText.trim()) {
       throw new Error("No text extracted from PDF — document may be image-only or password-protected");
     }
@@ -156,8 +161,34 @@ export async function runThirdPartyIngestion(params: {
         }
       : null;
 
-    const fieldLayout = filteredLayout
-      ? attachRegistryKeys(filteredLayout, ingestion.fields.map((f) => ({
+    // Synthesize bounding boxes for detected_fields entries Form Parser
+    // missed. Form Parser frequently fails on underline-style blanks
+    // ("Amount of Maintenance Fee: $___") on HOA forms; the OCR token
+    // stream still has the labels with positions, so we project forward
+    // on the same line to estimate where the value blank sits. Result
+    // gets merged into the layout so PDF view can render inputs over
+    // every detected question, not just the ones Form Parser found.
+    const synthesizedFields = filteredLayout
+      ? synthesizeFieldLayout({
+          ocrPages,
+          detectedFields: ingestion.fields.map((f) => ({
+            externalLabel: f.externalLabel,
+            registryKey: f.registryKey,
+            fieldKind: (f as { fieldKind?: string | null }).fieldKind ?? null,
+          })),
+          formParserFields: filteredLayout.fields,
+        })
+      : [];
+
+    const mergedLayout = filteredLayout
+      ? {
+          pages: filteredLayout.pages,
+          fields: [...filteredLayout.fields, ...synthesizedFields],
+        }
+      : null;
+
+    const fieldLayout = mergedLayout
+      ? attachRegistryKeys(mergedLayout, ingestion.fields.map((f) => ({
           label: f.externalLabel,
           registryKey: f.registryKey,
         })))
