@@ -1,4 +1,4 @@
-import type { FieldType } from "./types";
+import type { FieldType, LifecycleTier } from "./types";
 
 /**
  * Where a merge-tag value can be sourced from.
@@ -35,7 +35,29 @@ export type FieldRegistryEntry = {
    * false = unit/order-specific; must be collected or verified per order.
    */
   communityLevel: boolean;
+  /**
+   * Cache lifecycle tier. Drives per-tier read/write rules in
+   * lib/hydrate-draft-fields.ts and lib/resolve-merge-tags.ts. See
+   * lib/document-templates/types.ts for tier definitions.
+   *
+   * Default mapping when this field isn't set on a registry entry:
+   * `communityLevel: true` → "onboarding", `false` → "per_order".
+   * Inferred via getLifecycleTier() — explicit values always win.
+   */
+  lifecycleTier?: LifecycleTier;
 };
+
+/**
+ * Resolve the lifecycle tier for a registry entry, falling back to a
+ * sensible default when the entry doesn't specify one. The default is
+ * derived from `communityLevel` so existing entries keep working
+ * without an explicit tag — community-level → onboarding (cacheable),
+ * non-community-level → per_order (never cached).
+ */
+export function getLifecycleTier(entry: FieldRegistryEntry): LifecycleTier {
+  if (entry.lifecycleTier) return entry.lifecycleTier;
+  return entry.communityLevel ? "onboarding" : "per_order";
+}
 
 /**
  * Central registry of every merge tag available across Havn templates.

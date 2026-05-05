@@ -1,5 +1,32 @@
 export type FieldType = "text" | "currency" | "date" | "textarea" | "boolean";
 
+/**
+ * How long a merge-tag value stays valid + where the canonical source is.
+ *
+ * - `governing`  — facts from the declaration / CC&Rs / bylaws. Rarely
+ *                  change. Cache forever; only invalidated when those
+ *                  documents are re-OCR'd or staff manually edits.
+ *                  Examples: association_name, statute, fha_va_approved,
+ *                  petition_restrictions.
+ * - `onboarding` — set by the management company / board during community
+ *                  onboarding. Persistent until manual edit.
+ *                  Examples: management_contact_name, fiscal_year_start,
+ *                  assessment_frequency, insurance_company.
+ * - `per_unit`   — true for a unit but varies across units in the same
+ *                  community. Drifts over time. NEVER cache; always
+ *                  re-fetch from `community_units` at order time.
+ *                  Examples: owner_name, account_balance_owed,
+ *                  account_paid_through.
+ * - `per_order`  — only true for this specific order. NEVER cache;
+ *                  always read from the order row.
+ *                  Examples: closing_date, delivery_speed, requester_name.
+ */
+export type LifecycleTier =
+  | "governing"
+  | "onboarding"
+  | "per_unit"
+  | "per_order";
+
 export type FieldDef = {
   key: string;
   label: string;

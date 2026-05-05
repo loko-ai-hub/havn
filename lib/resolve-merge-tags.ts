@@ -18,6 +18,7 @@ import { BEST_MODEL } from "@/lib/ai-models";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   FIELD_REGISTRY,
+  getLifecycleTier,
   type FieldRegistryEntry,
 } from "@/lib/document-templates/field-registry";
 
@@ -163,9 +164,13 @@ export async function persistResolvedMergeTags(
     .filter((r) => r.confidence >= CACHE_CONFIDENCE_THRESHOLD)
     .filter((r) => {
       const entry = FIELD_REGISTRY[r.key as keyof typeof FIELD_REGISTRY];
-      // Only cache community-level fields — order-specific fields don't
-      // belong in the community cache.
-      return entry?.communityLevel === true;
+      if (!entry) return false;
+      // Only cache governing + onboarding tier fields. per_unit lives on
+      // community_units (refetched per order); per_order lives on the
+      // order row itself. Falls back to communityLevel for entries not
+      // yet tagged with an explicit lifecycleTier.
+      const tier = getLifecycleTier(entry as FieldRegistryEntry);
+      return tier === "governing" || tier === "onboarding";
     });
 
   skipped = result.resolved.length - candidateRows.length;
@@ -188,14 +193,26 @@ export async function persistResolvedMergeTags(
 
   const rows = candidateRows
     .filter((r) => !manualKeys.has(r.key))
-    .map((r) => ({
-      community_id: params.communityId,
-      document_type: documentType,
-      field_key: r.key,
-      field_value: r.value,
-      source: "ocr" as const,
-      updated_at: nowIso,
-    }));
+    .map((r) => {
+      const entry = FIELD_REGISTRY[r.key as keyof typeof FIELD_REGISTRY] as
+        | FieldRegistryEntry
+        | undefined;
+      const tier = entry ? getLifecycleTier(entry) : "onboarding";
+      return {
+        community_id: params.communityId,
+        document_type: documentType,
+        field_key: r.key,
+        field_value: r.value,
+        source: "ocr" as const,
+        updated_at: nowIso,
+        // Audit columns from the lifecycle-tiers migration. Stamped on
+        // every cache write so the God Mode audit panel can show what
+        // produced each row.
+        lifecycle_tier: tier,
+        last_refreshed_at: nowIso,
+        source_event: "ocr_extract" as const,
+      };
+    });
 
   const preservedManual = candidateRows.length - rows.length;
 

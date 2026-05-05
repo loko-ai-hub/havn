@@ -15,6 +15,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   FIELD_REGISTRY,
+  getLifecycleTier,
   type FieldRegistryEntry,
 } from "@/lib/document-templates/field-registry";
 
@@ -243,7 +244,14 @@ export async function hydrateDraftFields(input: {
 
     let value: unknown = null;
 
-    if (UNIT_LEVEL_KEYS.has(key)) {
+    // Route by lifecycle tier first — explicit tag wins over the
+    // legacy hardcoded UNIT/ORG sets. Falls back to the legacy
+    // routing when the tier doesn't dictate a source (e.g. governing
+    // / onboarding both pull from the cache, same as the legacy
+    // `entry.communityLevel` branch).
+    const tier = getLifecycleTier(entry);
+
+    if (tier === "per_unit" || UNIT_LEVEL_KEYS.has(key)) {
       if (!allowUnitFields) {
         skippedNoSource.push(key);
         continue;
@@ -261,11 +269,12 @@ export async function hydrateDraftFields(input: {
         // wasn't touched).
         value = cacheMap.get(key) ?? null;
       }
-    } else if (entry.communityLevel) {
+    } else if (tier === "governing" || tier === "onboarding") {
+      // Governing + onboarding tiers live in community_field_cache.
       value = cacheMap.get(key) ?? null;
     } else {
-      // Order-context field with no auto-source today (account_paid_through,
-      // etc.) — staff fills manually.
+      // per_order tier (or untagged + non-community-level) — no
+      // auto-source today. Staff fills manually.
       skippedNoSource.push(key);
       continue;
     }
