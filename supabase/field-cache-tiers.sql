@@ -30,11 +30,11 @@ create index if not exists community_field_cache_tier_refreshed_idx
 
 -- Backfill: stamp existing rows so the index is useful and the audit
 -- panel doesn't show null tiers everywhere. Existing rows came from
--- some mix of OCR + manual entry; mark them as such with a refreshed
--- timestamp pulled from updated_at where available, falling back to
--- created_at, falling back to now().
+-- some mix of OCR + manual entry; stamp last_refreshed_at from
+-- updated_at where available, fall back to now(). (community_field_cache
+-- doesn't have a created_at column.)
 update public.community_field_cache
-set last_refreshed_at = coalesce(last_refreshed_at, updated_at, created_at, now())
+set last_refreshed_at = coalesce(last_refreshed_at, updated_at, now())
 where last_refreshed_at is null;
 
 update public.community_field_cache
