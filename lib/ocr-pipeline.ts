@@ -56,7 +56,8 @@ Extract these fields if present:
 - insurance_agent_phone
 - insurance_agent_address (the agent's mailing address, if shown)
 - reserve_fund_balance
-- fiscal_year_end
+- fiscal_year_start (the FIRST date of the association's fiscal/billing year — usually a month + day like "January 1" or a full date if the bylaws specify one. Look in the bylaws / declaration / budget; phrases like "fiscal year shall begin on", "fiscal year of the Association is", "billing year runs from").
+- fiscal_year_end (the LAST date of the fiscal/billing year — usually a month + day like "December 31". Same sources as fiscal_year_start.)
 - total_units
 - legal_description
 - tax_id
