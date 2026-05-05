@@ -35,6 +35,8 @@ export type OverlayPage = {
   height: number;
 };
 
+type BboxOverride = { x: number; y: number; w: number; h: number };
+
 type Props = {
   pdfUrl: string;
   pages: OverlayPage[];
@@ -45,6 +47,12 @@ type Props = {
   onChange: (registryKey: string, value: string) => void;
   /** Highlight keys that were just auto-populated. */
   highlightKeys?: Set<string>;
+  /** When true, inputs become draggable; clicks no longer focus. */
+  editingLayout?: boolean;
+  /** Live overrides keyed by effective-key. Applied to render position. */
+  layoutOverrides?: Record<string, BboxOverride>;
+  /** Called when staff drags a field. Parent accumulates overrides. */
+  onLayoutOverride?: (key: string, bbox: BboxOverride) => void;
 };
 
 const DEFAULT_RENDER_WIDTH = 880;
@@ -73,6 +81,9 @@ export default function PdfOverlay({
   values,
   onChange,
   highlightKeys,
+  editingLayout,
+  layoutOverrides,
+  onLayoutOverride,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(DEFAULT_RENDER_WIDTH);
@@ -138,6 +149,9 @@ export default function PdfOverlay({
                 values={values}
                 onChange={onChange}
                 highlightKeys={highlightKeys}
+                editingLayout={editingLayout}
+                layoutOverrides={layoutOverrides}
+                onLayoutOverride={onLayoutOverride}
               />
             );
           })}
@@ -154,6 +168,9 @@ type PageProps = {
   values: Record<string, string>;
   onChange: (registryKey: string, value: string) => void;
   highlightKeys?: Set<string>;
+  editingLayout?: boolean;
+  layoutOverrides?: Record<string, BboxOverride>;
+  onLayoutOverride?: (key: string, bbox: BboxOverride) => void;
 };
 
 function PageWithOverlay({
@@ -163,8 +180,53 @@ function PageWithOverlay({
   values,
   onChange,
   highlightKeys,
+  editingLayout,
+  layoutOverrides,
+  onLayoutOverride,
 }: PageProps) {
   const [renderedSize, setRenderedSize] = useState<{ w: number; h: number } | null>(null);
+  const [dragging, setDragging] = useState<{
+    key: string;
+    bbox: BboxOverride;
+    startMouseX: number;
+    startMouseY: number;
+    startBboxX: number;
+    startBboxY: number;
+  } | null>(null);
+
+  // Global mouse listeners while dragging — needed because the input
+  // moves with the cursor and may briefly leave the original element's
+  // hit area between frames.
+  useEffect(() => {
+    if (!dragging || !renderedSize) return;
+    function clamp01(n: number): number {
+      if (!Number.isFinite(n)) return 0;
+      if (n < 0) return 0;
+      if (n > 1) return 1;
+      return n;
+    }
+    function onMove(e: MouseEvent) {
+      if (!dragging || !renderedSize) return;
+      const dx = (e.clientX - dragging.startMouseX) / renderedSize.w;
+      const dy = (e.clientY - dragging.startMouseY) / renderedSize.h;
+      const next = {
+        x: clamp01(dragging.startBboxX + dx),
+        y: clamp01(dragging.startBboxY + dy),
+        w: dragging.bbox.w,
+        h: dragging.bbox.h,
+      };
+      onLayoutOverride?.(dragging.key, next);
+    }
+    function onUp() {
+      setDragging(null);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [dragging, renderedSize, onLayoutOverride]);
 
   return (
     <div className="relative mx-auto bg-white shadow-sm" style={{ width }}>
@@ -190,22 +252,63 @@ function PageWithOverlay({
         >
           {fields.map((field, idx) => {
             if (!field.valueBbox) return null;
-            const left = field.valueBbox.x * renderedSize.w;
-            const top = field.valueBbox.y * renderedSize.h;
-            const w = field.valueBbox.w * renderedSize.w;
-            const rawH = field.valueBbox.h * renderedSize.h;
+            const effectiveKey = field.registryKey ?? unmappedKeyFor(field, idx);
+            // Apply staff override if any — that's the live position
+            // shown both during drag and after Save.
+            const bbox = layoutOverrides?.[effectiveKey] ?? field.valueBbox;
+            const left = bbox.x * renderedSize.w;
+            const top = bbox.y * renderedSize.h;
+            const w = bbox.w * renderedSize.w;
+            const rawH = bbox.h * renderedSize.h;
             const isCheckbox = field.kind === "checkbox";
             const h = isCheckbox ? Math.max(rawH, 14) : Math.max(rawH, MIN_INPUT_HEIGHT);
-            // Always editable — unmapped fields use a synthetic key so the
-            // value still persists into draft_fields (and stamps onto the
-            // delivered PDF), it just doesn't pull from the merge-tag cache.
-            const effectiveKey = field.registryKey ?? unmappedKeyFor(field, idx);
             const value = values[effectiveKey] ?? "";
             const highlighted = !!(
               field.registryKey && highlightKeys?.has(field.registryKey)
             );
             const isUnmapped = !field.registryKey;
             const reactKey = `${effectiveKey}-${idx}`;
+            const beingDragged = dragging?.key === effectiveKey;
+
+            // In layout-edit mode, EVERY field becomes a draggable
+            // ghost — no editing, no checkbox toggle, just position.
+            if (editingLayout) {
+              return (
+                <div
+                  key={reactKey}
+                  role="button"
+                  tabIndex={0}
+                  title={`${field.label} — drag to reposition`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setDragging({
+                      key: effectiveKey,
+                      bbox,
+                      startMouseX: e.clientX,
+                      startMouseY: e.clientY,
+                      startBboxX: bbox.x,
+                      startBboxY: bbox.y,
+                    });
+                  }}
+                  className={cn(
+                    "pointer-events-auto absolute rounded-sm border-2 shadow-md transition-colors",
+                    beingDragged
+                      ? "cursor-grabbing border-havn-navy bg-havn-navy/15"
+                      : "cursor-grab border-havn-navy/60 bg-havn-navy/5 hover:bg-havn-navy/10"
+                  )}
+                  style={{
+                    left,
+                    top,
+                    width: Math.max(w, isCheckbox ? 14 : 40),
+                    height: h,
+                  }}
+                >
+                  <span className="pointer-events-none absolute -top-4 left-0 max-w-full truncate rounded bg-havn-navy px-1.5 py-0.5 text-[10px] font-medium text-white">
+                    {field.label}
+                  </span>
+                </div>
+              );
+            }
 
             if (isCheckbox) {
               const liveChecked =

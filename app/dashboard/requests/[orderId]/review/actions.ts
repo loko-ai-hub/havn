@@ -385,6 +385,103 @@ export async function rerunIngestion(
   };
 }
 
+/* ── saveFieldLayoutPositions ────────────────────────────────────────
+ * Persist staff-corrected bounding boxes back onto the third_party_
+ * templates row's field_layout. Overrides are keyed by the same
+ * effective key the overlay UI uses (registry key when mapped, else
+ * a synthetic `__unmapped:<page>:<labelnorm>` key).
+ *
+ * Form Parser + the synthesis pass both make best-effort guesses at
+ * where each blank sits on the page. When they get it wrong (label
+ * below the blank, two blanks on one line, paraphrased label that
+ * fuzzy-matched the wrong span), staff drags the input into the
+ * right spot and clicks Save. Future re-processes won't overwrite
+ * — overrides survive because they're stored on the row itself.
+ */
+type BboxOverride = { x: number; y: number; w: number; h: number };
+
+export async function saveFieldLayoutPositions(
+  orderId: string,
+  overrides: Record<string, BboxOverride>
+): Promise<{ ok: true; updatedCount: number } | { error: string }> {
+  const loaded = await loadOrderForOrg(orderId);
+  if (!loaded.ok) return { error: loaded.error };
+  const { admin } = loaded;
+
+  const { data: tpl } = await admin
+    .from("third_party_templates")
+    .select("id, field_layout")
+    .eq("order_id", orderId)
+    .maybeSingle();
+
+  if (!tpl) {
+    return { error: "No third-party template uploaded for this order." };
+  }
+
+  const tplRow = tpl as {
+    id: string;
+    field_layout: Array<{
+      registryKey: string | null;
+      label: string;
+      page: number;
+      kind?: string;
+      valueBbox: BboxOverride | null;
+      labelBbox: BboxOverride | null;
+      currentValue: string;
+    }> | null;
+  };
+
+  const layout = tplRow.field_layout ?? [];
+  if (layout.length === 0) {
+    return { error: "Layout is empty — nothing to update." };
+  }
+
+  let updatedCount = 0;
+  const updated = layout.map((field, idx) => {
+    const key = effectiveLayoutKey(field, idx);
+    const override = overrides[key];
+    if (!override) return field;
+    updatedCount += 1;
+    return { ...field, valueBbox: override };
+  });
+
+  if (updatedCount === 0) {
+    return { ok: true, updatedCount: 0 };
+  }
+
+  const { error: updErr } = await admin
+    .from("third_party_templates")
+    .update({
+      field_layout: updated,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", tplRow.id);
+
+  if (updErr) {
+    return { error: updErr.message };
+  }
+
+  revalidatePath(`/dashboard/requests/${orderId}/review`);
+  return { ok: true, updatedCount };
+}
+
+function effectiveLayoutKey(
+  field: {
+    registryKey: string | null;
+    label: string;
+    page: number;
+  },
+  idx: number
+): string {
+  if (field.registryKey) return field.registryKey;
+  const norm = field.label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+  return `__unmapped:${field.page}:${norm || `idx${idx}`}`;
+}
+
 function isMatchLevel(v: string | null): v is MatchLevel {
   return (
     v === "community_unit_owner" ||

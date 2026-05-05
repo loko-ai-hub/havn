@@ -37,6 +37,7 @@ import {
   autoPopulateFields,
   rerunIngestion,
   runMatchExtraction,
+  saveFieldLayoutPositions,
 } from "./actions";
 import type { OverlayField, OverlayPage } from "./pdf-overlay";
 
@@ -123,6 +124,15 @@ export default function ReviewForm({
   >("none");
   const [highlightKeys, setHighlightKeys] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"form" | "pdf">(overlay ? "pdf" : "form");
+  // Layout-edit mode lets staff drag inputs in PDF view to fix
+  // alignment when synthesis got the position wrong (e.g. labels that
+  // sit below their blanks). Overrides accumulate locally; Save writes
+  // them onto the third_party_templates row.
+  const [editingLayout, setEditingLayout] = useState(false);
+  const [layoutOverrides, setLayoutOverrides] = useState<
+    Record<string, { x: number; y: number; w: number; h: number }>
+  >({});
+  const [savingLayout, setSavingLayout] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -515,7 +525,7 @@ export default function ReviewForm({
 
       {/* View toggle (only when overlay is available) */}
       {overlay && (
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2">
           <Button
             type="button"
             size="sm"
@@ -530,14 +540,84 @@ export default function ReviewForm({
             type="button"
             size="sm"
             variant={view === "form" ? "default" : "outline"}
-            onClick={() => setView("form")}
+            onClick={() => {
+              setView("form");
+              if (editingLayout) setEditingLayout(false);
+            }}
             className={view === "form" ? "bg-havn-navy text-white hover:bg-havn-navy/90" : ""}
           >
             <LayoutList className="mr-2 h-3.5 w-3.5" />
             Form view
           </Button>
+          {view === "pdf" && !editingLayout && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setEditingLayout(true)}
+              title="Drag inputs to align them with the lines on the form. Useful when the synthesis put a field in the wrong spot."
+            >
+              Edit layout
+            </Button>
+          )}
+          {view === "pdf" && editingLayout && (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                disabled={savingLayout}
+                onClick={() => {
+                  void (async () => {
+                    if (Object.keys(layoutOverrides).length === 0) {
+                      toast.message("No layout changes to save.");
+                      setEditingLayout(false);
+                      return;
+                    }
+                    setSavingLayout(true);
+                    try {
+                      const result = await saveFieldLayoutPositions(
+                        orderId,
+                        layoutOverrides
+                      );
+                      if ("error" in result) {
+                        toast.error(result.error);
+                        return;
+                      }
+                      toast.success(
+                        `Saved ${result.updatedCount} field position${
+                          result.updatedCount === 1 ? "" : "s"
+                        }.`
+                      );
+                      setLayoutOverrides({});
+                      setEditingLayout(false);
+                      router.refresh();
+                    } finally {
+                      setSavingLayout(false);
+                    }
+                  })();
+                }}
+                className="bg-havn-navy text-white hover:bg-havn-navy/90"
+              >
+                {savingLayout ? "Saving…" : "Save layout"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={savingLayout}
+                onClick={() => {
+                  setLayoutOverrides({});
+                  setEditingLayout(false);
+                }}
+              >
+                Discard
+              </Button>
+            </>
+          )}
           <p className="ml-auto text-xs text-muted-foreground">
-            Edit either way — values stay in sync.
+            {editingLayout
+              ? "Drag fields to align with the form. Editing values is paused until you save."
+              : "Edit either way — values stay in sync."}
           </p>
         </div>
       )}
@@ -553,6 +633,11 @@ export default function ReviewForm({
           )}
           onChange={(key, value) => updateField(key, value)}
           highlightKeys={highlightKeys}
+          editingLayout={editingLayout}
+          layoutOverrides={layoutOverrides}
+          onLayoutOverride={(key, bbox) =>
+            setLayoutOverrides((prev) => ({ ...prev, [key]: bbox }))
+          }
         />
       )}
 
