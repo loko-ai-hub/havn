@@ -138,6 +138,65 @@ function findFuzzyLabel(
 }
 
 /**
+ * Detect the "label below blank" pattern common in signature blocks and
+ * "Information Provided By" sections. The blank underline gets drawn
+ * directly above the descriptive label ("Print Name", "Signature",
+ * "Print Company Name", "Date"), so forward projection lands the input
+ * next to the label instead of on the line above where it belongs.
+ *
+ * Heuristic: if the line directly above the label has no OCR tokens
+ * overlapping the label's x-range, treat that empty span as the blank
+ * and emit a value bbox positioned there. Underlines themselves don't
+ * tokenize, so this works for forms that draw signature lines as
+ * horizontal rules.
+ *
+ * Returns null when the line above is occupied (regular label-then-
+ * blank-on-same-line pattern), in which case the caller should fall
+ * through to forward projection.
+ */
+function tryDetectAboveBlank(
+  pageTokens: OcrToken[],
+  labelStartIdx: number,
+  labelEndIdx: number
+): { x: number; y: number; w: number; h: number } | null {
+  const startTok = pageTokens[labelStartIdx];
+  const endTok = pageTokens[labelEndIdx];
+  if (!startTok.bbox || !endTok.bbox) return null;
+
+  const labelY = startTok.bbox.y;
+  const labelH = Math.max(startTok.bbox.h, 0.01);
+  const labelXStart = startTok.bbox.x;
+  const labelXEnd = endTok.bbox.x + endTok.bbox.w;
+  const labelW = Math.max(0.04, labelXEnd - labelXStart);
+
+  // Window for the "line above": from one line height above the label
+  // down to the label's own y. Tight enough to avoid hitting two lines
+  // up (where there might be a section heading like "INFORMATION
+  // PROVIDED BY:" that doesn't indicate this label-below-blank pattern).
+  const aboveYMax = labelY;
+  const aboveYMin = labelY - labelH * 1.5;
+
+  for (const tok of pageTokens) {
+    if (!tok.bbox) continue;
+    if (tok.bbox.y >= aboveYMax) continue;
+    if (tok.bbox.y < aboveYMin) continue;
+    const tokXEnd = tok.bbox.x + tok.bbox.w;
+    if (tokXEnd > labelXStart && tok.bbox.x < labelXEnd) {
+      // Line above has content that overlaps the label horizontally —
+      // not an empty underline span.
+      return null;
+    }
+  }
+
+  return {
+    x: labelXStart,
+    y: Math.max(0, labelY - labelH * 1.3),
+    w: labelW,
+    h: Math.max(labelH * 1.1, 0.018),
+  };
+}
+
+/**
  * Estimate the value bounding box for a label whose last token sits at
  * `endIdx`. Walks forward on the same visual line:
  *   - skips blank-marker tokens (underscores, dashes, dollar signs)
@@ -236,7 +295,14 @@ export function synthesizeFieldLayout(params: {
       if (!seq) seq = findFuzzyLabel(ocrPage.tokens, fuzzyWords);
       if (!seq) continue;
 
-      const valueBbox = estimateValueBbox(ocrPage.tokens, seq.end);
+      // Prefer Pattern B (blank-above-label) when the line above the
+      // label is empty — this catches signature-block labels like
+      // "Print Company Name", "Signature", "Date", "Print Name",
+      // "Print Title", where the underline sits above the descriptive
+      // text. Falls through to forward projection otherwise.
+      const valueBbox =
+        tryDetectAboveBlank(ocrPage.tokens, seq.start, seq.end) ??
+        estimateValueBbox(ocrPage.tokens, seq.end);
       if (!valueBbox) continue;
 
       // Compose a labelBbox spanning the matched tokens.
