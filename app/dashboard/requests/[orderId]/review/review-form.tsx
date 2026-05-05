@@ -311,41 +311,73 @@ export default function ReviewForm({
   return (
     <div className="space-y-6">
       {/* Completion bar */}
-      <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
-        <Sparkles className="h-5 w-5 shrink-0 text-havn-navy" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-foreground">
-              {filledCount} of {template.fields.length} fields populated
-            </p>
-            {(() => {
-              const livePct = template.fields.length > 0 ? Math.min(100, Math.round((filledCount / template.fields.length) * 100)) : 0;
-              return (
-                <span className={cn(
-                  "text-sm font-bold tabular-nums",
-                  livePct >= 85 ? "text-havn-success" : livePct >= 50 ? "text-havn-amber" : "text-destructive"
-                )}>
+      {(() => {
+        // For 3P uploads with a captured layout, the meaningful denominator
+        // is "fields detected in the document" (every blank Form Parser
+        // found), not the native-template field count (which is 0 for doc
+        // types Havn doesn't ship a template for). Fall back to the native
+        // template count when no overlay exists.
+        const has3p = !!overlay && overlay.fields.length > 0;
+        const totalFields = has3p ? overlay.fields.length : template.fields.length;
+        const populatedFields = has3p
+          ? overlay.fields.filter((f) => {
+              if (f.registryKey) {
+                const val = fields[f.registryKey]?.value;
+                if (val && val.trim().length > 0) return true;
+              }
+              return typeof f.currentValue === "string" && f.currentValue.trim().length > 0;
+            }).length
+          : filledCount;
+        const livePct = totalFields > 0
+          ? Math.min(100, Math.round((populatedFields / totalFields) * 100))
+          : 0;
+        const mapped = match?.mappedCount ?? 0;
+        const unmapped = match?.unmappedCount ?? 0;
+
+        return (
+          <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
+            <Sparkles className="h-5 w-5 shrink-0 text-havn-navy" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-foreground">
+                  {populatedFields} of {totalFields} fields populated
+                </p>
+                <span
+                  className={cn(
+                    "text-sm font-bold tabular-nums",
+                    livePct >= 85
+                      ? "text-havn-success"
+                      : livePct >= 50
+                        ? "text-havn-amber"
+                        : "text-destructive"
+                  )}
+                >
                   {livePct}%
                 </span>
-              );
-            })()}
-          </div>
-          {(() => {
-            const livePct = template.fields.length > 0 ? Math.min(100, Math.round((filledCount / template.fields.length) * 100)) : 0;
-            return (
+              </div>
+              {has3p && (mapped > 0 || unmapped > 0) && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {totalFields} detected in the document · {mapped} mapped to merge tags
+                  {unmapped > 0 ? ` · ${unmapped} unmapped` : ""}
+                </p>
+              )}
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-border">
                 <div
                   className={cn(
                     "h-full rounded-full transition-all",
-                    livePct >= 85 ? "bg-havn-success" : livePct >= 50 ? "bg-havn-amber" : "bg-destructive"
+                    livePct >= 85
+                      ? "bg-havn-success"
+                      : livePct >= 50
+                        ? "bg-havn-amber"
+                        : "bg-destructive"
                   )}
                   style={{ width: `${livePct}%` }}
                 />
               </div>
-            );
-          })()}
-        </div>
-      </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Version tabs */}
       {versions.length > 0 && (
