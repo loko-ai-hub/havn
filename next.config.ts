@@ -13,11 +13,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // @napi-rs/canvas ships a native .node binary and pdfjs-dist's legacy
-  // build pulls in Node-only modules; both need to stay unbundled and
-  // be require()'d at runtime. serverExternalPackages is the Next 15+
-  // way to mark them as such.
-  serverExternalPackages: ["@napi-rs/canvas", "pdfjs-dist"],
   experimental: {
     serverActions: {
       allowedOrigins: ["localhost:3010"],
