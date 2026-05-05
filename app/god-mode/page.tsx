@@ -67,6 +67,7 @@ import {
 } from "./actions";
 import TemplateRegistryViewer from "./template-registry-viewer";
 import MergeTagDataViewer from "./merge-tag-data-viewer";
+import FormLibraryPanel from "./form-library-panel";
 import IngestExternalFormPanel from "./ingest-external-form-panel";
 import ThirdPartyTemplatesViewer from "./third-party-templates-viewer";
 import StateServiceGenerator from "./state-service-generator";
@@ -344,6 +345,7 @@ type TabId =
   | "templates"
   | "merge-tag-data"
   | "uploaded"
+  | "form-library"
   | "document-review"
   | "state-config";
 
@@ -508,6 +510,7 @@ export default function GodModePage() {
       { id: "order-lookup", label: "Order Lookup", icon: ClipboardList },
       { id: "templates", label: "Havn Templates", icon: LayoutTemplate },
       { id: "uploaded", label: "3P Templates", icon: Upload },
+      { id: "form-library", label: "Form Library", icon: LayoutTemplate },
       { id: "merge-tag-data", label: "Merge Tag Data", icon: Sparkles },
       { id: "document-review", label: "Document Review", icon: FileText },
       { id: "state-config", label: "State Config", icon: Settings2 },
@@ -1510,6 +1513,8 @@ export default function GodModePage() {
         {tab === "templates" ? <TemplateRegistryViewer /> : null}
 
         {tab === "merge-tag-data" ? <MergeTagDataViewer /> : null}
+
+        {tab === "form-library" ? <FormLibraryPanel /> : null}
 
         {tab === "uploaded" ? (
           <div className="space-y-6">

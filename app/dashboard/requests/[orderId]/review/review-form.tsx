@@ -12,7 +12,7 @@ import {
   Wand2,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -127,8 +127,13 @@ export default function ReviewForm({
   // Layout-edit mode lets staff drag inputs in PDF view to fix
   // alignment when synthesis got the position wrong (e.g. labels that
   // sit below their blanks). Overrides accumulate locally; Save writes
-  // them onto the third_party_templates row.
-  const [editingLayout, setEditingLayout] = useState(false);
+  // them onto the third_party_templates row. Pre-enabled via
+  // ?editLayout=1 — God Mode form-library Refine button uses this so
+  // staff lands directly in the editor.
+  const searchParams = useSearchParams();
+  const [editingLayout, setEditingLayout] = useState(
+    searchParams?.get("editLayout") === "1" && !!overlay
+  );
   const [layoutOverrides, setLayoutOverrides] = useState<
     Record<string, { x: number; y: number; w: number; h: number }>
   >({});
