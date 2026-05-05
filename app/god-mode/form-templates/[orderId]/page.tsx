@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
-import { getFormTemplateEditorData } from "../../form-templates-actions";
+import {
+  getFormTemplateEditorData,
+  listRegistryOptions,
+} from "../../form-templates-actions";
 
 import FormTemplateEditor from "./editor";
 
@@ -11,7 +13,10 @@ export default async function GodModeFormTemplateEditorPage({
   params: Promise<{ orderId: string }>;
 }) {
   const { orderId } = await params;
-  const data = await getFormTemplateEditorData(orderId);
+  const [data, registryOptions] = await Promise.all([
+    getFormTemplateEditorData(orderId),
+    listRegistryOptions(),
+  ]);
 
   if ("error" in data) {
     return (
@@ -29,9 +34,5 @@ export default async function GodModeFormTemplateEditorPage({
     );
   }
 
-  if (!data.fields || data.fields.length === 0) {
-    notFound();
-  }
-
-  return <FormTemplateEditor data={data} />;
+  return <FormTemplateEditor data={data} registryOptions={registryOptions} />;
 }

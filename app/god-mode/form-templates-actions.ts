@@ -115,17 +115,16 @@ export async function getFormTemplateEditorData(
   };
 }
 
-type BboxOverride = { x: number; y: number; w: number; h: number };
-
 /**
- * Save (or update) the canonical layout for a form variant. Writes to
- * vendor_form_templates only — not to the third_party_templates row of
- * the source order. The cache lookup in the 3P pipeline picks this up
- * automatically on every future ingest of the same form variant.
+ * Save (or update) the canonical layout for a form variant. Writes the
+ * FULL layout (every field's position, kind, label, and registry key)
+ * to vendor_form_templates. The cache lookup in the 3P pipeline picks
+ * this up automatically on every future ingest of the same form
+ * variant — across every org.
  */
 export async function saveCanonicalFormTemplate(
   orderId: string,
-  overrides: Record<string, BboxOverride>
+  fields: FormTemplateEditorData["fields"]
 ): Promise<{ ok: true; templateId: string } | { error: string }> {
   await requireGodMode();
   const admin = createAdminClient();
@@ -139,14 +138,6 @@ export async function saveCanonicalFormTemplate(
         "Cannot save template — content fingerprint unavailable. The source order may need re-processing first.",
     };
   }
-
-  // Apply overrides to the source layout.
-  const updated = data.fields.map((field, idx) => {
-    const key = effectiveLayoutKey(field, idx);
-    const override = overrides[key];
-    if (!override) return field;
-    return { ...field, valueBbox: override };
-  });
 
   const sb = await createClient();
   const {
@@ -162,9 +153,9 @@ export async function saveCanonicalFormTemplate(
         form_title: data.formTitle,
         content_fingerprint: data.contentFingerprint,
         master_type_key: data.masterTypeKey,
-        field_layout: updated,
+        field_layout: fields,
         pdf_pages: data.pages,
-        source_template_id: null, // could link back via tplRow.id if needed
+        source_template_id: null,
         approved_by: approvedBy,
         approved_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -181,17 +172,34 @@ export async function saveCanonicalFormTemplate(
   return { ok: true, templateId: (upserted as { id: string }).id };
 }
 
-function effectiveLayoutKey(
-  field: { registryKey: string | null; label: string; page: number },
-  idx: number
-): string {
-  if (field.registryKey) return field.registryKey;
-  const norm = field.label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 40);
-  return `__unmapped:${field.page}:${norm || `idx${idx}`}`;
+/**
+ * Returns the merge-tag registry as a list — used by the editor's
+ * registry dropdown so staff can tag any field with a canonical key.
+ */
+export type RegistryOption = {
+  key: string;
+  label: string;
+  type: string;
+  communityLevel: boolean;
+  lifecycleTier: "governing" | "onboarding" | "per_unit" | "per_order";
+  description: string;
+};
+
+export async function listRegistryOptions(): Promise<RegistryOption[]> {
+  await requireGodMode();
+  const { FIELD_REGISTRY, getLifecycleTier } = await import(
+    "@/lib/document-templates/field-registry"
+  );
+  return Object.values(FIELD_REGISTRY)
+    .map((entry) => ({
+      key: entry.key,
+      label: entry.label,
+      type: entry.type,
+      communityLevel: entry.communityLevel,
+      lifecycleTier: getLifecycleTier(entry),
+      description: entry.description,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 async function computeFingerprintFromTemplate(
