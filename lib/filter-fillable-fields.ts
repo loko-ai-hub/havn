@@ -67,16 +67,29 @@ export type FilterableField = {
   kind: "text" | "checkbox";
 };
 
+export type FilterFillableResult = {
+  /** Fields the management company response should fill. */
+  response: ParsedFormField[];
+  /** Requester-supplied context fields (Date, Owner, Property, etc.) —
+   *  already filled by the requester when they ordered. Useful for
+   *  surfacing in Form view as pre-populated context. */
+  requester: ParsedFormField[];
+  /** Form-issuer metadata (return address, contact block) — drop. */
+  metadata: ParsedFormField[];
+};
+
 /**
- * Classify each detected field and return only the ones a management
- * company response should fill. Falls back to a heuristic when Claude
- * is unavailable.
+ * Classify every detected field and split into response / requester /
+ * metadata buckets. The pipeline keeps `response` for PDF view and
+ * harvests values from `requester` to pre-populate Form view.
  */
-export async function filterFillableFields(
+export async function filterFillableFieldsWithClassification(
   layout: ParsedFormLayout,
   context: { issuer?: string | null; formTitle?: string | null }
-): Promise<ParsedFormField[]> {
-  if (layout.fields.length === 0) return layout.fields;
+): Promise<FilterFillableResult> {
+  if (layout.fields.length === 0) {
+    return { response: [], requester: [], metadata: [] };
+  }
 
   // Prep input — strip bounding boxes so we minimize tokens.
   const fields: FilterableField[] = layout.fields.map((f, idx) => ({
@@ -110,21 +123,51 @@ export async function filterFillableFields(
   }
 
   if (classifications && classifications.length > 0) {
-    const keep = new Set(
-      classifications
-        .filter((c) => c.classification === "response")
-        .map((c) => c.index)
-    );
-    return layout.fields.filter((_, idx) => keep.has(idx));
+    const byIdx = new Map<number, FieldClassification>();
+    for (const c of classifications) byIdx.set(c.index, c.classification);
+    const result: FilterFillableResult = {
+      response: [],
+      requester: [],
+      metadata: [],
+    };
+    layout.fields.forEach((f, idx) => {
+      const cls = byIdx.get(idx) ?? "response";
+      result[cls].push(f);
+    });
+    return result;
   }
 
-  // Heuristic fallback: drop fields whose currentValue is non-empty and
-  // doesn't look like an empty placeholder. Best-effort only.
-  return layout.fields.filter((f) => {
-    if (f.kind === "checkbox") return true; // always keep checkboxes
+  // Heuristic fallback: response = empty/placeholder text values + all
+  // checkboxes. Anything filled goes to requester (we can't tell
+  // requester from metadata without Claude). Best-effort only.
+  const result: FilterFillableResult = {
+    response: [],
+    requester: [],
+    metadata: [],
+  };
+  for (const f of layout.fields) {
+    if (f.kind === "checkbox") {
+      result.response.push(f);
+      continue;
+    }
     const cv = f.currentValue.trim();
-    if (cv.length === 0) return true;
-    if (/^[_\s\-.]+$/.test(cv)) return true; // "_____", "------"
-    return false;
-  });
+    if (cv.length === 0 || /^[_\s\-.]+$/.test(cv)) {
+      result.response.push(f);
+    } else {
+      result.requester.push(f);
+    }
+  }
+  return result;
+}
+
+/**
+ * Backwards-compatible wrapper that returns only the response fields.
+ * New callers should prefer `filterFillableFieldsWithClassification`.
+ */
+export async function filterFillableFields(
+  layout: ParsedFormLayout,
+  context: { issuer?: string | null; formTitle?: string | null }
+): Promise<ParsedFormField[]> {
+  const split = await filterFillableFieldsWithClassification(layout, context);
+  return split.response;
 }

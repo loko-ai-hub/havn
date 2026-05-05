@@ -22,7 +22,7 @@ import {
 } from "@/lib/ingest-external-template";
 import { matchOrderProperty } from "@/lib/match-order-property";
 import { parseFormLayout, attachRegistryKeys } from "@/lib/pdf-form-layout";
-import { filterFillableFields } from "@/lib/filter-fillable-fields";
+import { filterFillableFieldsWithClassification } from "@/lib/filter-fillable-fields";
 import { synthesizeFieldLayout } from "@/lib/synthesize-field-layout";
 import { proposeRegistryFields } from "@/lib/propose-registry-fields";
 import { send3pReviewNeeded } from "@/lib/resend";
@@ -173,17 +173,22 @@ export async function runThirdPartyIngestion(params: {
         }
       : null;
 
-    const filteredLayout = mergedLayout
-      ? {
-          pages: mergedLayout.pages,
-          fields: await filterFillableFields(mergedLayout, {
-            issuer: ingestion.issuer,
-            formTitle: ingestion.formTitle,
-          }).catch((err) => {
-            console.warn("[3p-pipeline] filterFillableFields failed:", err);
-            return mergedLayout.fields;
-          }),
-        }
+    const filterResult = mergedLayout
+      ? await filterFillableFieldsWithClassification(mergedLayout, {
+          issuer: ingestion.issuer,
+          formTitle: ingestion.formTitle,
+        }).catch((err) => {
+          console.warn("[3p-pipeline] filterFillableFields failed:", err);
+          return {
+            response: mergedLayout.fields,
+            requester: [],
+            metadata: [],
+          };
+        })
+      : null;
+
+    const filteredLayout = mergedLayout && filterResult
+      ? { pages: mergedLayout.pages, fields: filterResult.response }
       : null;
 
     const fieldLayout = filteredLayout
@@ -192,6 +197,30 @@ export async function runThirdPartyIngestion(params: {
           registryKey: f.registryKey,
         })))
       : null;
+
+    // Harvest values from requester-context fields. Form Parser already
+    // OCR'd the values the requester typed in (Date, Owner, Property,
+    // APN, etc.). The filter just classified them as requester-context;
+    // their captured values are the source of truth for those questions.
+    // Map each to its registry key via the same label-mapping table the
+    // overlay uses, then persist into the order's draft_fields so Form
+    // view shows them already populated.
+    const requesterDraftPatch: Record<string, string> = {};
+    if (filterResult && filterResult.requester.length > 0) {
+      const labelToKey = new Map<string, string>();
+      for (const f of ingestion.fields) {
+        if (!f.externalLabel || !f.registryKey) continue;
+        labelToKey.set(normalizeLabel(f.externalLabel), f.registryKey);
+      }
+      for (const ctxField of filterResult.requester) {
+        const cv = (ctxField.currentValue || "").trim();
+        if (!cv) continue;
+        const key = labelToKey.get(normalizeLabel(ctxField.label));
+        if (!key) continue;
+        if (requesterDraftPatch[key]) continue; // first-wins
+        requesterDraftPatch[key] = cv;
+      }
+    }
 
     // 4c. Match the extracted context to a community + unit.
     const match = orderCtx && extracted
@@ -252,6 +281,30 @@ export async function runThirdPartyIngestion(params: {
         field_layout: fieldLayout ?? null,
       })
       .eq("id", id);
+
+    // 8b. Persist captured requester-context values to draft_fields so
+    //     Form view shows them already populated. Fields that the staff
+    //     have already manually edited are NEVER overwritten — we read
+    //     existing draft_fields, then set only keys that aren't there.
+    if (orderCtx && Object.keys(requesterDraftPatch).length > 0) {
+      const { data: existing } = await admin
+        .from("document_orders")
+        .select("draft_fields")
+        .eq("id", orderCtx.id)
+        .maybeSingle();
+      const existingDraft =
+        ((existing as { draft_fields: Record<string, string | null> | null } | null)
+          ?.draft_fields ?? {}) as Record<string, string | null>;
+      const merged: Record<string, string | null> = { ...existingDraft };
+      for (const [k, v] of Object.entries(requesterDraftPatch)) {
+        if (merged[k] && (merged[k] as string).trim().length > 0) continue;
+        merged[k] = v;
+      }
+      await admin
+        .from("document_orders")
+        .update({ draft_fields: merged })
+        .eq("id", orderCtx.id);
+    }
 
     // 8a. Auto-apply when all three signals (community + unit + owner) line
     //     up at high confidence. Below that bar, the match stays as a
@@ -338,6 +391,22 @@ export async function runThirdPartyIngestion(params: {
     console.error(`[3p-pipeline] ingestion failed for ${id}:`, msg);
     return { ok: false, error: msg };
   }
+}
+
+/* ── helpers ─────────────────────────────────────────────────────────── */
+
+/**
+ * Normalize a form-field label for cross-source matching. Form Parser,
+ * Claude's text extractor, and the synthesis pass all surface labels with
+ * varying punctuation, casing, and whitespace; collapsing them to a
+ * canonical form lets us reconcile them.
+ */
+function normalizeLabel(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[(),:$_/\\.*-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /* ── Heuristics ──────────────────────────────────────────────────────── */
