@@ -1,9 +1,15 @@
 "use server";
 
+import { cookies } from "next/headers";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-import { GOD_MODE_EMAILS } from "./constants";
+import {
+  GOD_MODE_EMAILS,
+  IMPERSONATE_COOKIE,
+  IMPERSONATE_NAME_COOKIE,
+} from "./constants";
 
 async function requireGodMode(): Promise<void> {
   const sb = await createClient();
@@ -14,6 +20,52 @@ async function requireGodMode(): Promise<void> {
   if (!user || !GOD_MODE_EMAILS.includes(email)) {
     throw new Error("Not authorized.");
   }
+}
+
+/**
+ * Start impersonation of the org that owns a given order. Used by the
+ * Form Library Refine button — God-Mode users have no organization of
+ * their own, so without setting the impersonation cookie the dashboard
+ * pages bounce them to /onboarding.
+ */
+export async function impersonateForOrder(
+  orderId: string
+): Promise<{ ok: true } | { error: string }> {
+  await requireGodMode();
+  const admin = createAdminClient();
+
+  const { data: order, error: orderErr } = await admin
+    .from("document_orders")
+    .select("organization_id")
+    .eq("id", orderId)
+    .single();
+  if (orderErr || !order?.organization_id) {
+    return { error: "Order not found." };
+  }
+  const orgId = order.organization_id as string;
+
+  const { data: org } = await admin
+    .from("organizations")
+    .select("name")
+    .eq("id", orgId)
+    .maybeSingle();
+  const orgName = (org as { name: string | null } | null)?.name ?? "Org";
+
+  const cookieStore = await cookies();
+  cookieStore.set(IMPERSONATE_COOKIE, orgId, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 60 * 60 * 4,
+  });
+  cookieStore.set(IMPERSONATE_NAME_COOKIE, orgName, {
+    path: "/",
+    httpOnly: false,
+    sameSite: "lax",
+    maxAge: 60 * 60 * 4,
+  });
+
+  return { ok: true };
 }
 
 export type FormVariantRow = {
