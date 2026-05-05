@@ -187,11 +187,15 @@ function PageWithOverlay({
   const [renderedSize, setRenderedSize] = useState<{ w: number; h: number } | null>(null);
   const [dragging, setDragging] = useState<{
     key: string;
+    /** "move" reposition x,y; "resize-e" widens; "resize-se" widens + tallens. */
+    mode: "move" | "resize-e" | "resize-se";
     bbox: BboxOverride;
     startMouseX: number;
     startMouseY: number;
     startBboxX: number;
     startBboxY: number;
+    startBboxW: number;
+    startBboxH: number;
   } | null>(null);
 
   // Global mouse listeners while dragging — needed because the input
@@ -209,12 +213,33 @@ function PageWithOverlay({
       if (!dragging || !renderedSize) return;
       const dx = (e.clientX - dragging.startMouseX) / renderedSize.w;
       const dy = (e.clientY - dragging.startMouseY) / renderedSize.h;
-      const next = {
-        x: clamp01(dragging.startBboxX + dx),
-        y: clamp01(dragging.startBboxY + dy),
-        w: dragging.bbox.w,
-        h: dragging.bbox.h,
-      };
+      let next: BboxOverride;
+      if (dragging.mode === "move") {
+        next = {
+          x: clamp01(dragging.startBboxX + dx),
+          y: clamp01(dragging.startBboxY + dy),
+          w: dragging.bbox.w,
+          h: dragging.bbox.h,
+        };
+      } else if (dragging.mode === "resize-e") {
+        const newW = Math.max(0.01, Math.min(1 - dragging.startBboxX, dragging.startBboxW + dx));
+        next = {
+          x: dragging.startBboxX,
+          y: dragging.startBboxY,
+          w: newW,
+          h: dragging.startBboxH,
+        };
+      } else {
+        // resize-se (corner)
+        const newW = Math.max(0.01, Math.min(1 - dragging.startBboxX, dragging.startBboxW + dx));
+        const newH = Math.max(0.01, Math.min(1 - dragging.startBboxY, dragging.startBboxH + dy));
+        next = {
+          x: dragging.startBboxX,
+          y: dragging.startBboxY,
+          w: newW,
+          h: newH,
+        };
+      }
       onLayoutOverride?.(dragging.key, next);
     }
     function onUp() {
@@ -270,24 +295,71 @@ function PageWithOverlay({
             const reactKey = `${effectiveKey}-${idx}`;
             const beingDragged = dragging?.key === effectiveKey;
 
-            // In layout-edit mode, EVERY field becomes a draggable
-            // ghost — no editing, no checkbox toggle, just position.
+            // In layout-edit mode, fields become draggable ghosts.
+            // Checkboxes render compactly (16x16; only position matters
+            // — they're inherently fixed-size). Text fields render at
+            // their actual width with a right-edge handle for width
+            // tweaks and a corner handle for both width + height.
             if (editingLayout) {
+              if (isCheckbox) {
+                return (
+                  <div
+                    key={reactKey}
+                    role="button"
+                    tabIndex={0}
+                    title={`${field.label} — drag to reposition`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setDragging({
+                        key: effectiveKey,
+                        mode: "move",
+                        bbox,
+                        startMouseX: e.clientX,
+                        startMouseY: e.clientY,
+                        startBboxX: bbox.x,
+                        startBboxY: bbox.y,
+                        startBboxW: bbox.w,
+                        startBboxH: bbox.h,
+                      });
+                    }}
+                    className={cn(
+                      "pointer-events-auto absolute rounded-sm border-2 shadow-md transition-colors",
+                      beingDragged
+                        ? "cursor-grabbing border-havn-success bg-havn-success/20"
+                        : "cursor-grab border-havn-success/60 bg-havn-success/10 hover:bg-havn-success/20"
+                    )}
+                    style={{
+                      left,
+                      top,
+                      width: Math.max(Math.max(w, 14), 14),
+                      height: Math.max(h, 14),
+                    }}
+                  >
+                    <span className="pointer-events-none absolute -top-4 left-0 max-w-[200px] truncate rounded bg-havn-success px-1.5 py-0.5 text-[10px] font-medium text-white">
+                      ☐ {field.label}
+                    </span>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={reactKey}
                   role="button"
                   tabIndex={0}
-                  title={`${field.label} — drag to reposition`}
+                  title={`${field.label} — drag to move, edges to resize`}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     setDragging({
                       key: effectiveKey,
+                      mode: "move",
                       bbox,
                       startMouseX: e.clientX,
                       startMouseY: e.clientY,
                       startBboxX: bbox.x,
                       startBboxY: bbox.y,
+                      startBboxW: bbox.w,
+                      startBboxH: bbox.h,
                     });
                   }}
                   className={cn(
@@ -299,13 +371,57 @@ function PageWithOverlay({
                   style={{
                     left,
                     top,
-                    width: Math.max(w, isCheckbox ? 14 : 40),
+                    width: Math.max(w, 40),
                     height: h,
                   }}
                 >
                   <span className="pointer-events-none absolute -top-4 left-0 max-w-full truncate rounded bg-havn-navy px-1.5 py-0.5 text-[10px] font-medium text-white">
                     {field.label}
                   </span>
+                  {/* Right-edge resize: width-only, runs full height. */}
+                  <div
+                    role="button"
+                    tabIndex={-1}
+                    title="Drag to resize width"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDragging({
+                        key: effectiveKey,
+                        mode: "resize-e",
+                        bbox,
+                        startMouseX: e.clientX,
+                        startMouseY: e.clientY,
+                        startBboxX: bbox.x,
+                        startBboxY: bbox.y,
+                        startBboxW: bbox.w,
+                        startBboxH: bbox.h,
+                      });
+                    }}
+                    className="pointer-events-auto absolute -right-1 top-0 h-full w-2 cursor-ew-resize rounded-sm bg-havn-navy/0 hover:bg-havn-navy/30"
+                  />
+                  {/* Bottom-right corner: width + height. */}
+                  <div
+                    role="button"
+                    tabIndex={-1}
+                    title="Drag to resize"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDragging({
+                        key: effectiveKey,
+                        mode: "resize-se",
+                        bbox,
+                        startMouseX: e.clientX,
+                        startMouseY: e.clientY,
+                        startBboxX: bbox.x,
+                        startBboxY: bbox.y,
+                        startBboxW: bbox.w,
+                        startBboxH: bbox.h,
+                      });
+                    }}
+                    className="pointer-events-auto absolute -right-1 -bottom-1 h-3 w-3 cursor-nwse-resize rounded-sm border border-havn-navy bg-white"
+                  />
                 </div>
               );
             }
