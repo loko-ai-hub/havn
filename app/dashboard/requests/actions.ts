@@ -710,7 +710,10 @@ const ATTACH_MAX_BYTES = 25 * 1024 * 1024; // 25 MB
 export async function attachThirdPartyForm(
   orderId: string,
   formData: FormData
-): Promise<{ ok: true; templateId: string } | { error: string }> {
+): Promise<
+  | { ok: true; templateId: string; ingestionWarning?: string }
+  | { error: string }
+> {
   const { organizationId } = await requireDashboardOrg();
   const admin = createAdminClient();
 
@@ -794,12 +797,32 @@ export async function attachThirdPartyForm(
     return { error: `Could not link template to order: ${linkErr.message}` };
   }
 
-  // Kick off ingestion. Fire-and-forget — same shape as Stripe webhook entry.
-  runThirdPartyIngestion({ thirdPartyTemplateId: templateId }).catch((err) => {
-    console.error(`[attachThirdPartyForm] ingestion kickoff failed:`, err);
+  // Run ingestion inline — Vercel serverless terminates the function the
+  // moment the action returns, so fire-and-forget gets the pipeline killed
+  // mid-flight and leaves the row stuck in `processing`. Awaiting holds the
+  // request open until OCR + Claude extraction + Form Parser layout +
+  // match resolution all complete (well within the 300s default budget for
+  // typical 1–5 page forms). Pipeline failures are captured into
+  // ingest_error on the row by runThirdPartyIngestion's own catch — we
+  // surface a friendly note here without blowing up the action.
+  const ingestionResult = await runThirdPartyIngestion({
+    thirdPartyTemplateId: templateId,
+  }).catch((err) => {
+    console.error(`[attachThirdPartyForm] ingestion threw:`, err);
+    return { ok: false, error: err instanceof Error ? err.message : "Ingestion failed." };
   });
 
   revalidatePath(`/dashboard/requests/${orderId}`);
   revalidatePath(`/dashboard/requests/${orderId}/review`);
+
+  if (!ingestionResult.ok) {
+    return {
+      ok: true,
+      templateId,
+      ingestionWarning:
+        ingestionResult.error ??
+        "Ingestion did not complete. Use 'Re-process upload' on the review page to retry.",
+    };
+  }
   return { ok: true, templateId };
 }

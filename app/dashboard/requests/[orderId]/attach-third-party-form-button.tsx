@@ -31,9 +31,11 @@ export default function AttachThirdPartyFormButton({
         toast.error(result.error);
         return;
       }
-      toast.success(
-        "Form attached. Ingestion is running — refresh in a few seconds to see the match results."
-      );
+      if (result.ingestionWarning) {
+        toast.warning(`Form attached, but ingestion didn't complete: ${result.ingestionWarning}`);
+      } else {
+        toast.success("Form attached and ingested. Match results are ready.");
+      }
       router.refresh();
     } finally {
       setBusy(false);
