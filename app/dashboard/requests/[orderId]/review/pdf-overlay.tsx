@@ -50,6 +50,22 @@ type Props = {
 const DEFAULT_RENDER_WIDTH = 880;
 const MIN_INPUT_HEIGHT = 22;
 
+/**
+ * Stable synthetic key for fields the registry mapper couldn't tie to a
+ * canonical merge tag. Lets staff still edit those blanks (and have
+ * the values round-trip into draft_fields + onto the delivered PDF).
+ * Format: `__unmapped:<page>:<labelhash>` — derived from page + label
+ * so the key survives layout re-orderings during re-processing.
+ */
+function unmappedKeyFor(field: OverlayField, idx: number): string {
+  const norm = field.label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+  return `__unmapped:${field.page}:${norm || `idx${idx}`}`;
+}
+
 export default function PdfOverlay({
   pdfUrl,
   pages,
@@ -155,6 +171,13 @@ function PageWithOverlay({
       <Page
         pageNumber={pageNumber}
         width={width}
+        // Disable annotation + text layers — both render absolutely
+        // positioned over the page content and capture pointer events,
+        // intercepting clicks that should reach our editable overlay
+        // inputs. We don't need them for review (no annotations,
+        // no text-selection use case).
+        renderAnnotationLayer={false}
+        renderTextLayer={false}
         onRenderSuccess={(page) => {
           const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
           setRenderedSize({ w: viewport.width, h: viewport.height });
@@ -173,34 +196,39 @@ function PageWithOverlay({
             const rawH = field.valueBbox.h * renderedSize.h;
             const isCheckbox = field.kind === "checkbox";
             const h = isCheckbox ? Math.max(rawH, 14) : Math.max(rawH, MIN_INPUT_HEIGHT);
-            const value = field.registryKey ? values[field.registryKey] ?? "" : "";
+            // Always editable — unmapped fields use a synthetic key so the
+            // value still persists into draft_fields (and stamps onto the
+            // delivered PDF), it just doesn't pull from the merge-tag cache.
+            const effectiveKey = field.registryKey ?? unmappedKeyFor(field, idx);
+            const value = values[effectiveKey] ?? "";
             const highlighted = !!(
               field.registryKey && highlightKeys?.has(field.registryKey)
             );
-            const disabled = !field.registryKey;
-            const key = `${field.registryKey ?? "unmapped"}-${idx}`;
+            const isUnmapped = !field.registryKey;
+            const reactKey = `${effectiveKey}-${idx}`;
 
             if (isCheckbox) {
-              const checked = field.registryKey
-                ? value === "true" || value === "1"
-                : field.currentValue === "true";
+              const liveChecked =
+                value === "true" || value === "1"
+                  ? true
+                  : value === "false" || value === "0"
+                    ? false
+                    : field.currentValue === "true";
               return (
                 <input
-                  key={key}
+                  key={reactKey}
                   type="checkbox"
-                  checked={checked}
-                  disabled={disabled}
-                  onChange={(e) => {
-                    if (field.registryKey)
-                      onChange(field.registryKey, e.target.checked ? "true" : "false");
-                  }}
+                  checked={liveChecked}
+                  onChange={(e) =>
+                    onChange(effectiveKey, e.target.checked ? "true" : "false")
+                  }
                   title={field.label}
                   className={cn(
                     "pointer-events-auto absolute cursor-pointer rounded-sm border bg-white/90 shadow-sm outline-none transition focus:ring-2 focus:ring-havn-navy/30",
-                    disabled
-                      ? "cursor-not-allowed border-dashed border-muted-foreground/40"
-                      : highlighted
-                        ? "border-havn-success/50 bg-havn-success/10"
+                    highlighted
+                      ? "border-havn-success/50 bg-havn-success/10"
+                      : isUnmapped
+                        ? "border-dashed border-muted-foreground/60"
                         : "border-havn-navy/30"
                   )}
                   style={{
@@ -215,21 +243,18 @@ function PageWithOverlay({
 
             return (
               <input
-                key={key}
+                key={reactKey}
                 type="text"
                 value={value}
-                disabled={disabled}
-                placeholder={disabled ? field.label : ""}
-                onChange={(e) => {
-                  if (field.registryKey) onChange(field.registryKey, e.target.value);
-                }}
+                placeholder={field.label}
+                onChange={(e) => onChange(effectiveKey, e.target.value)}
                 title={field.label}
                 className={cn(
                   "pointer-events-auto absolute rounded-sm border bg-white/90 px-1 py-0 text-[12px] leading-tight shadow-sm outline-none transition focus:border-havn-navy focus:bg-white focus:ring-2 focus:ring-havn-navy/30",
-                  disabled
-                    ? "border-dashed border-muted-foreground/40 text-muted-foreground/70"
-                    : highlighted
-                      ? "border-havn-success/50 bg-havn-success/10 text-foreground"
+                  highlighted
+                    ? "border-havn-success/50 bg-havn-success/10 text-foreground"
+                    : isUnmapped
+                      ? "border-dashed border-muted-foreground/60 text-foreground"
                       : "border-havn-navy/30 text-foreground"
                 )}
                 style={{

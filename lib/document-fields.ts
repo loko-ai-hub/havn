@@ -103,6 +103,16 @@ export async function getPrefilledFields(
       const val = draftFields[f.key] ?? null;
       fields[f.key] = { value: val, source: val ? "cache" : null };
     }
+    // Surface any draft keys that aren't in template.fields. For 3P
+    // uploads on doc types Havn has no native template for (synthetic
+    // empty template), this is how unmapped-field values
+    // (`__unmapped:<page>:<labelnorm>`) round-trip. Without this, the
+    // PdfOverlay + ThreePartyFormView would see a fresh empty state
+    // every page load even though the data is in the row.
+    for (const [k, v] of Object.entries(draftFields)) {
+      if (k in fields) continue;
+      fields[k] = { value: v ?? null, source: v ? "cache" : null };
+    }
     const filled = Object.values(fields).filter((f) => f.value?.trim()).length;
     const required = template.fields.filter((f) => f.required).length;
     return {

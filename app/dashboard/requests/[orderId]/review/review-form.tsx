@@ -463,8 +463,11 @@ export default function ReviewForm({
         />
       )}
 
-      {/* Community selector */}
-      {communities.length > 0 && (
+      {/* Community selector — hidden when the match card has a suggestion
+          (the Apply match button handles community assignment). Shown
+          only when there's no 3P upload + no match suggestion, so staff
+          can pick the community for native-template orders. */}
+      {communities.length > 0 && !match?.suggestedCommunityId && (
         <div className="rounded-xl border border-border bg-card p-4">
           <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Community
@@ -528,8 +531,23 @@ export default function ReviewForm({
         />
       )}
 
-      {/* Sections */}
-      {(!overlay || view === "form") && template.sections.map((sectionName) => {
+      {/* Form view for 3P uploads — flat list of every detected blank
+          grouped by page. Each field becomes a labeled input or
+          checkbox; values stay in sync with PDF view via the same
+          underlying fields state. */}
+      {overlay && view === "form" && (
+        <ThreePartyFormView
+          fields={overlay.fields}
+          values={Object.fromEntries(
+            Object.entries(fields).map(([k, v]) => [k, v?.value ?? ""])
+          )}
+          onChange={(key, value) => updateField(key, value)}
+          highlightKeys={highlightKeys}
+        />
+      )}
+
+      {/* Native-template sections (resale, lender questionnaire). */}
+      {!overlay && template.sections.map((sectionName) => {
         const sectionFields = template.fields.filter((f) => f.section === sectionName);
         if (sectionFields.length === 0) return null;
 
@@ -656,6 +674,105 @@ export default function ReviewForm({
           generating={generating}
         />
       )}
+    </div>
+  );
+}
+
+/* ── 3P form view ────────────────────────────────────────────────────── */
+
+/** Synthetic key for fields the registry mapper couldn't match. Mirrors
+ * pdf-overlay.tsx so the same field shares state across PDF + Form views. */
+function unmappedKeyFor(field: OverlayField, idx: number): string {
+  const norm = field.label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+  return `__unmapped:${field.page}:${norm || `idx${idx}`}`;
+}
+
+function ThreePartyFormView({
+  fields,
+  values,
+  onChange,
+  highlightKeys,
+}: {
+  fields: OverlayField[];
+  values: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+  highlightKeys: Set<string>;
+}) {
+  const byPage = new Map<number, OverlayField[]>();
+  fields.forEach((f) => {
+    const list = byPage.get(f.page) ?? [];
+    list.push(f);
+    byPage.set(f.page, list);
+  });
+  const sortedPages = Array.from(byPage.entries()).sort(([a], [b]) => a - b);
+
+  return (
+    <div className="space-y-4">
+      {sortedPages.map(([pageNum, pageFields]) => (
+        <div
+          key={pageNum}
+          className="overflow-hidden rounded-xl border border-border bg-card"
+        >
+          <div className="bg-havn-navy px-5 py-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-white">
+              Page {pageNum}
+            </h2>
+          </div>
+          <div className="grid gap-4 p-5">
+            {pageFields.map((f, idx) => {
+              const effectiveKey = f.registryKey ?? unmappedKeyFor(f, idx);
+              const liveVal = values[effectiveKey] ?? "";
+              const isCheckbox = f.kind === "checkbox";
+              const wasJustFilled = !!(
+                f.registryKey && highlightKeys.has(f.registryKey)
+              );
+
+              return (
+                <div key={`${effectiveKey}-${idx}`} className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      {f.label}
+                    </Label>
+                    {wasJustFilled && (
+                      <span className="inline-flex items-center rounded-md border border-havn-success/30 bg-havn-success/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-havn-success">
+                        Auto-filled
+                      </span>
+                    )}
+                  </div>
+                  {isCheckbox ? (
+                    <label className="inline-flex items-center gap-2 text-sm text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={liveVal === "true" || liveVal === "1"}
+                        onChange={(e) =>
+                          onChange(
+                            effectiveKey,
+                            e.target.checked ? "true" : "false"
+                          )
+                        }
+                        className="h-4 w-4 rounded border-input"
+                      />
+                      <span className="text-muted-foreground">
+                        {liveVal === "true" || liveVal === "1" ? "Yes" : "No"}
+                      </span>
+                    </label>
+                  ) : (
+                    <Input
+                      value={liveVal}
+                      onChange={(e) => onChange(effectiveKey, e.target.value)}
+                      placeholder={f.label}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
