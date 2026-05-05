@@ -154,11 +154,51 @@ function findFuzzyLabel(
  * blank-on-same-line pattern), in which case the caller should fall
  * through to forward projection.
  */
+/**
+ * Whitelist of label phrases that almost always use the label-below-
+ * blank pattern. Conservative on purpose — false positives (Pattern B
+ * firing where Pattern A is correct) leave inputs hovering above
+ * unrelated text, which is worse than just falling back to forward
+ * projection. Add labels here as we encounter new signature-block
+ * conventions; staff can always fix outliers via Edit Layout drag.
+ */
+const ABOVE_BLANK_LABELS = new Set([
+  "signature",
+  "print name",
+  "print title",
+  "print company name",
+  "company name",
+  "title",
+  "name",
+  "buyer signature",
+  "seller signature",
+  "owner signature",
+  "authorized signature",
+  "preparer signature",
+  "by",
+  "its",
+]);
+
+function isAboveBlankLabel(labelText: string): boolean {
+  const norm = labelText
+    .toLowerCase()
+    .replace(/[(),:.]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!norm) return false;
+  if (ABOVE_BLANK_LABELS.has(norm)) return true;
+  if (/^print\s+\w+/.test(norm)) return true; // "Print Anything"
+  return false;
+}
+
 function tryDetectAboveBlank(
   pageTokens: OcrToken[],
   labelStartIdx: number,
-  labelEndIdx: number
+  labelEndIdx: number,
+  labelText: string
 ): { x: number; y: number; w: number; h: number } | null {
+  if (!isAboveBlankLabel(labelText)) return null;
+
   const startTok = pageTokens[labelStartIdx];
   const endTok = pageTokens[labelEndIdx];
   if (!startTok.bbox || !endTok.bbox) return null;
@@ -169,10 +209,6 @@ function tryDetectAboveBlank(
   const labelXEnd = endTok.bbox.x + endTok.bbox.w;
   const labelW = Math.max(0.04, labelXEnd - labelXStart);
 
-  // Window for the "line above": from one line height above the label
-  // down to the label's own y. Tight enough to avoid hitting two lines
-  // up (where there might be a section heading like "INFORMATION
-  // PROVIDED BY:" that doesn't indicate this label-below-blank pattern).
   const aboveYMax = labelY;
   const aboveYMin = labelY - labelH * 1.5;
 
@@ -182,16 +218,20 @@ function tryDetectAboveBlank(
     if (tok.bbox.y < aboveYMin) continue;
     const tokXEnd = tok.bbox.x + tok.bbox.w;
     if (tokXEnd > labelXStart && tok.bbox.x < labelXEnd) {
-      // Line above has content that overlaps the label horizontally —
-      // not an empty underline span.
+      // Something printed above the label in its x-range — not a blank
+      // underline span. Whitelist alone isn't enough; also need an
+      // empty span above.
       return null;
     }
   }
 
+  // Signature lines tend to extend wider than the label sitting under
+  // them. Bias the bbox out to ~150% label width, capped at page width.
+  const desiredW = Math.max(labelW * 1.6, 0.20);
   return {
-    x: labelXStart,
+    x: Math.max(0, labelXStart - (desiredW - labelW) * 0.25),
     y: Math.max(0, labelY - labelH * 1.3),
-    w: labelW,
+    w: Math.min(0.92, desiredW),
     h: Math.max(labelH * 1.1, 0.018),
   };
 }
@@ -295,14 +335,20 @@ export function synthesizeFieldLayout(params: {
       if (!seq) seq = findFuzzyLabel(ocrPage.tokens, fuzzyWords);
       if (!seq) continue;
 
-      // Prefer Pattern B (blank-above-label) when the line above the
-      // label is empty — this catches signature-block labels like
-      // "Print Company Name", "Signature", "Date", "Print Name",
-      // "Print Title", where the underline sits above the descriptive
-      // text. Falls through to forward projection otherwise.
+      // Try Pattern B (blank-above-label) only for whitelisted
+      // signature-block labels — Print Company Name, Signature, Print
+      // Name, Print Title, etc. Numbered questions and any other label
+      // fall through to forward projection. Tight whitelist avoids the
+      // over-firing we saw when "line above empty" was the only check
+      // (false positives for every numbered question with paragraph
+      // breaks above).
       const valueBbox =
-        tryDetectAboveBlank(ocrPage.tokens, seq.start, seq.end) ??
-        estimateValueBbox(ocrPage.tokens, seq.end);
+        tryDetectAboveBlank(
+          ocrPage.tokens,
+          seq.start,
+          seq.end,
+          labelText
+        ) ?? estimateValueBbox(ocrPage.tokens, seq.end);
       if (!valueBbox) continue;
 
       // Compose a labelBbox spanning the matched tokens.
