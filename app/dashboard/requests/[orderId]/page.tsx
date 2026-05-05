@@ -28,6 +28,7 @@ import {
 import { requireDashboardOrg } from "../../_lib/require-dashboard-org";
 import { getStatusCfg } from "../../_lib/status-badge";
 import ApproveRejectButtons from "../approve-reject-buttons";
+import AttachThirdPartyFormButton from "./attach-third-party-form-button";
 import RefundButton from "./refund-button";
 
 type OrderDetail = {
@@ -374,6 +375,9 @@ export default async function DashboardRequestDetailPage({
                 <p className="mt-0.5 text-[10px] text-muted-foreground">complete</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {!originalUploadUrl && (
+                  <AttachThirdPartyFormButton orderId={row.id} />
+                )}
                 {originalUploadUrl && (
                   <a
                     href={originalUploadUrl}

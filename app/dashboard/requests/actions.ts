@@ -23,6 +23,7 @@ import { formatMasterTypeKey } from "../_lib/format";
 
 import { requireDashboardOrg } from "../_lib/require-dashboard-org";
 import { stripe } from "../../../lib/stripe";
+import { runThirdPartyIngestion } from "../../../lib/3p-template-pipeline";
 
 /** 30 days, in seconds — used for every order-document signed URL. */
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -687,4 +688,118 @@ export async function refundOrder(orderId: string, reason?: string) {
   revalidatePath("/dashboard/requests");
   revalidatePath(`/dashboard/requests/${orderId}`);
   return { ok: true };
+}
+
+const ATTACH_BUCKET = "third-party-templates";
+const ATTACH_ALLOWED_MIME = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+const ATTACH_MAX_BYTES = 25 * 1024 * 1024; // 25 MB
+
+/* ── attachThirdPartyForm ──────────────────────────────────────────────
+ * Staff recovery for orders whose 3P upload was lost between the
+ * requester portal and submission, or that arrived outside the portal
+ * (emailed, faxed, etc.). Uploads the file to Supabase Storage,
+ * inserts a third_party_templates row, links it to the order, and
+ * fires the same ingestion pipeline a fresh requester upload would.
+ *
+ * Refuses to overwrite — caller must use the review page's "Re-process
+ * upload" if a template row already exists for this order.
+ */
+export async function attachThirdPartyForm(
+  orderId: string,
+  formData: FormData
+): Promise<{ ok: true; templateId: string } | { error: string }> {
+  const { organizationId } = await requireDashboardOrg();
+  const admin = createAdminClient();
+
+  const { data: order, error: orderErr } = await admin
+    .from("document_orders")
+    .select("id, organization_id, third_party_template_id")
+    .eq("id", orderId)
+    .single();
+
+  if (orderErr || !order || order.organization_id !== organizationId) {
+    return { error: "Order not found or access denied." };
+  }
+  if (order.third_party_template_id) {
+    return {
+      error:
+        "This order already has a 3P upload. Use 'Re-process upload' on the review page to re-run ingestion.",
+    };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { error: "No file provided." };
+  }
+  if (file.size === 0) {
+    return { error: "File is empty." };
+  }
+  if (file.size > ATTACH_MAX_BYTES) {
+    return { error: `File is too large (max ${ATTACH_MAX_BYTES / (1024 * 1024)} MB).` };
+  }
+  const mimeType = file.type || "application/pdf";
+  if (!ATTACH_ALLOWED_MIME.has(mimeType)) {
+    return { error: "Only PDF and DOCX files are accepted." };
+  }
+
+  const safeName = file.name
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 120) || "upload.pdf";
+  const storagePath = `${orderId}/${Date.now()}-${safeName}`;
+
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
+  const { error: uploadErr } = await admin.storage
+    .from(ATTACH_BUCKET)
+    .upload(storagePath, fileBuffer, {
+      contentType: mimeType,
+      upsert: false,
+    });
+  if (uploadErr) {
+    return { error: `Upload failed: ${uploadErr.message}` };
+  }
+
+  const { data: tpl, error: tplErr } = await admin
+    .from("third_party_templates")
+    .insert({
+      order_id: orderId,
+      organization_id: organizationId,
+      storage_path_pdf: storagePath,
+      original_filename: file.name,
+      mime_type: mimeType,
+      ingest_status: "pending",
+      review_status: "pending",
+    })
+    .select("id")
+    .single();
+
+  if (tplErr || !tpl) {
+    // Best-effort cleanup of the orphaned object.
+    await admin.storage.from(ATTACH_BUCKET).remove([storagePath]);
+    return { error: tplErr?.message ?? "Failed to create template row." };
+  }
+  const templateId = (tpl as { id: string }).id;
+
+  const { error: linkErr } = await admin
+    .from("document_orders")
+    .update({
+      third_party_template_id: templateId,
+      third_party_review_status: "pending",
+    })
+    .eq("id", orderId);
+  if (linkErr) {
+    return { error: `Could not link template to order: ${linkErr.message}` };
+  }
+
+  // Kick off ingestion. Fire-and-forget — same shape as Stripe webhook entry.
+  runThirdPartyIngestion({ thirdPartyTemplateId: templateId }).catch((err) => {
+    console.error(`[attachThirdPartyForm] ingestion kickoff failed:`, err);
+  });
+
+  revalidatePath(`/dashboard/requests/${orderId}`);
+  revalidatePath(`/dashboard/requests/${orderId}/review`);
+  return { ok: true, templateId };
 }
