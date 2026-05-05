@@ -13,6 +13,8 @@
  * Mode; the caller (Stripe webhook) doesn't need to await completion.
  */
 
+import { createHash } from "crypto";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import { extractTextWithLayout } from "@/lib/pdf-text";
 import { extractFormContext } from "@/lib/extract-form-context";
@@ -119,6 +121,25 @@ export async function runThirdPartyIngestion(params: {
     // 4a. Map to the registry (existing behavior — Claude maps form labels).
     const ingestion: ExternalTemplateIngestion = await ingestExternalTemplate(rawText);
 
+    // 4a-cache. Check the vendor form template cache. If we've previously
+    //   positioned + reviewed this form (same issuer + title +
+    //   content-fingerprint), use the saved field_layout directly and
+    //   skip the entire positioning stack (AcroForm / Form Parser /
+    //   synthesis). This is the system's compounding-improvements loop:
+    //   one staff drag-fix becomes a permanent improvement for every
+    //   future order of the same form.
+    const contentFingerprint = computeContentFingerprint(rawText);
+    const cachedTemplate = await loadCachedTemplate(admin, {
+      issuer: ingestion.issuer,
+      formTitle: ingestion.formTitle,
+      contentFingerprint,
+    });
+    if (cachedTemplate) {
+      console.log(
+        `[3p-pipeline] vendor template cache HIT: ${cachedTemplate.fields.length} fields (id=${cachedTemplate.id})`
+      );
+    }
+
     // 4b. Universal context + field extractor. Pulls association name,
     //     property address, owner names, parcel — and confirms each form
     //     field's registry-key mapping. Failures fall through with empty
@@ -136,26 +157,27 @@ export async function runThirdPartyIngestion(params: {
     //         values onto the PDF at the same coords. Falls through with
     //         null layout if the form parser isn't configured or the
     //         document isn't a PDF.
-    // 4b-acroform. Fast path: if the PDF is a fillable AcroForm, use
-    //   pdf-lib to read its embedded form fields directly. Modern
-    //   vendor PDFs (~2018+) ship as AcroForms with field name + type
-    //   + position embedded — no OCR or vision pass needed. Falls
-    //   through to Form Parser when the PDF is flat (most scanned
-    //   forms, older vendor PDFs).
-    const acroformLayout = mimeType === "application/pdf"
+    // 4b-acroform. Skipped when cache hit. Fast path: if the PDF is a
+    //   fillable AcroForm, use pdf-lib to read its embedded form fields
+    //   directly. Modern vendor PDFs (~2018+) ship as AcroForms with
+    //   field name + type + position embedded — no OCR or vision pass
+    //   needed. Falls through to Form Parser when the PDF is flat.
+    const acroformLayout = !cachedTemplate && mimeType === "application/pdf"
       ? await extractAcroFormLayout(fileBuffer).catch((err) => {
           console.warn("[3p-pipeline] extractAcroFormLayout failed:", err);
           return null;
         })
       : null;
 
-    const formLayout = acroformLayout
-      ?? (mimeType === "application/pdf"
-        ? await parseFormLayout(fileBuffer, mimeType).catch((err) => {
-            console.warn("[3p-pipeline] parseFormLayout failed:", err);
-            return null;
-          })
-        : null);
+    const formLayout = cachedTemplate
+      ? null
+      : acroformLayout
+        ?? (mimeType === "application/pdf"
+          ? await parseFormLayout(fileBuffer, mimeType).catch((err) => {
+              console.warn("[3p-pipeline] parseFormLayout failed:", err);
+              return null;
+            })
+          : null);
 
     if (acroformLayout) {
       console.log(
@@ -164,13 +186,13 @@ export async function runThirdPartyIngestion(params: {
     }
 
     // Synthesize bounding boxes for detected_fields entries Form Parser
-    // missed. Skipped entirely when AcroForm gave us positions — fillable
-    // PDFs carry the authoritative field set, so synthesis would only
-    // hallucinate extras. Otherwise: Form Parser frequently fails on
+    // missed. Skipped entirely when cache or AcroForm gave us positions
+    // (those carry the authoritative field set; synthesis would only
+    // hallucinate extras). Otherwise: Form Parser frequently fails on
     // underline-style blanks; the OCR token stream still has the labels
     // with positions, so we project forward on the same line to estimate
     // where the value blank sits.
-    const synthesizedFields = !acroformLayout && formLayout
+    const synthesizedFields = !cachedTemplate && !acroformLayout && formLayout
       ? synthesizeFieldLayout({
           ocrPages,
           detectedFields: ingestion.fields.map((f) => ({
@@ -212,12 +234,18 @@ export async function runThirdPartyIngestion(params: {
       ? { pages: mergedLayout.pages, fields: filterResult.response }
       : null;
 
-    const fieldLayout = filteredLayout
-      ? attachRegistryKeys(filteredLayout, ingestion.fields.map((f) => ({
-          label: f.externalLabel,
-          registryKey: f.registryKey,
-        })))
-      : null;
+    // Cache hit short-circuits the filter + attachRegistryKeys path —
+    // the saved layout is the source of truth (already filtered, already
+    // mapped at template-save time). For cache miss, run the normal
+    // attach + filter chain.
+    const fieldLayout = cachedTemplate
+      ? cachedTemplate.fields
+      : filteredLayout
+        ? attachRegistryKeys(filteredLayout, ingestion.fields.map((f) => ({
+            label: f.externalLabel,
+            registryKey: f.registryKey,
+          })))
+        : null;
 
     // Harvest values from requester-context fields. Form Parser already
     // OCR'd the values the requester typed in (Date, Owner, Property,
@@ -298,7 +326,7 @@ export async function runThirdPartyIngestion(params: {
         match_reasoning: match?.reasoning ?? null,
         suggested_community_id: match?.communityId ?? null,
         suggested_unit_id: match?.unitId ?? null,
-        pdf_pages: formLayout?.pages ?? null,
+        pdf_pages: cachedTemplate?.pages ?? formLayout?.pages ?? null,
         field_layout: fieldLayout ?? null,
       })
       .eq("id", id);
@@ -428,6 +456,94 @@ function normalizeLabel(s: string): string {
     .replace(/[(),:$_/\\.*-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Stable fingerprint for the form's content. Used as part of the
+ * vendor_form_templates cache key so we differentiate form variants
+ * (e.g. "Ticor HOA Request 2024" vs "...2026") even when the visible
+ * issuer + form_title strings match. Whitespace-normalized + truncated
+ * to keep the hash robust against minor OCR jitter and to avoid
+ * fingerprinting the requester's already-typed values (those live
+ * later in the doc).
+ */
+function computeContentFingerprint(rawText: string): string {
+  const norm = rawText
+    .replace(/\s+/g, " ")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .trim()
+    .slice(0, 4096);
+  return createHash("sha256").update(norm).digest("hex");
+}
+
+/**
+ * Look up a previously approved layout for this form. Cache hit means
+ * we skip every positioning step (AcroForm, Form Parser, synthesis,
+ * vision) and serve the saved field_layout directly. Match keys: same
+ * issuer + form_title + content_fingerprint.
+ */
+async function loadCachedTemplate(
+  admin: ReturnType<typeof createAdminClient>,
+  params: {
+    issuer: string | null;
+    formTitle: string | null;
+    contentFingerprint: string;
+  }
+): Promise<{
+  id: string;
+  fields: Array<{
+    registryKey: string | null;
+    label: string;
+    page: number;
+    kind?: string;
+    valueBbox: { x: number; y: number; w: number; h: number } | null;
+    labelBbox: { x: number; y: number; w: number; h: number } | null;
+    currentValue: string;
+  }>;
+  pages: Array<{ page: number; width: number; height: number }> | null;
+} | null> {
+  const issuer = (params.issuer ?? "").trim();
+  const formTitle = (params.formTitle ?? "").trim();
+
+  let query = admin
+    .from("vendor_form_templates")
+    .select("id, field_layout, pdf_pages")
+    .eq("content_fingerprint", params.contentFingerprint);
+  // We use the unique index `(coalesce(issuer,''), coalesce(form_title,''),
+  // content_fingerprint)`, so equality on whichever of issuer/form_title
+  // we have keeps the lookup tight without false positives.
+  if (issuer) query = query.eq("issuer", issuer);
+  if (formTitle) query = query.eq("form_title", formTitle);
+
+  const { data, error } = await query.maybeSingle();
+  if (error) {
+    console.warn("[3p-pipeline] template cache lookup failed:", error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  const row = data as {
+    id: string;
+    field_layout: unknown;
+    pdf_pages: unknown;
+  };
+  const fields = Array.isArray(row.field_layout)
+    ? (row.field_layout as Array<{
+        registryKey: string | null;
+        label: string;
+        page: number;
+        kind?: string;
+        valueBbox: { x: number; y: number; w: number; h: number } | null;
+        labelBbox: { x: number; y: number; w: number; h: number } | null;
+        currentValue: string;
+      }>)
+    : null;
+  if (!fields || fields.length === 0) return null;
+  const pages = Array.isArray(row.pdf_pages)
+    ? (row.pdf_pages as Array<{ page: number; width: number; height: number }>)
+    : null;
+  return { id: row.id, fields, pages };
 }
 
 /* ── Heuristics ──────────────────────────────────────────────────────── */

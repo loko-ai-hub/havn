@@ -133,6 +133,10 @@ export default function ReviewForm({
     Record<string, { x: number; y: number; w: number; h: number }>
   >({});
   const [savingLayout, setSavingLayout] = useState(false);
+  // When checked, the corrected layout gets persisted to
+  // vendor_form_templates so future uploads of the same form load it
+  // instantly (no Form Parser, no synthesis, no vision call).
+  const [saveAsTemplate, setSaveAsTemplate] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -568,7 +572,7 @@ export default function ReviewForm({
                 disabled={savingLayout}
                 onClick={() => {
                   void (async () => {
-                    if (Object.keys(layoutOverrides).length === 0) {
+                    if (Object.keys(layoutOverrides).length === 0 && !saveAsTemplate) {
                       toast.message("No layout changes to save.");
                       setEditingLayout(false);
                       return;
@@ -577,17 +581,20 @@ export default function ReviewForm({
                     try {
                       const result = await saveFieldLayoutPositions(
                         orderId,
-                        layoutOverrides
+                        layoutOverrides,
+                        { saveAsTemplate }
                       );
                       if ("error" in result) {
                         toast.error(result.error);
                         return;
                       }
-                      toast.success(
-                        `Saved ${result.updatedCount} field position${
-                          result.updatedCount === 1 ? "" : "s"
-                        }.`
-                      );
+                      const baseMsg = `Saved ${result.updatedCount} field position${
+                        result.updatedCount === 1 ? "" : "s"
+                      }.`;
+                      const tmplMsg = result.templateSaved
+                        ? " Template saved — future orders for this form will load it instantly."
+                        : "";
+                      toast.success(`${baseMsg}${tmplMsg}`);
                       setLayoutOverrides({});
                       setEditingLayout(false);
                       router.refresh();
@@ -613,6 +620,17 @@ export default function ReviewForm({
                 Discard
               </Button>
             </>
+          )}
+          {editingLayout && (
+            <label className="ml-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={saveAsTemplate}
+                onChange={(e) => setSaveAsTemplate(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-input"
+              />
+              Save as template (reuse for future uploads of this form)
+            </label>
           )}
           <p className="ml-auto text-xs text-muted-foreground">
             {editingLayout

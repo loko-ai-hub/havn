@@ -402,15 +402,21 @@ type BboxOverride = { x: number; y: number; w: number; h: number };
 
 export async function saveFieldLayoutPositions(
   orderId: string,
-  overrides: Record<string, BboxOverride>
-): Promise<{ ok: true; updatedCount: number } | { error: string }> {
+  overrides: Record<string, BboxOverride>,
+  options?: { saveAsTemplate?: boolean }
+): Promise<
+  | { ok: true; updatedCount: number; templateSaved?: boolean }
+  | { error: string }
+> {
   const loaded = await loadOrderForOrg(orderId);
   if (!loaded.ok) return { error: loaded.error };
   const { admin } = loaded;
 
   const { data: tpl } = await admin
     .from("third_party_templates")
-    .select("id, field_layout")
+    .select(
+      "id, field_layout, pdf_pages, issuer, form_title, document_type, storage_path_text, storage_path_pdf, mime_type"
+    )
     .eq("order_id", orderId)
     .maybeSingle();
 
@@ -429,6 +435,13 @@ export async function saveFieldLayoutPositions(
       labelBbox: BboxOverride | null;
       currentValue: string;
     }> | null;
+    pdf_pages: Array<{ page: number; width: number; height: number }> | null;
+    issuer: string | null;
+    form_title: string | null;
+    document_type: string | null;
+    storage_path_text: string | null;
+    storage_path_pdf: string | null;
+    mime_type: string | null;
   };
 
   const layout = tplRow.field_layout ?? [];
@@ -445,24 +458,110 @@ export async function saveFieldLayoutPositions(
     return { ...field, valueBbox: override };
   });
 
-  if (updatedCount === 0) {
+  if (updatedCount === 0 && !options?.saveAsTemplate) {
     return { ok: true, updatedCount: 0 };
   }
 
-  const { error: updErr } = await admin
-    .from("third_party_templates")
-    .update({
-      field_layout: updated,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", tplRow.id);
+  if (updatedCount > 0) {
+    const { error: updErr } = await admin
+      .from("third_party_templates")
+      .update({
+        field_layout: updated,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", tplRow.id);
 
-  if (updErr) {
-    return { error: updErr.message };
+    if (updErr) {
+      return { error: updErr.message };
+    }
+  }
+
+  let templateSaved = false;
+  if (options?.saveAsTemplate) {
+    const fingerprint = await loadFingerprintForTemplate(admin, tplRow);
+    if (fingerprint) {
+      const { error: tmplErr } = await admin
+        .from("vendor_form_templates")
+        .upsert(
+          {
+            issuer: tplRow.issuer,
+            form_title: tplRow.form_title,
+            content_fingerprint: fingerprint,
+            master_type_key: tplRow.document_type,
+            field_layout: updated,
+            pdf_pages: tplRow.pdf_pages,
+            source_template_id: tplRow.id,
+            approved_by: loaded.organizationId,
+            approved_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: "issuer,form_title,content_fingerprint",
+          }
+        );
+      if (tmplErr) {
+        // Don't fail the whole save — staff layout edits are already
+        // persisted on the order. Just surface the template-save miss.
+        console.warn(
+          "[saveFieldLayoutPositions] vendor template save failed:",
+          tmplErr.message
+        );
+      } else {
+        templateSaved = true;
+      }
+    } else {
+      console.warn(
+        "[saveFieldLayoutPositions] could not compute fingerprint; skipping template save"
+      );
+    }
   }
 
   revalidatePath(`/dashboard/requests/${orderId}/review`);
-  return { ok: true, updatedCount };
+  return { ok: true, updatedCount, templateSaved };
+}
+
+/**
+ * Compute the same content_fingerprint the 3P pipeline uses, by
+ * downloading the saved raw text from Supabase Storage. Returns null
+ * when text isn't available (older ingestions skipped the upload).
+ */
+async function loadFingerprintForTemplate(
+  admin: ReturnType<typeof createAdminClient>,
+  tplRow: {
+    storage_path_text: string | null;
+    storage_path_pdf: string | null;
+    mime_type: string | null;
+  }
+): Promise<string | null> {
+  let rawText: string | null = null;
+  if (tplRow.storage_path_text) {
+    const { data: textBlob } = await admin.storage
+      .from(BUCKET_NAME)
+      .download(tplRow.storage_path_text);
+    if (textBlob) rawText = await textBlob.text();
+  }
+  if (!rawText && tplRow.storage_path_pdf) {
+    const { data: pdfBlob } = await admin.storage
+      .from(BUCKET_NAME)
+      .download(tplRow.storage_path_pdf);
+    if (pdfBlob) {
+      const buf = Buffer.from(await pdfBlob.arrayBuffer());
+      const { rawText: t } = await extractTextFromBuffer(
+        buf,
+        tplRow.mime_type ?? "application/pdf"
+      );
+      rawText = t;
+    }
+  }
+  if (!rawText) return null;
+  const norm = rawText
+    .replace(/\s+/g, " ")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .trim()
+    .slice(0, 4096);
+  const { createHash } = await import("crypto");
+  return createHash("sha256").update(norm).digest("hex");
 }
 
 function effectiveLayoutKey(
