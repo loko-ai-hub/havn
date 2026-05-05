@@ -22,6 +22,7 @@ import {
 } from "@/lib/ingest-external-template";
 import { matchOrderProperty } from "@/lib/match-order-property";
 import { parseFormLayout, attachRegistryKeys } from "@/lib/pdf-form-layout";
+import { extractAcroFormLayout } from "@/lib/acroform-extractor";
 import { filterFillableFieldsWithClassification } from "@/lib/filter-fillable-fields";
 import { synthesizeFieldLayout } from "@/lib/synthesize-field-layout";
 import { proposeRegistryFields } from "@/lib/propose-registry-fields";
@@ -135,21 +136,41 @@ export async function runThirdPartyIngestion(params: {
     //         values onto the PDF at the same coords. Falls through with
     //         null layout if the form parser isn't configured or the
     //         document isn't a PDF.
-    const formLayout = mimeType === "application/pdf"
-      ? await parseFormLayout(fileBuffer, mimeType).catch((err) => {
-          console.warn("[3p-pipeline] parseFormLayout failed:", err);
+    // 4b-acroform. Fast path: if the PDF is a fillable AcroForm, use
+    //   pdf-lib to read its embedded form fields directly. Modern
+    //   vendor PDFs (~2018+) ship as AcroForms with field name + type
+    //   + position embedded — no OCR or vision pass needed. Falls
+    //   through to Form Parser when the PDF is flat (most scanned
+    //   forms, older vendor PDFs).
+    const acroformLayout = mimeType === "application/pdf"
+      ? await extractAcroFormLayout(fileBuffer).catch((err) => {
+          console.warn("[3p-pipeline] extractAcroFormLayout failed:", err);
           return null;
         })
       : null;
 
+    const formLayout = acroformLayout
+      ?? (mimeType === "application/pdf"
+        ? await parseFormLayout(fileBuffer, mimeType).catch((err) => {
+            console.warn("[3p-pipeline] parseFormLayout failed:", err);
+            return null;
+          })
+        : null);
+
+    if (acroformLayout) {
+      console.log(
+        `[3p-pipeline] AcroForm fast path: ${acroformLayout.fields.length} fields`
+      );
+    }
+
     // Synthesize bounding boxes for detected_fields entries Form Parser
-    // missed. Form Parser frequently fails on underline-style blanks
-    // ("Amount of Maintenance Fee: $___") on HOA forms; the OCR token
-    // stream still has the labels with positions, so we project forward
-    // on the same line to estimate where the value blank sits. Existing
-    // Form Parser entries with the same label are skipped so we don't
-    // duplicate.
-    const synthesizedFields = formLayout
+    // missed. Skipped entirely when AcroForm gave us positions — fillable
+    // PDFs carry the authoritative field set, so synthesis would only
+    // hallucinate extras. Otherwise: Form Parser frequently fails on
+    // underline-style blanks; the OCR token stream still has the labels
+    // with positions, so we project forward on the same line to estimate
+    // where the value blank sits.
+    const synthesizedFields = !acroformLayout && formLayout
       ? synthesizeFieldLayout({
           ocrPages,
           detectedFields: ingestion.fields.map((f) => ({
