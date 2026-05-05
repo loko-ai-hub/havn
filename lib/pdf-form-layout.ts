@@ -22,6 +22,17 @@ export type NormalizedRect = {
   h: number;
 };
 
+/**
+ * What kind of input the form field expects, after collapsing Form Parser's
+ * raw valueType strings into the small set the overlay UI can render.
+ *
+ * `text`     — single- or multi-line text input.
+ * `checkbox` — boolean toggle (Form Parser returns `unfilled_checkbox`
+ *              or `filled_checkbox`; we collapse both into `checkbox`
+ *              and read the initial state from `currentValue`).
+ */
+export type FormFieldKind = "text" | "checkbox";
+
 export type ParsedFormField = {
   /** Page number, 1-indexed in the *original* PDF. */
   page: number;
@@ -29,6 +40,11 @@ export type ParsedFormField = {
   label: string;
   /** Existing pre-filled value, if Document AI detected one. */
   currentValue: string;
+  /**
+   * Whether this field is a text blank or a checkbox. Drives whether the
+   * overlay renders an <input type=text> vs an <input type=checkbox>.
+   */
+  kind: FormFieldKind;
   /** Bounding box of the label, in normalized 0..1 coords. */
   labelBbox: NormalizedRect | null;
   /** Bounding box of the blank/value cell, in normalized 0..1 coords. */
@@ -102,15 +118,29 @@ export async function parseFormLayout(
           .replace(/[:_]+\s*$/, "")
           .trim();
         if (!labelText) continue;
+        const rawValueType =
+          ((ff.fieldValue as { valueType?: string | null } | null | undefined)
+            ?.valueType as string | null | undefined) ?? null;
+        const isCheckbox =
+          rawValueType === "filled_checkbox" ||
+          rawValueType === "unfilled_checkbox";
         const valueText = readTextAnchor(fullText, ff.fieldValue?.textAnchor)
           ?.replace(/[\r\n]+/g, " ")
           .replace(/\s+/g, " ")
           .trim() ?? "";
+        // For checkboxes, currentValue is "true" / "false" so the overlay
+        // can render the checked state without re-inspecting valueType.
+        const currentValue = isCheckbox
+          ? rawValueType === "filled_checkbox"
+            ? "true"
+            : "false"
+          : valueText;
 
         allFields.push({
           page: pageNumber,
           label: labelText,
-          currentValue: valueText,
+          currentValue,
+          kind: isCheckbox ? "checkbox" : "text",
           labelBbox: extractNormalizedBbox(ff.fieldName?.boundingPoly),
           valueBbox: extractNormalizedBbox(ff.fieldValue?.boundingPoly),
         });
@@ -133,6 +163,7 @@ export type RegistryFieldLayout = {
   registryKey: string | null;
   label: string;
   page: number;
+  kind: FormFieldKind;
   valueBbox: NormalizedRect | null;
   labelBbox: NormalizedRect | null;
   currentValue: string;
@@ -178,6 +209,7 @@ export function attachRegistryKeys(
       registryKey,
       label: f.label,
       page: f.page,
+      kind: f.kind,
       valueBbox: f.valueBbox,
       labelBbox: f.labelBbox,
       currentValue: f.currentValue,

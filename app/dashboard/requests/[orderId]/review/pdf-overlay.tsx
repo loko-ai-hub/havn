@@ -17,6 +17,13 @@ export type OverlayField = {
   registryKey: string | null;
   label: string;
   page: number;
+  /**
+   * Form Parser kind: "text" for write-in blanks, "checkbox" for
+   * filled/unfilled checkboxes. Older field_layout rows ingested before
+   * this field existed default to "text" — staff can re-process the
+   * upload to capture checkbox info.
+   */
+  kind?: "text" | "checkbox";
   valueBbox: { x: number; y: number; w: number; h: number } | null;
   labelBbox: { x: number; y: number; w: number; h: number } | null;
   currentValue: string;
@@ -164,16 +171,51 @@ function PageWithOverlay({
             const top = field.valueBbox.y * renderedSize.h;
             const w = field.valueBbox.w * renderedSize.w;
             const rawH = field.valueBbox.h * renderedSize.h;
-            const h = Math.max(rawH, MIN_INPUT_HEIGHT);
+            const isCheckbox = field.kind === "checkbox";
+            const h = isCheckbox ? Math.max(rawH, 14) : Math.max(rawH, MIN_INPUT_HEIGHT);
             const value = field.registryKey ? values[field.registryKey] ?? "" : "";
             const highlighted = !!(
               field.registryKey && highlightKeys?.has(field.registryKey)
             );
             const disabled = !field.registryKey;
+            const key = `${field.registryKey ?? "unmapped"}-${idx}`;
+
+            if (isCheckbox) {
+              const checked = field.registryKey
+                ? value === "true" || value === "1"
+                : field.currentValue === "true";
+              return (
+                <input
+                  key={key}
+                  type="checkbox"
+                  checked={checked}
+                  disabled={disabled}
+                  onChange={(e) => {
+                    if (field.registryKey)
+                      onChange(field.registryKey, e.target.checked ? "true" : "false");
+                  }}
+                  title={field.label}
+                  className={cn(
+                    "pointer-events-auto absolute cursor-pointer rounded-sm border bg-white/90 shadow-sm outline-none transition focus:ring-2 focus:ring-havn-navy/30",
+                    disabled
+                      ? "cursor-not-allowed border-dashed border-muted-foreground/40"
+                      : highlighted
+                        ? "border-havn-success/50 bg-havn-success/10"
+                        : "border-havn-navy/30"
+                  )}
+                  style={{
+                    left,
+                    top,
+                    width: Math.max(w, 14),
+                    height: h,
+                  }}
+                />
+              );
+            }
 
             return (
               <input
-                key={`${field.registryKey ?? "unmapped"}-${idx}`}
+                key={key}
                 type="text"
                 value={value}
                 disabled={disabled}

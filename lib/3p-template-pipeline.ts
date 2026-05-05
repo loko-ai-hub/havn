@@ -22,6 +22,7 @@ import {
 } from "@/lib/ingest-external-template";
 import { matchOrderProperty } from "@/lib/match-order-property";
 import { parseFormLayout, attachRegistryKeys } from "@/lib/pdf-form-layout";
+import { filterFillableFields } from "@/lib/filter-fillable-fields";
 import { proposeRegistryFields } from "@/lib/propose-registry-fields";
 import { send3pReviewNeeded } from "@/lib/resend";
 import { GOD_MODE_EMAILS } from "@/app/god-mode/constants";
@@ -136,8 +137,27 @@ export async function runThirdPartyIngestion(params: {
         })
       : null;
 
-    const fieldLayout = formLayout
-      ? attachRegistryKeys(formLayout, ingestion.fields.map((f) => ({
+    // Filter pre-printed sender info + requester context out of the
+    // detected fields. Form Parser tags every form-shaped slot it sees,
+    // including the form-issuer's return address block and the
+    // requester's already-filled context fields at the top of the form.
+    // Only blanks the management company response should fill survive
+    // this pass.
+    const filteredLayout = formLayout
+      ? {
+          pages: formLayout.pages,
+          fields: await filterFillableFields(formLayout, {
+            issuer: ingestion.issuer,
+            formTitle: ingestion.formTitle,
+          }).catch((err) => {
+            console.warn("[3p-pipeline] filterFillableFields failed:", err);
+            return formLayout.fields;
+          }),
+        }
+      : null;
+
+    const fieldLayout = filteredLayout
+      ? attachRegistryKeys(filteredLayout, ingestion.fields.map((f) => ({
           label: f.externalLabel,
           registryKey: f.registryKey,
         })))

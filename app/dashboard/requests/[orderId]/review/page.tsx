@@ -68,6 +68,7 @@ export default async function DashboardRequestReviewPage({
           registryKey: string | null;
           label: string;
           page: number;
+          kind?: "text" | "checkbox";
           valueBbox: { x: number; y: number; w: number; h: number } | null;
           labelBbox: { x: number; y: number; w: number; h: number } | null;
           currentValue: string;

@@ -321,11 +321,22 @@ export default function ReviewForm({
         const totalFields = has3p ? overlay.fields.length : template.fields.length;
         const populatedFields = has3p
           ? overlay.fields.filter((f) => {
-              if (f.registryKey) {
-                const val = fields[f.registryKey]?.value;
-                if (val && val.trim().length > 0) return true;
+              const isCheckbox = f.kind === "checkbox";
+              const liveVal = f.registryKey
+                ? fields[f.registryKey]?.value ?? ""
+                : "";
+              if (isCheckbox) {
+                // Populated only when explicitly checked. Unchecked is the
+                // default Form Parser state and isn't a meaningful answer.
+                if (liveVal === "true" || liveVal === "1") return true;
+                if (!liveVal && f.currentValue === "true") return true;
+                return false;
               }
-              return typeof f.currentValue === "string" && f.currentValue.trim().length > 0;
+              if (liveVal.trim().length > 0) return true;
+              return (
+                typeof f.currentValue === "string" &&
+                f.currentValue.trim().length > 0
+              );
             }).length
           : filledCount;
         const livePct = totalFields > 0
