@@ -278,6 +278,23 @@ export async function runThirdPartyIngestion(params: {
           })))
         : null;
 
+    // Audit telemetry — record which positioner produced fields so the
+    // God Mode panel can show the layered fast-path stack at work.
+    const positioningTelemetry = {
+      cache_hit: !!cachedTemplate,
+      cache_template_id: cachedTemplate?.id ?? null,
+      acroform_field_count: acroformLayout?.fields.length ?? 0,
+      form_parser_field_count:
+        formLayout && !acroformLayout ? formLayout.fields.length : 0,
+      vision_field_count: visionLayout?.fields.length ?? 0,
+      synthesis_field_count: synthesizedFields.length,
+      filtered_response_count: filterResult?.response.length ?? 0,
+      filtered_requester_count: filterResult?.requester.length ?? 0,
+      filtered_metadata_count: filterResult?.metadata.length ?? 0,
+      total_layout_field_count: fieldLayout?.length ?? 0,
+      timestamp: new Date().toISOString(),
+    };
+
     // Harvest values from requester-context fields. Form Parser already
     // OCR'd the values the requester typed in (Date, Owner, Property,
     // APN, etc.). The filter just classified them as requester-context;
@@ -357,8 +374,13 @@ export async function runThirdPartyIngestion(params: {
         match_reasoning: match?.reasoning ?? null,
         suggested_community_id: match?.communityId ?? null,
         suggested_unit_id: match?.unitId ?? null,
-        pdf_pages: cachedTemplate?.pages ?? formLayout?.pages ?? null,
+        pdf_pages:
+          cachedTemplate?.pages ??
+          visionLayout?.pages ??
+          formLayout?.pages ??
+          null,
         field_layout: fieldLayout ?? null,
+        ingest_telemetry: positioningTelemetry,
       })
       .eq("id", id);
 

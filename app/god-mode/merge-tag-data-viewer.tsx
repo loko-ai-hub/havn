@@ -334,6 +334,7 @@ export default function MergeTagDataViewer() {
                         <p className="text-[11px] text-muted-foreground">
                           {r.type}
                           {r.communityLevel ? "" : " · order-specific"}
+                          <TierChip tier={r.lifecycleTier} />
                         </p>
                       </td>
                       <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground">
@@ -466,6 +467,50 @@ function SourceBadge({ source }: { source: MergeTagValueRow["resolvedSource"] })
     >
       <Icon className="h-3 w-3" />
       {entry?.label ?? source}
+    </span>
+  );
+}
+
+function TierChip({
+  tier,
+}: {
+  tier: MergeTagValueRow["lifecycleTier"];
+}) {
+  const cfg: Record<
+    MergeTagValueRow["lifecycleTier"],
+    { label: string; cls: string; tooltip: string }
+  > = {
+    governing: {
+      label: "governing",
+      cls: "border-havn-navy/40 bg-havn-navy/10 text-havn-navy",
+      tooltip:
+        "From declaration / CC&Rs / bylaws. Cache forever; only invalidates on re-OCR or manual edit.",
+    },
+    onboarding: {
+      label: "onboarding",
+      cls: "border-havn-amber/40 bg-havn-amber/10 text-havn-amber",
+      tooltip:
+        "Set during community onboarding by management/board. Cache until manual edit.",
+    },
+    per_unit: {
+      label: "per-unit",
+      cls: "border-havn-success/40 bg-havn-success/10 text-havn-success",
+      tooltip:
+        "Varies across units. Re-fetched from community_units at order time; never cached.",
+    },
+    per_order: {
+      label: "per-order",
+      cls: "border-muted-foreground/30 bg-muted/30 text-muted-foreground",
+      tooltip: "Order-specific. Read live from the order row; never cached.",
+    },
+  };
+  const c = cfg[tier];
+  return (
+    <span
+      title={c.tooltip}
+      className={`ml-1 inline-flex items-center rounded border px-1 py-px text-[9px] font-medium uppercase tracking-wide ${c.cls}`}
+    >
+      {c.label}
     </span>
   );
 }

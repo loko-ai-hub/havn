@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   FIELD_REGISTRY,
+  getLifecycleTier,
   getTemplate,
   type FieldRegistryEntry,
   type DocumentTemplate,
@@ -313,9 +314,15 @@ export type MergeTagValueRow = {
   label: string;
   type: string;
   communityLevel: boolean;
+  /** Lifecycle tier from the registry (or default inferred from communityLevel). */
+  lifecycleTier: "governing" | "onboarding" | "per_unit" | "per_order";
   sources: string[];
   resolvedValue: string | null;
   resolvedSource: "ocr" | "cache" | "manual" | null;
+  /** Audit columns from the field-cache-tiers migration. */
+  cachedTier: string | null;
+  lastRefreshedAt: string | null;
+  sourceEvent: string | null;
   documentType: string | null;
   updatedAt: string | null;
 };
@@ -329,7 +336,9 @@ export async function getCommunityMergeTagValues(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("community_field_cache")
-    .select("field_key, field_value, source, document_type, updated_at")
+    .select(
+      "field_key, field_value, source, document_type, updated_at, lifecycle_tier, last_refreshed_at, source_event"
+    )
     .eq("community_id", communityId);
   if (error) return { error: error.message };
 
@@ -353,9 +362,13 @@ export async function getCommunityMergeTagValues(
       label: entry.label,
       type: entry.type,
       communityLevel: entry.communityLevel,
+      lifecycleTier: getLifecycleTier(entry),
       sources: entry.sources,
       resolvedValue: (cached?.field_value as string | null) ?? null,
       resolvedSource: source ?? null,
+      cachedTier: (cached?.lifecycle_tier as string | null) ?? null,
+      lastRefreshedAt: (cached?.last_refreshed_at as string | null) ?? null,
+      sourceEvent: (cached?.source_event as string | null) ?? null,
       documentType: (cached?.document_type as string | null) ?? null,
       updatedAt: (cached?.updated_at as string | null) ?? null,
     });

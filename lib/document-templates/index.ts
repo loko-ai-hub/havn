@@ -19,8 +19,10 @@ export {
   getFieldRegistryEntry,
   getFieldLabel,
   getAllMergeTags,
+  getLifecycleTier,
 } from "./field-registry";
 export type { FieldRegistryEntry, FieldRegistryKey, FieldSource } from "./field-registry";
+export type { LifecycleTier } from "./types";
 
 /**
  * Generic templates — used when no state-specific override exists for a
