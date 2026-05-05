@@ -64,6 +64,80 @@ function findLabelSequence(
 }
 
 /**
+ * Common stopwords to ignore when fuzzy-matching labels. Claude tends to
+ * pad labels with prepositions and articles that aren't in the OCR.
+ */
+const STOPWORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has",
+  "have", "in", "is", "it", "of", "on", "or", "that", "the", "to", "with",
+  "this", "will", "any", "you", "your", "our", "we", "us", "if", "yes",
+  "no", "not", "do", "does", "did", "been", "was", "were",
+]);
+
+/**
+ * Pull "significant" words from a label — letters/digits only, length ≥ 3,
+ * not stopwords. Used by the fuzzy matcher when the verbatim sequence
+ * isn't in the OCR (because Claude paraphrased the label across line
+ * breaks or rephrased clusters of related questions into a single label).
+ */
+function significantWords(label: string): string[] {
+  return label
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 3 && !STOPWORDS.has(w));
+}
+
+/**
+ * Fuzzy fallback for `findLabelSequence`. Slides a window across the
+ * OCR token stream looking for clusters of significant label words.
+ * Wins go to the smallest window that contains the most distinct
+ * matched words; ties broken by earliest occurrence. Returns the index
+ * range [first-match, last-match] within that window so callers can
+ * project a value bbox forward from the last matched token.
+ */
+function findFuzzyLabel(
+  pageTokens: OcrToken[],
+  sigWords: string[]
+): { start: number; end: number } | null {
+  if (sigWords.length === 0) return null;
+  const need = new Set(sigWords);
+  const minMatches = Math.max(
+    2,
+    Math.ceil(Math.min(sigWords.length, 4) * 0.6)
+  );
+  const windowSize = Math.max(8, sigWords.length * 4);
+
+  let best: { start: number; end: number; score: number } | null = null;
+  for (let i = 0; i < pageTokens.length; i++) {
+    const matched = new Set<string>();
+    let firstHit = -1;
+    let lastHit = -1;
+    for (
+      let j = i;
+      j < Math.min(i + windowSize, pageTokens.length);
+      j++
+    ) {
+      const tok = NORM(pageTokens[j].text)
+        .replace(/\s+/g, " ")
+        .split(" ")
+        .find((s) => s.length >= 3 && need.has(s));
+      if (tok) {
+        matched.add(tok);
+        if (firstHit === -1) firstHit = j;
+        lastHit = j;
+      }
+    }
+    if (matched.size < minMatches || lastHit === -1) continue;
+    const score = matched.size;
+    if (!best || score > best.score) {
+      best = { start: firstHit, end: lastHit, score };
+    }
+  }
+  if (!best || best.start === -1) return null;
+  return { start: best.start, end: best.end };
+}
+
+/**
  * Estimate the value bounding box for a label whose last token sits at
  * `endIdx`. Walks forward on the same visual line:
  *   - skips blank-marker tokens (underscores, dashes, dollar signs)
@@ -146,10 +220,20 @@ export function synthesizeFieldLayout(params: {
     // matching against the OCR token stream.
     const labelTokens = labelNorm.split(" ").filter(Boolean);
     if (labelTokens.length === 0) continue;
+    const fuzzyWords = significantWords(labelText);
 
     let placed = false;
     for (const ocrPage of ocrPages) {
-      const seq = findLabelSequence(ocrPage.tokens, labelTokens);
+      // First try verbatim sequence match — most accurate when Claude's
+      // label happens to be the literal OCR text.
+      let seq = findLabelSequence(ocrPage.tokens, labelTokens);
+      // Fall back to fuzzy keyword matching when Claude paraphrased
+      // (e.g. compressing "Our billing year runs from: __ to: __" into
+      // "Our billing year runs from / to", or composing a label across
+      // line breaks). The fuzzy match returns the span of matched
+      // significant words; we project a value bbox from that span's
+      // last matched word.
+      if (!seq) seq = findFuzzyLabel(ocrPage.tokens, fuzzyWords);
       if (!seq) continue;
 
       const valueBbox = estimateValueBbox(ocrPage.tokens, seq.end);
