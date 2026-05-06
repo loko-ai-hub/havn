@@ -247,16 +247,33 @@ export default function FormTemplateEditor({
         </div>
 
         <aside className="space-y-3">
+          {selected ? (
+            <FieldEditor
+              field={selected}
+              registryOptions={registryOptions}
+              onChange={(patch) => handleUpdate(selected.uid, patch)}
+              onDelete={() => handleDelete(selected.uid)}
+            />
+          ) : (
+            <div className="rounded-xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">
+                Select a field to map it
+              </p>
+              <p className="mt-1 text-xs">
+                Click a row in the list below (or any field on the PDF)
+                and the merge-tag library opens here. Every available
+                merge tag from Havn&apos;s registry is in the dropdown.
+              </p>
+            </div>
+          )}
+
           <div className="rounded-xl border border-border bg-card p-3">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Fields ({fields.length})
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Click a field to edit its label, type, and merge tag.
+              All fields ({fields.length})
             </p>
           </div>
 
-          <div className="max-h-[calc(100vh-220px)] overflow-y-auto rounded-xl border border-border bg-card">
+          <div className="max-h-[60vh] overflow-y-auto rounded-xl border border-border bg-card">
             {fields.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                 No fields yet. Add one with the buttons above.
@@ -280,7 +297,7 @@ export default function FormTemplateEditor({
                         <p className="text-[11px] text-muted-foreground">
                           p{f.page} · {f.kind ?? "text"} ·{" "}
                           {f.registryKey ?? (
-                            <span className="italic">unmapped</span>
+                            <span className="italic text-havn-amber">unmapped</span>
                           )}
                         </p>
                       </div>
@@ -302,15 +319,6 @@ export default function FormTemplateEditor({
               </ul>
             )}
           </div>
-
-          {selected && (
-            <FieldEditor
-              field={selected}
-              registryOptions={registryOptions}
-              onChange={(patch) => handleUpdate(selected.uid, patch)}
-              onDelete={() => handleDelete(selected.uid)}
-            />
-          )}
         </aside>
       </div>
     </div>
@@ -345,11 +353,24 @@ function FieldEditor({
   onChange: (patch: Partial<FieldRow>) => void;
   onDelete: () => void;
 }) {
+  const [tagFilter, setTagFilter] = useState("");
   const selectedRegistry =
     registryOptions.find((o) => o.key === field.registryKey) ?? null;
+
+  const filteredOptions = useMemo(() => {
+    const q = tagFilter.toLowerCase().trim();
+    if (!q) return registryOptions;
+    return registryOptions.filter(
+      (o) =>
+        o.key.toLowerCase().includes(q) ||
+        o.label.toLowerCase().includes(q) ||
+        o.description.toLowerCase().includes(q)
+    );
+  }, [tagFilter, registryOptions]);
+
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-card p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="space-y-3 rounded-xl border border-havn-navy/40 bg-card p-4">
+      <p className="text-xs font-semibold uppercase tracking-wider text-havn-navy">
         Edit field
       </p>
 
@@ -399,7 +420,15 @@ function FieldEditor({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-xs">Merge tag (registry key)</Label>
+        <Label className="text-xs">
+          Merge tag · {registryOptions.length} available
+        </Label>
+        <Input
+          placeholder="Search merge tags…"
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          className="text-xs"
+        />
         <select
           value={field.registryKey ?? ""}
           onChange={(e) =>
@@ -407,21 +436,30 @@ function FieldEditor({
               registryKey: e.target.value === "" ? null : e.target.value,
             })
           }
+          size={6}
           className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
         >
           <option value="">— Unmapped —</option>
-          {registryOptions.map((o) => (
+          {filteredOptions.map((o) => (
             <option key={o.key} value={o.key}>
               {o.label} ({o.key}) · {o.lifecycleTier}
             </option>
           ))}
         </select>
-        {selectedRegistry && (
+        {selectedRegistry ? (
           <p
-            className="text-[11px] text-muted-foreground"
+            className="rounded bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground"
             title={TIER_TOOLTIPS[selectedRegistry.lifecycleTier]}
           >
-            {selectedRegistry.description}
+            <span className="font-medium text-foreground">
+              {selectedRegistry.label}
+            </span>{" "}
+            — {selectedRegistry.description}
+          </p>
+        ) : (
+          <p className="text-[11px] italic text-havn-amber">
+            Currently unmapped — pick a merge tag above so values can
+            auto-populate from the cache.
           </p>
         )}
       </div>
