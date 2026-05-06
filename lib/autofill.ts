@@ -25,7 +25,7 @@ export function mapFieldsToDocument(
   if (documentType === "resale_certificate") {
     return {
       ...base,
-      "Monthly Assessment": f(fields, "monthly_assessment"),
+      "HOA Dues Amount": f(fields, "assessment"),
       "Special Assessments": f(fields, "special_assessments"),
       "Reserve Fund Balance": f(fields, "reserve_fund_balance"),
       "Pet Restrictions": f(fields, "pet_restrictions"),
@@ -42,7 +42,7 @@ export function mapFieldsToDocument(
       "Insurance Expiry": f(fields, "insurance_expiry_date"),
       "Liability Amount": f(fields, "insurance_liability_amount"),
       "Reserve Fund Balance": f(fields, "reserve_fund_balance"),
-      "Monthly Assessment": f(fields, "monthly_assessment"),
+      "HOA Dues Amount": f(fields, "assessment"),
     };
   }
 

@@ -30,7 +30,7 @@ export const RESALE_CERTIFICATE: DocumentTemplate = {
     { key: "management_contact_phone", label: "Manager Phone", section: "Management & Governance", type: "text", required: false, communityLevel: true, ocrFieldKey: "management_contact_phone" },
 
     // Financial Information
-    { key: "monthly_assessment", label: "Monthly Assessment", section: "Financial Information", type: "currency", required: true, communityLevel: false, ocrFieldKey: "monthly_assessment" },
+    { key: "assessment", label: "HOA Dues Amount", section: "Financial Information", type: "currency", required: true, communityLevel: false, ocrFieldKey: "assessment" },
     { key: "special_assessments", label: "Special Assessments", section: "Financial Information", type: "textarea", required: false, communityLevel: true, ocrFieldKey: "special_assessments" },
     { key: "reserve_fund_balance", label: "Reserve Fund Balance", section: "Financial Information", type: "currency", required: true, communityLevel: true, ocrFieldKey: "reserve_fund_balance" },
     { key: "outstanding_liens", label: "Outstanding Liens on Unit", section: "Financial Information", type: "textarea", required: false, communityLevel: false },

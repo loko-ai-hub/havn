@@ -10,7 +10,7 @@ import type { FieldType, LifecycleTier } from "./types";
 export type FieldSource = "ocr" | "cache" | "manual" | "order";
 
 export type FieldRegistryEntry = {
-  /** Stable field key — must match the merge tag content (e.g. `monthly_assessment` → `{{monthly_assessment}}`). */
+  /** Stable field key — must match the merge tag content (e.g. `assessment` → `{{assessment}}`). */
   key: string;
   /** Pre-rendered merge tag, e.g. `{{association_name}}`. */
   mergeTag: string;
@@ -305,15 +305,15 @@ export const FIELD_REGISTRY = {
   },
 
   // ── Financial Information ─────────────────────────────────────────────
-  monthly_assessment: {
-    key: "monthly_assessment",
-    mergeTag: "{{monthly_assessment}}",
+  assessment: {
+    key: "assessment",
+    mergeTag: "{{assessment}}",
     label: "HOA Dues Amount",
     type: "currency",
     sources: ["ocr", "cache", "manual"],
-    ocrFieldKey: "monthly_assessment",
+    ocrFieldKey: "assessment",
     description:
-      "Regular periodic dues for the subject unit. Also called monthly assessment, monthly dues, maintenance fee, amount of maintenance fee, association dues, common charges, or regular assessment depending on the form/state.",
+      "Regular periodic dues for the subject unit. Also called monthly assessment, monthly dues, maintenance fee, amount of maintenance fee, association dues, common charges, or regular assessment depending on the form/state. Frequency (monthly / quarterly / etc.) is captured separately on assessment_frequency.",
     stateLabels: {
       NY: "Common Charges",
       FL: "Maintenance Fee",

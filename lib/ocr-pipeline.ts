@@ -40,7 +40,7 @@ Extract these fields if present:
 - association_type (HOA, COA, etc.)
 - state
 - county
-- monthly_assessment
+- assessment (the regular periodic dues amount per unit — also called HOA dues, monthly assessment, maintenance fee. Does not include special assessments.)
 - special_assessments (array)
 - management_company
 - management_contact_name

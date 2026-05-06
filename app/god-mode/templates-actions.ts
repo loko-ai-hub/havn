@@ -598,7 +598,7 @@ function sampleValueForField(key: string, type: string): string {
     management_contact_name: "Jane Sample",
     management_contact_email: "manager@samplemanagement.example",
     management_contact_phone: "(555) 010-0100",
-    monthly_assessment: "325",
+    assessment: "325",
     special_assessments: "None in the past 12 months.",
     reserve_fund_balance: "182500",
     outstanding_liens: "None on the subject unit.",

@@ -45,7 +45,7 @@ const DEFAULT_CONTEXT_SYNONYMS = {
 const DEMAND_LETTER_CONFIG: DocTypeExtractorConfig = {
   masterTypeKey: "demand_letter",
   expectedRegistryKeys: [
-    "monthly_assessment",
+    "assessment",
     "assessment_frequency",
     "fiscal_year_start",
     "fiscal_year_end",
@@ -89,7 +89,7 @@ const LENDER_QUESTIONNAIRE_CONFIG: DocTypeExtractorConfig = {
     "association_name",
     "association_type",
     "total_units",
-    "monthly_assessment",
+    "assessment",
     "fiscal_year_end",
     "reserve_fund_balance",
     "insurance_company",
@@ -111,7 +111,7 @@ const RESALE_CERTIFICATE_CONFIG: DocTypeExtractorConfig = {
   masterTypeKey: "resale_certificate",
   expectedRegistryKeys: [
     "association_name",
-    "monthly_assessment",
+    "assessment",
     "transfer_fee",
     "special_assessments",
     "insurance_company",
@@ -127,7 +127,7 @@ const RESALE_CERTIFICATE_CONFIG: DocTypeExtractorConfig = {
 const ESTOPPEL_LETTER_CONFIG: DocTypeExtractorConfig = {
   masterTypeKey: "estoppel_letter",
   expectedRegistryKeys: [
-    "monthly_assessment",
+    "assessment",
     "transfer_fee",
     "special_assessments",
     "account_paid_through",

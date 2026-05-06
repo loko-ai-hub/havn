@@ -6,7 +6,7 @@ import type { DocumentTemplate } from "./types";
 //   transfer_fee (currency) — Resale/Transfer Certificate Preparation Fee
 //     RCW 64.34.425(3) authorizes a reasonable fee for preparation of the resale certificate, charged to the selling unit owner. RCW 64.90.640 provides the parallel WUCIOA fee structure. Amount should be disclosed on the certificate.
 //   working_capital_contribution (currency) — Working Capital / Initiation Contribution at Closing
-//     Commonly required contribution to association capital at resale closing; not captured by monthly_assessment or special_assessments.
+//     Commonly required contribution to association capital at resale closing; not captured by assessment or special_assessments.
 //   capital_expenditures_planned (textarea) — Approved Capital Expenditures (current & next fiscal year)
 //     Expressly required disclosure under RCW 64.34.425(1)(d); no existing registry field captures planned capital expenditures.
 //   reserve_study_date (date) — Date of Most Recent Reserve Study
@@ -30,7 +30,7 @@ import type { DocumentTemplate } from "./types";
 //   right_of_first_refusal (textarea) — Right of First Refusal / Restraint on Alienability
 //     RCW 64.34.425(1)(a) requires disclosure of the effect on the proposed disposition of any right of first refusal or other restraint on free alienability.
 //   assessment_frequency (text) — Assessment Frequency
-//     Needed to interpret monthly_assessment (some WA associations bill quarterly or annually).
+//     Needed to interpret assessment (some WA associations bill quarterly or annually).
 //   signer_title (text) — Signer Title
 //     Required to substantiate authority of signer on behalf of association.
 //   signer_capacity (text) — Signer Capacity (Officer / Director / Managing Agent)
@@ -333,14 +333,14 @@ export const WA_RESALE_CERTIFICATE: DocumentTemplate = {
       communityLevel: false,
     },
     {
-      key: "monthly_assessment",
-      mergeTag: "{{monthly_assessment}}",
-      label: "Monthly Assessment",
+      key: "assessment",
+      mergeTag: "{{assessment}}",
+      label: "HOA Dues Amount",
       section: "Financial Information",
       type: "currency",
       required: true,
       communityLevel: false,
-      ocrFieldKey: "monthly_assessment",
+      ocrFieldKey: "assessment",
     },
     {
       key: "special_assessments",

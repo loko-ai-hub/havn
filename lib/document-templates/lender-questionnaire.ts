@@ -26,7 +26,7 @@ export const LENDER_QUESTIONNAIRE: DocumentTemplate = {
     { key: "management_contact_email", label: "Manager Email", section: "Management & Governance", type: "text", required: false, communityLevel: true, ocrFieldKey: "management_contact_email" },
 
     // Financial Information
-    { key: "monthly_assessment", label: "Monthly Assessment", section: "Financial Information", type: "currency", required: true, communityLevel: false, ocrFieldKey: "monthly_assessment" },
+    { key: "assessment", label: "HOA Dues Amount", section: "Financial Information", type: "currency", required: true, communityLevel: false, ocrFieldKey: "assessment" },
     { key: "reserve_fund_balance", label: "Reserve Fund Balance", section: "Financial Information", type: "currency", required: true, communityLevel: true, ocrFieldKey: "reserve_fund_balance" },
     { key: "special_assessments", label: "Special Assessments", section: "Financial Information", type: "textarea", required: false, communityLevel: true, ocrFieldKey: "special_assessments" },
     { key: "delinquency_rate", label: "Delinquency Rate (% of units > 60 days)", section: "Financial Information", type: "text", required: false, communityLevel: true },
