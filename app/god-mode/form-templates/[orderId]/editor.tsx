@@ -143,6 +143,19 @@ export default function FormTemplateEditor({
     if (selectedUid === uid) setSelectedUid(null);
   };
 
+  const handleClearAll = () => {
+    if (fields.length === 0) return;
+    const ok = window.confirm(
+      `Remove all ${fields.length} fields from this template? This won't save until you click ${
+        data.existingTemplateId ? "Update template" : "Save as canonical"
+      }, so you can cancel by leaving without saving.`
+    );
+    if (!ok) return;
+    setFields([]);
+    setSelectedUid(null);
+    toast.message("All fields cleared. Add fields with the buttons above.");
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -209,6 +222,17 @@ export default function FormTemplateEditor({
               <Plus className="mr-1 h-3.5 w-3.5" />
               <CheckSquare className="mr-1 h-3.5 w-3.5" />
               Checkbox
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={fields.length === 0}
+              onClick={handleClearAll}
+              className="border-destructive/30 text-destructive hover:bg-destructive/5"
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              Clear all
             </Button>
             <Button
               type="button"
@@ -309,7 +333,7 @@ export default function FormTemplateEditor({
                           e.stopPropagation();
                           handleDelete(f.uid);
                         }}
-                        className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
