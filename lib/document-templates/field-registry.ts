@@ -308,12 +308,12 @@ export const FIELD_REGISTRY = {
   monthly_assessment: {
     key: "monthly_assessment",
     mergeTag: "{{monthly_assessment}}",
-    label: "Monthly Assessment / HOA Dues",
+    label: "HOA Dues Amount",
     type: "currency",
     sources: ["ocr", "cache", "manual"],
     ocrFieldKey: "monthly_assessment",
     description:
-      "Regular periodic assessment for the subject unit. Also called HOA dues, monthly dues, maintenance fee, amount of maintenance fee, association dues, common charges, or regular assessment depending on the form/state.",
+      "Regular periodic dues for the subject unit. Also called monthly assessment, monthly dues, maintenance fee, amount of maintenance fee, association dues, common charges, or regular assessment depending on the form/state.",
     stateLabels: {
       NY: "Common Charges",
       FL: "Maintenance Fee",
