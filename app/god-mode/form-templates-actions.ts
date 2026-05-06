@@ -1,5 +1,7 @@
 "use server";
 
+import { createHash } from "crypto";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -247,7 +249,6 @@ function computeFingerprintFromTemplateRow(tplRow: {
   ].join("\n");
   // Need at least issuer/form_title or labels to fingerprint at all.
   if (!parts.trim()) return null;
-  const { createHash } = require("crypto");
   return createHash("sha256").update(parts).digest("hex");
 }
 
