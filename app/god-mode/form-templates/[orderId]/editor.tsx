@@ -90,6 +90,7 @@ export default function FormTemplateEditor({
         label: f.label || "(no label)",
         page: f.page,
         kind: (f.kind as "text" | "checkbox" | undefined) ?? "text",
+        selectionValue: f.selectionValue ?? null,
         valueBbox: f.valueBbox,
         labelBbox: f.labelBbox,
         currentValue: f.currentValue ?? "",
@@ -317,6 +318,11 @@ export default function FormTemplateEditor({
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">
                           {f.label || "(no label)"}
+                          {f.selectionValue ? (
+                            <span className="ml-1 text-[11px] font-normal text-havn-success">
+                              = {f.selectionValue}
+                            </span>
+                          ) : null}
                         </p>
                         <p className="text-[11px] text-muted-foreground">
                           p{f.page} · {f.kind ?? "text"} ·{" "}
@@ -487,6 +493,30 @@ function FieldEditor({
           </p>
         )}
       </div>
+
+      {field.kind === "checkbox" && field.registryKey && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">
+            Selection value (radio-group option)
+          </Label>
+          <Input
+            value={field.selectionValue ?? ""}
+            placeholder="e.g. Monthly, Quarterly, Annually"
+            onChange={(e) =>
+              onChange({
+                selectionValue:
+                  e.target.value === "" ? null : e.target.value,
+              })
+            }
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Set this when the checkbox is one of several options for the
+            same merge tag (e.g. all five &ldquo;Fees are due&rdquo; checkboxes
+            share the same merge tag, each with a different selection
+            value). Leave empty for standalone Yes/No checkboxes.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <Label className="text-xs">Page</Label>

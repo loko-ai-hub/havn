@@ -69,6 +69,7 @@ export default async function DashboardRequestReviewPage({
           label: string;
           page: number;
           kind?: "text" | "checkbox";
+          selectionValue?: string | null;
           valueBbox: { x: number; y: number; w: number; h: number } | null;
           labelBbox: { x: number; y: number; w: number; h: number } | null;
           currentValue: string;

@@ -24,6 +24,16 @@ export type OverlayField = {
    * upload to capture checkbox info.
    */
   kind?: "text" | "checkbox";
+  /**
+   * For radio-group checkboxes (multiple checkboxes sharing one
+   * registry key — e.g. "Fees are due: Monthly / Quarterly / Annually"
+   * all bound to assessment_frequency). The literal string this
+   * checkbox represents. The checkbox renders checked when
+   * values[registryKey] === selectionValue. Click toggles between
+   * setting the value to selectionValue and clearing it. Standalone
+   * checkboxes (yes/no) leave this null and use boolean semantics.
+   */
+  selectionValue?: string | null;
   valueBbox: { x: number; y: number; w: number; h: number } | null;
   labelBbox: { x: number; y: number; w: number; h: number } | null;
   currentValue: string;
@@ -427,8 +437,19 @@ function PageWithOverlay({
             }
 
             if (isCheckbox) {
-              const liveChecked =
-                value === "true" || value === "1"
+              // Two behaviors:
+              //   - Radio-group checkbox (selectionValue set): checked
+              //     when the registry value === selectionValue. Click
+              //     sets registry value to selectionValue (or clears
+              //     if already selected). Sibling checkboxes sharing
+              //     the same registryKey auto-update because they all
+              //     read the same `values[effectiveKey]`.
+              //   - Standalone yes/no (no selectionValue): toggle
+              //     between "true" and "false".
+              const selVal = field.selectionValue ?? null;
+              const liveChecked = selVal
+                ? value === selVal
+                : value === "true" || value === "1"
                   ? true
                   : value === "false" || value === "0"
                     ? false
@@ -438,10 +459,21 @@ function PageWithOverlay({
                   key={reactKey}
                   type="checkbox"
                   checked={liveChecked}
-                  onChange={(e) =>
-                    onChange(effectiveKey, e.target.checked ? "true" : "false")
+                  onChange={(e) => {
+                    if (selVal) {
+                      onChange(effectiveKey, e.target.checked ? selVal : "");
+                    } else {
+                      onChange(
+                        effectiveKey,
+                        e.target.checked ? "true" : "false"
+                      );
+                    }
+                  }}
+                  title={
+                    selVal
+                      ? `${field.label} (selects "${selVal}")`
+                      : field.label
                   }
-                  title={field.label}
                   className={cn(
                     "pointer-events-auto absolute cursor-pointer rounded-sm border bg-white/90 shadow-sm outline-none transition focus:ring-2 focus:ring-havn-navy/30",
                     highlighted
