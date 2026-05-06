@@ -267,7 +267,7 @@ export default function FormTemplateEditor({
                   <li
                     key={f.uid}
                     className={cn(
-                      "cursor-pointer px-3 py-2 transition-colors hover:bg-muted/40",
+                      "group cursor-pointer px-3 py-2 transition-colors hover:bg-muted/40",
                       selectedUid === f.uid && "bg-muted/60"
                     )}
                     onClick={() => setSelectedUid(f.uid)}
@@ -285,6 +285,17 @@ export default function FormTemplateEditor({
                         </p>
                       </div>
                       <KindBadge kind={f.kind ?? "text"} />
+                      <button
+                        type="button"
+                        title={`Delete "${f.label || "(no label)"}"`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(f.uid);
+                        }}
+                        className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </li>
                 ))}
