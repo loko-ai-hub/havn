@@ -114,16 +114,22 @@ export default function FormTemplateEditor({
       label: kind === "checkbox" ? "New checkbox" : "New field",
       page: 1,
       kind,
-      // Default position: top-center of page 1, modest size.
+      // Drop in the middle of page 1 so it's hard to miss. Staff drags
+      // it into place from there.
       valueBbox:
         kind === "checkbox"
-          ? { x: 0.45, y: 0.05, w: 0.02, h: 0.02 }
-          : { x: 0.3, y: 0.05, w: 0.4, h: 0.025 },
+          ? { x: 0.48, y: 0.45, w: 0.02, h: 0.02 }
+          : { x: 0.3, y: 0.45, w: 0.4, h: 0.025 },
       labelBbox: null,
       currentValue: kind === "checkbox" ? "false" : "",
     };
     setFields((prev) => [...prev, newField]);
     setSelectedUid(newField.uid);
+    toast.message(
+      kind === "checkbox"
+        ? "Added a checkbox at the middle of page 1 — drag it into place."
+        : "Added a text field at the middle of page 1 — drag it into place."
+    );
   };
 
   const handleUpdate = (uid: string, patch: Partial<FieldRow>) => {
@@ -222,7 +228,7 @@ export default function FormTemplateEditor({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div>
           <PdfOverlay
             pdfUrl={data.pdfSignedUrl}
