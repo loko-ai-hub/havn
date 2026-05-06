@@ -28,6 +28,17 @@ export type ExtractedFormContext = {
   propertyAddress: string | null;
   ownerNames: string[];
   parcel: string | null;
+  /**
+   * Vendor-side form-variant identifiers, when present in the form's
+   * footer/header (e.g. Ticor's "WA0000026.doc / Updated: 08.26.24",
+   * "WA-TT-FNWT-02840"). Stable across orders and properties — when
+   * any of these are populated, they're a much better fingerprint
+   * signal than the structural skeleton. Null on forms that don't
+   * carry these stamps.
+   */
+  formVariantId: string | null;
+  formVariantVersion: string | null;
+  formVariantUpdatedAt: string | null;
   confidence: {
     association: ContextConfidence;
     property: ContextConfidence;
@@ -52,6 +63,9 @@ const ContextSchema = z.object({
   property_address: z.string().nullable(),
   owner_names: z.array(z.string()),
   parcel: z.string().nullable(),
+  form_variant_id: z.string().nullable().optional(),
+  form_variant_version: z.string().nullable().optional(),
+  form_variant_updated_at: z.string().nullable().optional(),
   association_confidence: z.enum(["high", "medium", "low", "none"]),
   property_confidence: z.enum(["high", "medium", "low", "none"]),
   owner_confidence: z.enum(["high", "medium", "low", "none"]),
@@ -116,6 +130,23 @@ function buildPrompt(rawText: string, config: DocTypeExtractorConfig): string {
     `   Synonyms for these labels in this doc type:`,
     synonymHint,
     ``,
+    `   Plus, if the form's footer / header carries vendor-side document`,
+    `   identifiers, also extract:`,
+    `   - form_variant_id: a stable file/document number stamped on the form`,
+    `     itself, NOT the requester's escrow / order number. Examples:`,
+    `     "WA0000026.doc", "WA-TT-FNWT-02840", "Form #FW-100", "ALTA-7-06".`,
+    `     Usually appears in the footer or top corner. Null if absent.`,
+    `   - form_variant_version: any version label printed on the form,`,
+    `     e.g. "Rev. 2024.1", "v3", "Eff. 1/1/2024". Null if absent.`,
+    `   - form_variant_updated_at: any "Updated:" / "Revised:" / "Eff."`,
+    `     date on the form (NOT the requester's transaction dates like`,
+    `     "Date:" or "Estimated Settlement Date"). Examples: "08.26.24",`,
+    `     "Rev. 2024-01-15". Return as the literal string shown. Null`,
+    `     if absent.`,
+    `   These are STABLE across orders of the same form variant — different`,
+    `   properties / owners / closing dates do not change them. Use them to`,
+    `   distinguish form versions (Ticor HOA Request 2024 vs 2026).`,
+    ``,
     `(B) FIELD MAP — every form-field-with-a-blank-line in the document, mapped`,
     `to one of Havn's canonical registry keys below. The registry is the`,
     `single source of truth for what we can fill in; use the EXACT key.`,
@@ -174,6 +205,11 @@ export async function extractFormContext(
           .map((n) => n.trim())
           .filter(Boolean),
         parcel: output.context.parcel?.trim() || null,
+        formVariantId: output.context.form_variant_id?.trim() || null,
+        formVariantVersion:
+          output.context.form_variant_version?.trim() || null,
+        formVariantUpdatedAt:
+          output.context.form_variant_updated_at?.trim() || null,
         confidence: {
           association: output.context.association_confidence,
           property: output.context.property_confidence,
@@ -196,6 +232,9 @@ function emptyResult(): FormExtractionResult {
       propertyAddress: null,
       ownerNames: [],
       parcel: null,
+      formVariantId: null,
+      formVariantVersion: null,
+      formVariantUpdatedAt: null,
       confidence: { association: "none", property: "none", owner: "none" },
     },
     fieldMap: [],

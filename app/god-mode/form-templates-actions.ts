@@ -57,7 +57,7 @@ export async function getFormTemplateEditorData(
   const { data: tpl, error: tplErr } = await admin
     .from("third_party_templates")
     .select(
-      "id, storage_path_pdf, storage_path_text, mime_type, pdf_pages, field_layout, issuer, form_title, document_type"
+      "id, storage_path_pdf, storage_path_text, mime_type, pdf_pages, field_layout, detected_fields, extracted_context, issuer, form_title, document_type"
     )
     .eq("order_id", orderId)
     .maybeSingle();
@@ -72,6 +72,12 @@ export async function getFormTemplateEditorData(
     mime_type: string | null;
     pdf_pages: Array<{ page: number; width: number; height: number }> | null;
     field_layout: FormTemplateEditorData["fields"] | null;
+    detected_fields: Array<{ externalLabel: string }> | null;
+    extracted_context: {
+      formVariantId?: string | null;
+      formVariantVersion?: string | null;
+      formVariantUpdatedAt?: string | null;
+    } | null;
     issuer: string | null;
     form_title: string | null;
     document_type: string | null;
@@ -88,7 +94,7 @@ export async function getFormTemplateEditorData(
     return { error: "Could not sign the PDF for preview." };
   }
 
-  const fingerprint = await computeFingerprintFromTemplate(admin, tplRow);
+  const fingerprint = computeFingerprintFromTemplateRow(tplRow);
 
   let existingTemplateId: string | null = null;
   if (fingerprint) {
@@ -203,30 +209,46 @@ export async function listRegistryOptions(): Promise<RegistryOption[]> {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-async function computeFingerprintFromTemplate(
-  admin: ReturnType<typeof createAdminClient>,
-  tplRow: {
-    storage_path_text: string | null;
-    storage_path_pdf: string | null;
-    mime_type: string | null;
-  }
-): Promise<string | null> {
-  let rawText: string | null = null;
-  if (tplRow.storage_path_text) {
-    const { data: textBlob } = await admin.storage
-      .from(BUCKET_NAME)
-      .download(tplRow.storage_path_text);
-    if (textBlob) rawText = await textBlob.text();
-  }
-  if (!rawText) return null;
-  const norm = rawText
-    .replace(/\s+/g, " ")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .trim()
-    .slice(0, 4096);
-  const { createHash } = await import("crypto");
-  return createHash("sha256").update(norm).digest("hex");
+/**
+ * Mirror of lib/3p-template-pipeline.ts's computeContentFingerprint —
+ * builds the same hash from the third_party_templates row's saved
+ * issuer + form_title + extracted_context (form-variant identifiers)
+ * + detected_fields labels. Pipeline and editor MUST agree on this
+ * formula or the cache lookup at ingest time and the editor's "did
+ * I already save a template for this variant?" check will diverge.
+ */
+function computeFingerprintFromTemplateRow(tplRow: {
+  issuer: string | null;
+  form_title: string | null;
+  detected_fields: Array<{ externalLabel: string }> | null;
+  extracted_context: {
+    formVariantId?: string | null;
+    formVariantVersion?: string | null;
+    formVariantUpdatedAt?: string | null;
+  } | null;
+}): string | null {
+  const norm = (s: string | null | undefined): string =>
+    (s ?? "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  const labels = (tplRow.detected_fields ?? [])
+    .map((f) => norm(f.externalLabel))
+    .filter(Boolean)
+    .sort()
+    .join("|");
+  const parts = [
+    norm(tplRow.issuer),
+    norm(tplRow.form_title),
+    norm(tplRow.extracted_context?.formVariantId),
+    norm(tplRow.extracted_context?.formVariantVersion),
+    norm(tplRow.extracted_context?.formVariantUpdatedAt),
+    labels,
+  ].join("\n");
+  // Need at least issuer/form_title or labels to fingerprint at all.
+  if (!parts.trim()) return null;
+  const { createHash } = require("crypto");
+  return createHash("sha256").update(parts).digest("hex");
 }
 
 export type FormVariantRow = {

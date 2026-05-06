@@ -122,14 +122,33 @@ export async function runThirdPartyIngestion(params: {
     // 4a. Map to the registry (existing behavior — Claude maps form labels).
     const ingestion: ExternalTemplateIngestion = await ingestExternalTemplate(rawText);
 
-    // 4a-cache. Check the vendor form template cache. If we've previously
-    //   positioned + reviewed this form (same issuer + title +
-    //   content-fingerprint), use the saved field_layout directly and
-    //   skip the entire positioning stack (AcroForm / Form Parser /
-    //   synthesis). This is the system's compounding-improvements loop:
-    //   one staff drag-fix becomes a permanent improvement for every
-    //   future order of the same form.
-    const contentFingerprint = computeContentFingerprint(rawText);
+    // 4a-context. Universal context + field extractor. Pulls association
+    //     name, property address, owner names, parcel — and (when present)
+    //     vendor-side form-variant identifiers from the form's
+    //     footer/header. We need the variant identifiers BEFORE the cache
+    //     lookup so the fingerprint can use them.
+    const extracted = orderCtx
+      ? await extractFormContext(rawText, orderCtx.master_type_key).catch((err) => {
+          console.warn("[3p-pipeline] extractFormContext failed:", err);
+          return null;
+        })
+      : null;
+
+    // 4a-cache. Check the vendor form template cache. Fingerprint is
+    //   built from STABLE inputs only — issuer, form_title, vendor
+    //   form-variant id/version/updated-at (when present), plus the
+    //   sorted set of detected_fields labels. None of the requester's
+    //   filled values feed into the hash, so a different property's
+    //   submission of the same Ticor HOA Request form produces the
+    //   same fingerprint and hits the cached canonical layout.
+    const contentFingerprint = computeContentFingerprint({
+      issuer: ingestion.issuer,
+      formTitle: ingestion.formTitle,
+      formVariantId: extracted?.context.formVariantId ?? null,
+      formVariantVersion: extracted?.context.formVariantVersion ?? null,
+      formVariantUpdatedAt: extracted?.context.formVariantUpdatedAt ?? null,
+      fieldLabels: ingestion.fields.map((f) => f.externalLabel),
+    });
     const cachedTemplate = await loadCachedTemplate(admin, {
       issuer: ingestion.issuer,
       formTitle: ingestion.formTitle,
@@ -140,17 +159,6 @@ export async function runThirdPartyIngestion(params: {
         `[3p-pipeline] vendor template cache HIT: ${cachedTemplate.fields.length} fields (id=${cachedTemplate.id})`
       );
     }
-
-    // 4b. Universal context + field extractor. Pulls association name,
-    //     property address, owner names, parcel — and confirms each form
-    //     field's registry-key mapping. Failures fall through with empty
-    //     context so the rest of the pipeline still completes.
-    const extracted = orderCtx
-      ? await extractFormContext(rawText, orderCtx.master_type_key).catch((err) => {
-          console.warn("[3p-pipeline] extractFormContext failed:", err);
-          return null;
-        })
-      : null;
 
     // 4b-form. Form Parser pass for coordinate capture. Lets the staff
     //         review page render the original PDF with HTML inputs
@@ -512,22 +520,56 @@ function normalizeLabel(s: string): string {
 }
 
 /**
- * Stable fingerprint for the form's content. Used as part of the
- * vendor_form_templates cache key so we differentiate form variants
- * (e.g. "Ticor HOA Request 2024" vs "...2026") even when the visible
- * issuer + form_title strings match. Whitespace-normalized + truncated
- * to keep the hash robust against minor OCR jitter and to avoid
- * fingerprinting the requester's already-typed values (those live
- * later in the doc).
+ * Stable fingerprint for the form's variant. Identifies "this is the
+ * Ticor HOA Request 2024 template" — same across every order of the
+ * same form, regardless of which property / owner / dates are filled
+ * in.
+ *
+ * Strategy (stable inputs only — never the requester's filled values):
+ *   1. Vendor form-variant identifiers when present (form_variant_id,
+ *      form_variant_version, form_variant_updated_at). These are
+ *      printed on the form itself by the issuer (e.g. Ticor's
+ *      "WA0000026.doc / Updated: 08.26.24") and don't change between
+ *      different orders of the same form.
+ *   2. Issuer + form_title (Claude already extracts these).
+ *   3. The structural skeleton — sorted list of detected_fields
+ *      external labels. Two orders of the same form have the same
+ *      questions in the same order; different forms have different
+ *      label sets.
+ *
+ * The raw OCR text is intentionally NOT in the hash. It contains the
+ * filled-in property / owner / closing-date values, which would make
+ * every order produce a different fingerprint.
  */
-function computeContentFingerprint(rawText: string): string {
-  const norm = rawText
-    .replace(/\s+/g, " ")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .trim()
-    .slice(0, 4096);
-  return createHash("sha256").update(norm).digest("hex");
+type FingerprintInputs = {
+  issuer: string | null;
+  formTitle: string | null;
+  formVariantId: string | null;
+  formVariantVersion: string | null;
+  formVariantUpdatedAt: string | null;
+  fieldLabels: string[];
+};
+
+function computeContentFingerprint(inputs: FingerprintInputs): string {
+  const norm = (s: string | null): string =>
+    (s ?? "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  const labels = inputs.fieldLabels
+    .map(norm)
+    .filter(Boolean)
+    .sort()
+    .join("|");
+  const parts = [
+    norm(inputs.issuer),
+    norm(inputs.formTitle),
+    norm(inputs.formVariantId),
+    norm(inputs.formVariantVersion),
+    norm(inputs.formVariantUpdatedAt),
+    labels,
+  ].join("\n");
+  return createHash("sha256").update(parts).digest("hex");
 }
 
 /**
